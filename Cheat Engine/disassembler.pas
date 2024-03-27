@@ -5,7 +5,7 @@ unit disassembler;
 interface
 
 uses windows, imagehlp,sysutils,LCLIntf,byteinterpreter, symbolhandler,CEFuncProc,
-  NewKernelHandler, ProcessHandlerUnit, LastDisassembleData, disassemblerarm;
+  NewKernelHandler, ProcessHandlerUnit, LastDisassembleData, disassemblerarm, commonTypeDefs;
 
 //translation: There is no fucking way I change the descriptions to resource strings
 //if you're bored, go do this
@@ -157,7 +157,7 @@ var visibleDisassembler: TDisassembler; //this disassembler is used to render th
 
 implementation
 
-uses Assemblerunit,CEDebugger, debughelper, StrUtils, debuggertypedefinitions;
+uses Assemblerunit,CEDebugger, debughelper, StrUtils, debuggertypedefinitions, Parsers;
 
 function registerGlobalDisassembleOverride(m: TDisassembleEvent): integer;
 var i: integer;
@@ -603,6 +603,8 @@ begin
 
                 LastDisassembleData.modrmValueType:=dvtAddress;
                 LastDisassembleData.modrmValue:=dwordptr^;
+
+                LastDisassembleData.riprelative:=modrmbyte+1;
 
               end
               else
@@ -1346,6 +1348,7 @@ begin
   lastdisassembledata.parameterValueType:=dvtNone;
   LastDisassembleData.hasSib:=false;
   LastDisassembleData.datasize:=0;
+  LastDisassembleData.riprelative:=0;
 
   if assigned(OnDisassembleOverride) then //check if the user has defined it's own disassembler
   begin
@@ -1467,7 +1470,79 @@ begin
         inc(startoffset);
         prefix2:=prefix2+[RexPrefix];
         MoveMemory(@memory[0], @memory[1], 23);
-      end;
+      end
+         (*
+         //this stuff might deserve it's own units. (or I may just say fuck it and use a library)
+      else
+      if memory[0] in [$c4,$c5] then //vex prefix
+      begin
+
+        if memory[0]=$c4 then
+        begin
+          setlength(LastDisassembleData.bytes,length(LastDisassembleData.bytes)+3);
+          LastDisassembleData.bytes[length(LastDisassembleData.bytes)-3]:=memory[0];
+          LastDisassembleData.bytes[length(LastDisassembleData.bytes)-2]:=memory[1];
+          LastDisassembleData.bytes[length(LastDisassembleData.bytes)-1]:=memory[2];
+
+          inc(offset,3);
+          inc(startoffset,3);
+          prefix2:=prefix2+[$c4, memory[1], memory[2]];
+
+          i:=0;
+          //setup the rex prefix
+
+          //insert some bytes in front of the memoryarray depending on bit 0 to 4 of vex byte 1
+          {
+          00000: Reserved for future use (will #UD)
+          00001: implied 0F leading opcode byte
+          00010: implied 0F 38 leading opcode bytes
+          00011: implied 0F 3A leading opcode bytes
+          00100-11111: Reserved for future use (will #UD)
+          }
+          case memory[1] and $1f of
+            1:
+            begin
+              memory[0]:=$0f;
+              i:=1;
+            end;
+
+            2:
+            begin
+              memory[0]:=$0f;
+              memory[1]:=$38;
+              i:=2;
+            end;
+
+            3:
+            begin
+              memory[0]:=$0f;
+              memory[1]:=$3a;
+              i:=2;
+            end;
+          end;
+
+          MoveMemory(@memory[i], @memory[3], 24-i-3);
+
+        end
+        else
+        begin
+          setlength(LastDisassembleData.bytes,length(LastDisassembleData.bytes)+2);
+          LastDisassembleData.bytes[length(LastDisassembleData.bytes)-2]:=memory[0];
+          LastDisassembleData.bytes[length(LastDisassembleData.bytes)-1]:=memory[1];
+
+          inc(offset,2);
+          inc(startoffset,2);
+          prefix2:=prefix2+[$c5, memory[1]];
+
+          memory[0]:=$0f;
+          i:=1;
+
+          MoveMemory(@memory[1], @memory[2], 24-1-2);
+        end;
+
+        //todo: implement me some day when VEX gets used more
+        //hasrexprefix:=true;
+      end *) ;
     end;
 
     if (memory[0]=$cc) and (debuggerthread<>nil) then //if it's a int3 breakpoint and there is a debugger attached check if it's a bp
@@ -2554,14 +2629,16 @@ begin
                         if $66 in prefix2 then
                         begin
                           lastdisassembledata.opcode:='movmskpd';
-                          lastdisassembledata.parameters:=modrm(memory,prefix2,2,0,last)+xmm(memory[2]);
+                          lastdisassembledata.parameters:=xmm(memory[2])+','+modrm(memory,prefix2,2,0,last);
                           description:='extract packed double-precision floating-point sign mask';
                           inc(offset,last-1);
                         end
                         else
                         begin
                           lastdisassembledata.opcode:='movmskps';
-                          lastdisassembledata.parameters:=modrm(memory,prefix2,2,0,last)+xmm(memory[2]);
+//                          lastdisassembledata.parameters:=modrm(memory,prefix2,2,0,last)+xmm(memory[2]);
+                          lastdisassembledata.parameters:=r32(memory[2])+','+modrm(memory,prefix2,2,4,last);
+
                           description:='move mask to integer';
                           inc(offset,last-1);
                         end;
@@ -10539,8 +10616,16 @@ begin
 
     //adjust for the prefix.
     if j<>0 then
+    begin
       for i:=0 to LastDisassembleData.SeperatorCount-1 do
         inc(LastDisassembleData.Seperators[i],prefixsize);
+
+      if LastDisassembleData.riprelative<>0 then
+        inc(LastDisassembleData.riprelative, prefixsize);
+    end;
+
+
+
 
     //todo: Next time the disassembler is getting an averhaul, do something about the prefix counting and the unnecessary readprocessmemorys associated with it
 
@@ -10915,7 +11000,7 @@ begin
       begin
         x:=sizeof(value);
         pptruint(@buffer[0])^:=value; //assign it so I don't have to make two compare routines
-        vtype:=FindTypeOfData(value, @buffer[0], x);
+        vtype:=FindTypeOfData(0, @buffer[0], x);
       end;
 
 

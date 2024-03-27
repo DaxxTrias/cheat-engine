@@ -7,7 +7,8 @@ interface
 uses
   LCLIntf, LCLType, Classes, SysUtils, controls, stdctrls, comctrls, ExtCtrls, graphics,
   math, MemoryRecordUnit, FPCanvas, cefuncproc, newkernelhandler, menus,dom,
-  XMLRead,XMLWrite, symbolhandler, AddresslistEditor, inputboxtopunit, frmMemrecComboboxUnit;
+  XMLRead,XMLWrite, symbolhandler, AddresslistEditor, inputboxtopunit,
+  frmMemrecComboboxUnit, commonTypeDefs, multilineinputqueryunit;
 
 type
   TTreeviewWithScroll=class(TTreeview)
@@ -98,6 +99,7 @@ type
     procedure SymbolsLoaded(sender: TObject);
   public
     //needsToReinterpret: boolean;
+    procedure getAddressList(list: Tstrings);
 
     function focused:boolean; override;
 
@@ -144,6 +146,7 @@ type
 
     property OnDropByListview: TDropByListviewEvent read FOnDropByListview write FOnDropByListview;
     property OnAutoAssemblerEdit: TAutoAssemblerEditEvent read fOnAutoAssemblerEdit write fOnAutoAssemblerEdit;
+
 
 
     property headers: THeaderControl read header;
@@ -954,7 +957,7 @@ var
   someerror: boolean;
   allError: boolean;
   i: integer;
-  value: string;
+  oldvalue, value: string;
 
   canceled: boolean;
 
@@ -968,8 +971,15 @@ begin
   if memrec.DropDownCount=0 then
   begin
     value:=AnsiToUtf8(memrec.value);
-    canceled:=not InputQuery(rsChangeValue, rsWhatValueToChangeThisTo, value);
-    value:=Utf8ToAnsi(value);
+
+
+    if memrec.VarType=vtString then
+      canceled:=not MultilineInputQuery(rsChangeValue, rsWhatValueToChangeThisTo, value)
+    else
+      canceled:=not InputQuery(rsChangeValue, rsWhatValueToChangeThisTo, value);
+
+
+    value:=TrimRight(Utf8ToAnsi(value));
   end
   else
   begin
@@ -1843,6 +1853,20 @@ function TAddresslist.focused: boolean;
 begin
   result:=inherited focused;
   if not result then result:=treeview.Focused;
+end;
+
+procedure TAddresslist.getAddressList(list: Tstrings);
+{
+Gets the addresslist in lines formatted :  address=description
+main usage: pointerscan and scandata.addresslist files
+}
+var i: integer;
+begin
+  for i:=0 to Count-1 do
+  begin
+    if MemRecItems[i].AddressString<>'' then
+      list.add(MemRecItems[i].AddressString+'='+MemRecItems[i].Description);
+  end;
 end;
 
 constructor TAddresslist.Create(AOwner: TComponent);

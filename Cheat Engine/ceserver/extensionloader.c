@@ -52,7 +52,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#ifdef __arm__
+#if defined(__arm__) || defined(__ANDROID__)
 #include <linux/user.h>
 #else
 #include <sys/user.h>
@@ -109,7 +109,7 @@ int showRegisters(int pid)
   if (result!=0)
   {
     printf("PTRACE_GETREGS FAILED (%d)\n", result);
-    return;
+    return result;
   }
 
 #ifdef __arm__
@@ -117,9 +117,17 @@ int showRegisters(int pid)
   printf("orig_r0=%lx\n", r.ARM_ORIG_r0);
   printf("pc=%lx\n", r.ARM_pc);
 #else
-  printf("RAX=%lx\n", r.rax);
-  printf("orig_rax=%lx\n", r.orig_rax);
-  printf("rip=%lx\n", r.rip);
+  #if defined(__x86_64__)
+    printf("RAX=%lx\n", r.rax);
+    printf("orig_rax=%lx\n", r.orig_rax);
+    printf("rip=%lx\n", r.rip);
+  #endif
+
+  #if defined(__i386__)
+    printf("EAX=%lx\n", r.eax);
+    printf("orig_eax=%lx\n", r.orig_eax);
+    printf("eip=%lx\n", r.eip);
+  #endif
 #endif
 
 
@@ -186,8 +194,26 @@ uintptr_t finddlopen(int pid)
           char y[200];
           while (fgets(y, 200, maps2))
           {
+             if (y[strlen(y)-1]!='\n')
+             {
+               //need to go to the end of line first
+
+               char discard[100];
+
+               do
+               {
+                 discard[99]=0;
+                 fgets(discard, 99, maps);
+               } while (discard[99]!=0);
+             }
+
+
              printf("%s", y);
+
+             modulepath[0]='\0';
              sscanf(y, "%llx-%llx %*s %*s %*s %*s %s\n", &start, &stop, modulepath);
+
+             printf("Check if '%s' == '%s'\n", modulepath, currentmodule);
              if (strcmp(modulepath, currentmodule)==0)
              {
                 printf("found the module in the target process\n");
@@ -420,6 +446,7 @@ printf("After wait 2. PID=%d\n", pid);
       printf("cpsr=%lx\n", origregs.ARM_cpsr);
 
 #else
+  #ifdef __x86_64__
       printf("rax=%lx\n", origregs.rax);
       printf("rbp=%lx\n", origregs.rbp);
       printf("rsp=%lx\n", origregs.rsp);
@@ -488,8 +515,66 @@ printf("After wait 2. PID=%d\n", pid);
       newregs.rdi=str;
       newregs.rsi=RTLD_NOW;
       newregs.orig_rax=0;
+  #else
+    printf("32-bit is not yet supported\n");
+    printf("eax=%lx\n", origregs.eax);
+    printf("ebp=%lx\n", origregs.ebp);
+    printf("esp=%lx\n", origregs.esp);
+    printf("orig_eax=%lx\n", origregs.orig_eax);
+    printf("eip=%lx\n", origregs.eip);
+
+    //allocate stackspace
+    newregs.esp=newregs.esp-0x28-(8*((pathlen+7) / 8));
+    if ((newregs.esp & 0xf)!=8)
+    {
+      printf("Aligning stack.  Was %llx", newregs.esp);
+      newregs.esp-=8;
+      newregs.esp&=~(0xf); //clear the first 4 bits
+
+      newregs.esp=newregs.esp | 8; //set to 8
+
+      printf(" is now %llx\n", newregs.esp);
+    }
+
+    //in 32-bit the stack will have to look like:
+    //0-3: Return address  (0x0ce0)
+    //4-7: Address to path
+    //8-11:RTLD_NOW
+    //12-...: Path
+
+    //
 
 
+    if (ptrace(PTRACE_POKEDATA, pid, newregs.esp+0, returnaddress)!=0)
+    {
+      printf("Fuck\n");
+      ptrace(PTRACE_DETACH, pid,0,0);
+
+      return FALSE;
+    }
+
+    if (ptrace(PTRACE_POKEDATA, pid, newregs.esp+4, newregs.esp+12)!=0)
+    {
+      printf("Fuck2\n");
+      ptrace(PTRACE_DETACH, pid,0,0);
+
+      return FALSE;
+    }
+
+    if (ptrace(PTRACE_POKEDATA, pid, newregs.esp+8, RTLD_NOW)!=0)
+    {
+      printf("Fuck3\n");
+      ptrace(PTRACE_DETACH, pid,0,0);
+
+      return FALSE;
+    }
+
+    writeString(pid, newregs.esp+12, path);
+
+    newregs.eip=dlopen;
+    newregs.orig_eax=0;
+
+  #endif //__x86_64
 
 
 #endif
@@ -518,6 +603,7 @@ printf("After wait 2. PID=%d\n", pid);
      printf("pc=%lx\n", newregs.ARM_pc);
      printf("cpsr=%lx\n", newregs.ARM_cpsr);
 #else
+  #ifdef __x86_64__
      printf("rax=%lx\n", newregs.rax);
      printf("rdi=%lx\n", newregs.rdi);
      printf("rsi=%lx\n", newregs.rsi);
@@ -525,6 +611,15 @@ printf("After wait 2. PID=%d\n", pid);
      printf("rsp=%lx\n", newregs.rsp);
      printf("orig_rax=%lx\n", newregs.orig_rax);
      printf("rip=%lx\n", newregs.rip);
+  #else
+     printf("eax=%lx\n", newregs.eax);
+     printf("edi=%lx\n", newregs.edi);
+     printf("esi=%lx\n", newregs.esi);
+     printf("ebp=%lx\n", newregs.ebp);
+     printf("esp=%lx\n", newregs.esp);
+     printf("orig_eax=%lx\n", newregs.orig_eax);
+     printf("eip=%lx\n", newregs.eip);
+  #endif //__x86_64__
 #endif
 
     printf("\n\nContinuing thread\n");
@@ -537,7 +632,7 @@ printf("After wait 2. PID=%d\n", pid);
     if (ptr!=0)
       {
         printf("PTRACE_CONT FAILED\n");
-        return;
+        return 1;
       }
 
       //wait for this thread to crash
@@ -589,7 +684,7 @@ printf("After wait 2. PID=%d\n", pid);
     printf("sp=%lx\n", newregs.ARM_sp);
     printf("cpsr=%lx\n", newregs.ARM_cpsr);
 #else
-
+  #ifdef __x86_64__
      printf("rax=%lx\n", newregs.rax);
      printf("rdi=%lx\n", newregs.rdi);
      printf("rsi=%lx\n", newregs.rsi);
@@ -597,6 +692,15 @@ printf("After wait 2. PID=%d\n", pid);
      printf("rsp=%lx\n", newregs.rsp);
      printf("orig_rax=%lx\n", newregs.rax);
      printf("rip=%lx\n", newregs.rip);
+  #else
+     printf("eax=%lx\n", newregs.eax);
+     printf("edi=%lx\n", newregs.edi);
+     printf("esi=%lx\n", newregs.esi);
+     printf("ebp=%lx\n", newregs.ebp);
+     printf("esp=%lx\n", newregs.esp);
+     printf("orig_eax=%lx\n", newregs.eax);
+     printf("eip=%lx\n", newregs.eip);
+  #endif
 
 #endif
 

@@ -133,7 +133,9 @@ void CPipeServer::InitMono()
 			mono_class_get_namespace=(MONO_CLASS_GET_NAMESPACE)GetProcAddress(hMono, "mono_class_get_namespace");
 			mono_class_get_methods=(MONO_CLASS_GET_METHODS)GetProcAddress(hMono, "mono_class_get_methods");		
 			mono_class_get_method_from_name=(MONO_CLASS_GET_METHOD_FROM_NAME)GetProcAddress(hMono, "mono_class_get_method_from_name");		
-			mono_class_get_fields=(MONO_CLASS_GET_FIELDS)GetProcAddress(hMono, "mono_class_get_fields");		
+			mono_class_get_fields=(MONO_CLASS_GET_FIELDS)GetProcAddress(hMono, "mono_class_get_fields");	
+			mono_class_get_parent=(MONO_CLASS_GET_PARENT)GetProcAddress(hMono, "mono_class_get_parent");
+			mono_class_vtable=(MONO_CLASS_VTABLE)GetProcAddress(hMono, "mono_class_vtable");
 			
 			mono_class_num_fields=(MONO_CLASS_NUM_FIELDS)GetProcAddress(hMono, "mono_class_num_fields");	
 			mono_class_num_methods=(MONO_CLASS_NUM_METHODS)GetProcAddress(hMono, "mono_class_num_methods");		
@@ -142,7 +144,8 @@ void CPipeServer::InitMono()
 			mono_field_get_name=(MONO_FIELD_GET_NAME)GetProcAddress(hMono, "mono_field_get_name");	
 			mono_field_get_type=(MONO_FIELD_GET_TYPE)GetProcAddress(hMono, "mono_field_get_type");	
 			mono_field_get_parent=(MONO_FIELD_GET_PARENT)GetProcAddress(hMono, "mono_field_get_parent");	
-			mono_field_get_offset=(MONO_FIELD_GET_OFFSET)GetProcAddress(hMono, "mono_field_get_offset");				
+			mono_field_get_offset=(MONO_FIELD_GET_OFFSET)GetProcAddress(hMono, "mono_field_get_offset");	
+			mono_field_get_flags = (MONO_FIELD_GET_FLAGS)GetProcAddress(hMono, "mono_field_get_flags");
 
 			mono_type_get_name=(MONO_TYPE_GET_NAME)GetProcAddress(hMono, "mono_type_get_name");
 			mono_type_get_type=(MONO_TYPE_GET_TYPE)GetProcAddress(hMono, "mono_type_get_type");
@@ -150,6 +153,16 @@ void CPipeServer::InitMono()
 			mono_method_get_name=(MONO_METHOD_GET_NAME)GetProcAddress(hMono, "mono_method_get_name");	
 			mono_method_get_class=(MONO_METHOD_GET_CLASS)GetProcAddress(hMono, "mono_method_get_class");	
 			mono_method_get_header=(MONO_METHOD_GET_HEADER)GetProcAddress(hMono, "mono_method_get_header");	
+			mono_method_signature=(MONO_METHOD_SIG)GetProcAddress(hMono, "mono_method_signature");
+			mono_method_get_param_names = (MONO_METHOD_GET_PARAM_NAMES)GetProcAddress(hMono, "mono_method_get_param_names");
+
+			
+
+			mono_signature_get_desc = (MONO_SIGNATURE_GET_DESC)GetProcAddress(hMono, "mono_signature_get_desc");
+			mono_signature_get_param_count = (MONO_SIGNATURE_GET_PARAM_COUNT)GetProcAddress(hMono, "mono_signature_get_param_count");
+			mono_signature_get_return_type = (MONO_SIGNATURE_GET_RETURN_TYPE)GetProcAddress(hMono, "mono_signature_get_return_type");
+			
+
 
 			mono_compile_method=(MONO_COMPILE_METHOD)GetProcAddress(hMono, "mono_compile_method");	
 			mono_free_method=(MONO_FREE_METHOD)GetProcAddress(hMono, "mono_free_method");	
@@ -161,6 +174,7 @@ void CPipeServer::InitMono()
 			mono_method_header_get_code=(MONO_METHOD_HEADER_GET_CODE)GetProcAddress(hMono, "mono_method_header_get_code");	
 			mono_disasm_code=(MONO_DISASM_CODE)GetProcAddress(hMono, "mono_disasm_code");	
 
+			mono_vtable_get_static_field_data = (MONO_VTABLE_GET_STATIC_FIELD_DATA)GetProcAddress(hMono, "mono_vtable_get_static_field_data");
 
 			
 			if (mono_get_root_domain==NULL) OutputDebugStringA("mono_get_root_domain not assigned");
@@ -339,6 +353,7 @@ void CPipeServer::EnumFieldsInClass()
 			WriteDword(mono_type_get_type(fieldtype));
 			WriteQword((UINT_PTR)mono_field_get_parent(field));
 			WriteDword((UINT_PTR)mono_field_get_offset(field));
+			WriteDword(mono_field_get_flags(field));
 
 			
 
@@ -495,7 +510,8 @@ void CPipeServer::GetMethodClass()
 	WriteQword((UINT_PTR)result);
 }
 
-void CPipeServer::GetClassName()
+
+void CPipeServer::GetKlassName()
 {
 	void *klass=(void *)ReadQword();
 	char *methodname=mono_class_get_name(klass);
@@ -530,6 +546,76 @@ void CPipeServer::DisassembleMethod()
 	Write(disassembly, strlen(disassembly));
 	g_free(disassembly);
 }
+
+void CPipeServer::GetMethodSignature()
+{
+	void *method = (void *)ReadQword();
+	void *methodsignature = mono_method_signature(method);
+	char *sig = mono_signature_get_desc(methodsignature, TRUE);
+	int paramcount = mono_signature_get_param_count(methodsignature);
+	char **names=(char **)calloc(sizeof(char *), paramcount);
+
+	int i;
+	
+	mono_method_get_param_names(method, (const char **)names);
+	WriteByte(paramcount);
+	for (i = 0; i < paramcount; i++)
+	{
+		if (names[i])
+		{
+			WriteByte(strlen(names[i]));
+			Write(names[i], strlen(names[i]));
+		}
+		else
+			WriteByte(0);
+	}
+
+	free(names);
+
+	WriteWord(strlen(sig));
+	Write(sig, strlen(sig));
+	g_free(sig);	
+
+	//12/5/2014:send the returntype as well
+	void *returntype = mono_signature_get_return_type(methodsignature);
+
+	if (returntype)
+	{
+		char *tname = mono_type_get_name(returntype);
+		if (tname)
+		{
+			WriteByte(strlen(tname));
+			Write(tname, strlen(tname));
+			g_free(tname);
+		}
+		else
+			WriteByte(0);
+	}
+	else
+		WriteByte(0);
+}
+
+void CPipeServer::GetParentClass(void)
+{
+	void *klass = (void *)ReadQword();
+	UINT_PTR parent = (UINT_PTR)mono_class_get_parent(klass);
+
+	WriteQword(parent);
+}
+void CPipeServer::GetStaticFieldAddressFromClass(void)
+{
+	void *domain = (void *)ReadQword();
+	void *klass = (void *)ReadQword();
+	void *vtable = mono_class_vtable(domain, klass);
+	if (vtable)
+	{
+		void *staticdata=mono_vtable_get_static_field_data(vtable);
+		WriteQword((UINT_PTR)staticdata);
+	}
+	else
+		WriteQword(0);
+}
+
 
 void CPipeServer::Start(void)
 {
@@ -623,7 +709,7 @@ void CPipeServer::Start(void)
 						break;
 
 					case MONOCMD_GETCLASSNAME:
-						GetClassName();
+						GetKlassName();
 						break;
 
 					case MONOCMD_GETCLASSNAMESPACE:
@@ -639,6 +725,18 @@ void CPipeServer::Start(void)
 
 					case MONOCMD_DISASSEMBLE:
 						DisassembleMethod();
+						break;
+
+					case MONOCMD_GETMETHODSIGNATURE:
+						GetMethodSignature();
+						break;
+
+					case MONOCMD_GETPARENTCLASS:
+						GetParentClass();
+						break;
+
+					case MONOCMD_GETSTATICFIELDADDRESSFROMCLASS:
+						GetStaticFieldAddressFromClass();
 						break;
 				}
 			}			

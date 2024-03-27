@@ -9,7 +9,7 @@ uses
   windows, Classes, LCLProc, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, math,
   StdCtrls, ComCtrls, Menus, lmessages, scrolltreeview, byteinterpreter, symbolhandler, cefuncproc,
   newkernelhandler, frmSelectionlistunit, frmStructuresConfigUnit, registry, Valuechange, DOM,
-  XMLRead, XMLWrite, Clipbrd, CustomTypeHandler, strutils, fgl, dotnetpipe, DotNetTypes;
+  XMLRead, XMLWrite, Clipbrd, CustomTypeHandler, strutils, fgl, dotnetpipe, DotNetTypes, commonTypeDefs;
 
 
 
@@ -534,7 +534,7 @@ implementation
 
 uses MainUnit, mainunit2, frmStructures2ElementInfoUnit, MemoryBrowserFormUnit,
   frmStructureLinkerUnit, frmgroupscanalgoritmgeneratorunit, frmStringPointerScanUnit,
-  ProcessHandlerUnit;
+  ProcessHandlerUnit, Parsers;
 
 resourcestring
   rsAddressValue = 'Address: Value';

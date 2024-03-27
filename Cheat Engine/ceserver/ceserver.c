@@ -248,6 +248,8 @@ int DispatchCommand(int currentsocket, unsigned char command)
     {
       CeSetBreapointInput sb;
 
+      printf("CMD_SETBREAKPOINT. sizeof(sb)=%d\n", sizeof(sb));
+
       if (recvall(currentsocket, &sb, sizeof(sb), MSG_WAITALL)>0)
       {
         int r;
@@ -417,6 +419,8 @@ int DispatchCommand(int currentsocket, unsigned char command)
           r->modulebase=me.baseAddress;
           r->modulesize=me.moduleSize;
           r->modulenamesize=strlen(me.moduleName);
+
+//          printf("Sending %s size %x\n", me.moduleName, r->modulesize);
 
           memcpy((char *)r+sizeof(CeModuleEntry), me.moduleName, r->modulenamesize);
         }
@@ -677,6 +681,34 @@ int DispatchCommand(int currentsocket, unsigned char command)
 
     }
 
+    case CMD_VIRTUALQUERYEXFULL:
+    {
+      CeVirtualQueryExFullInput c;
+      CeVirtualQueryExFullOutput o;
+
+      r=recvall(currentsocket, &c, sizeof(c), MSG_WAITALL);
+      if (r>0)
+      {
+        RegionInfo *rinfo=NULL;
+        uint32_t count=0;
+        if (VirtualQueryExFull(c.handle, c.flags, &rinfo, &count))
+        {
+          int i;
+
+          sendall(currentsocket, &count, sizeof(count),0);
+
+          for (i=0; i<count; i++)
+            sendall(currentsocket, &rinfo[i], sizeof(RegionInfo),0);
+
+          if (rinfo)
+            free(rinfo);
+        }
+      }
+
+      break;
+    }
+
+
     case CMD_VIRTUALQUERYEX:
     {
       CeVirtualQueryExInput c;
@@ -705,6 +737,7 @@ int DispatchCommand(int currentsocket, unsigned char command)
         o.result=VirtualQueryEx(c.handle, (void *)(uintptr_t)c.baseaddress, &rinfo);
         o.protection=rinfo.protection;
         o.baseaddress=rinfo.baseaddress;
+        o.type=rinfo.type;
         o.size=rinfo.size;
 
         sendall(currentsocket, &o, sizeof(o), 0);
@@ -1066,6 +1099,9 @@ void *IdentifierThread(void *arg)
   struct sockaddr_in addr, addr_client;
 
   printf("IdentifierThread active\n");
+
+  fflush(stdout);
+
   s=socket(PF_INET, SOCK_DGRAM, 0);
   i=setsockopt(s, SOL_SOCKET, SO_BROADCAST, &v, sizeof(v));
 
@@ -1103,12 +1139,16 @@ void *IdentifierThread(void *arg)
 
 //        packet.checksum=00AE98E7 - y=8C7F09E2
 
+        fflush(stdout);
+
 
         i=sendto(s, &packet, sizeof(packet), 0, (struct sockaddr *)&addr_client, clisize);
         printf("sendto returned %d\n",i);
       }
       else
     	  printf("recvfrom failed\n");
+
+      fflush(stdout);
     }
 
 
@@ -1183,9 +1223,16 @@ int main(int argc, char *argv[])
 
     if (argc>2)
     {
+      printf("argv[0]=%s\n", argv[0]);
+      printf("argv[1]=%s\n", argv[1]);
       if (strcmp(argv[1], "TEST")==0)
+      {
+        printf("TESTMODE\n");
         pthread_create(&pth, NULL, (void *)CESERVERTEST, argv);
+      }
     }
+
+    fflush(stdout);
 
     while (done==0)
     {
@@ -1193,6 +1240,8 @@ int main(int argc, char *argv[])
       a=accept(s, (struct sockaddr *)&addr_client, &clisize);
 
       printf("accept=%d\n", a);
+
+      fflush(stdout);
 
 
       setsockopt(a, IPPROTO_TCP, TCP_NODELAY, &b, sizeof(b));

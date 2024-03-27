@@ -15,6 +15,8 @@ interface
 uses windows, LCLIntf, dialogs, SysUtils, classes, ComCtrls, CEFuncProc, NewKernelHandler,
      symbolhandler, math,bigmemallochandler, maps;
 
+const scandataversion=1;
+
 type
   PStaticData=^TStaticData;
   TStaticData=record
@@ -94,6 +96,7 @@ type
     stacksize: integer;
 
     stacklist: array of ptruint;
+
     function BinSearchMemRegions(address: ptrUint): integer;
     function isModulePointer(address: ptrUint): boolean;
     function ispointer(address: ptrUint): boolean;
@@ -112,6 +115,9 @@ type
 
     procedure fillList(addresslist: PReversePointerListArray; level: integer; var prev: PPointerList);
     procedure fillLinkedList;
+
+    procedure LoadModuleList(s: TStream);
+    function  LoadHeader(s: TStream): qword;
   public
     count: qword;
 
@@ -119,19 +125,23 @@ type
     modulelist: tstringlist;
 
 
+    function is64bit: boolean;
     procedure exportToStream(s: TStream; pb: TProgressbar=nil);
 
     procedure saveModuleListToResults(s: TStream);
 
     function findPointerValue(startvalue: ptrUint; var stopvalue: ptrUint): PPointerList;
-    constructor create(start, stop: ptrUint; alligned: boolean; progressbar: tprogressbar; noreadonly: boolean; mustbeclasspointers, allowNonModulePointers: boolean; useStacks: boolean; stacksAsStaticOnly: boolean; threadstacks: integer; stacksize: integer; specificBaseAsStaticOnly: boolean; baseStart: ptruint; baseStop: ptruint);
+    constructor create(start, stop: ptrUint; alligned: boolean; progressbar: tprogressbar; noreadonly: boolean; mustbeclasspointers, allowNonModulePointers: boolean; useStacks: boolean; stacksAsStaticOnly: boolean; threadstacks: integer; stacksize: integer; specificBaseAsStaticOnly: boolean; baseStart: ptruint; baseStop: ptruint; includeSystemModules: boolean=false);
     constructor createFromStream(s: TStream; progressbar: tprogressbar=nil);
+    constructor createFromStreamHeaderOnly(s: TStream);
     destructor destroy; override;
+
+    property CanHaveStatic: boolean read specificBaseAsStaticOnly;
   end;
 
 implementation
 
-uses ProcessHandlerUnit;
+uses ProcessHandlerUnit, globals;
 
 resourcestring
   rsPointerValueSetupError = 'Pointer value setup error';
@@ -642,6 +652,8 @@ begin
 
   if bigalloc<>nil then
     bigalloc.free;
+
+  inherited destroy;
 end;
 
 
@@ -693,11 +705,24 @@ var i,c: integer;
   pv: PPointerList;
   lastupdate: qword;
 begin
+  s.WriteByte($ce);
+  s.WriteByte(ScanDataVersion);
+
 
   saveModuleListToResults(s); //save the module list (not important for worker threads/systems, but used for saving the main .ptr file)
 
-  s.WriteDWord(maxlevel);
+  if specificBaseAsStaticOnly then
+  begin
+    s.WriteByte(1);
+    s.WriteQWord(basestart);
+    s.WriteQWord(basestop);
+  end
+  else
+  begin
+    s.WriteByte(0);
+  end;
 
+  s.WriteDWord(maxlevel);
   s.WriteQWord(count);
 
   lastupdate:=GetTickCount64;
@@ -749,6 +774,67 @@ begin
 
 end;
 
+procedure TReversePointerListHandler.LoadModuleList(s: TStream);
+var
+  i: integer;
+  x: integer;
+  mname: pchar;
+  mbase: qword;
+  mlistlength: integer;
+begin
+  modulelist:=TStringList.create;
+  mlistlength:=s.ReadDWord;
+  for i:=0 to mlistlength-1 do
+  begin
+    x:=s.ReadDWord;
+    getmem(mname, x+1);
+    s.ReadBuffer(mname^, x);
+    mname[x]:=#0;
+    mbase:=s.ReadQWord;
+
+    modulelist.AddObject(mname, tobject(mbase));
+    freemem(mname);
+  end;
+end;
+
+function TReversePointerListHandler.LoadHeader(s: TStream) : qword;
+begin
+  //check the header
+  if s.ReadByte<>$ce then
+    raise exception.create('Invalid scandata file');
+
+  if s.Readbyte<>ScanDataVersion then
+    raise exception.create('Invalid scandata version');
+
+
+  //first read the modulelist. Not used for the scan itself, but needed when saving as the base maintainer
+
+
+  LoadModuleList(s);
+
+  specificBaseAsStaticOnly:=s.ReadByte=1;
+  if specificBaseAsStaticOnly then
+  begin
+    basestart:=s.ReadQWord;
+    basestop:=s.ReadQWord;
+  end;
+
+
+  maxlevel:=s.ReadDWord;
+  result:=s.ReadQWord;
+end;
+
+function TReversePointerListHandler.is64bit: boolean;
+begin
+  result:=maxlevel=15;
+end;
+
+constructor TReversePointerListHandler.createFromStreamHeaderOnly(s: TStream);
+begin
+  //only loads the header part
+  LoadHeader(s);
+end;
+
 constructor TReversePointerListHandler.createFromStream(s: Tstream; progressbar: tprogressbar=nil);
 var
   i: integer;
@@ -756,20 +842,20 @@ var
   plist: PPointerList;
   address: ptruint;
 
-  mlistlength: integer;
+ // mlistlength: integer;
 
-  x: integer;
-  mname: pchar;
-  totalcount: qword;
-
+  //x: integer;
+  //mname: pchar;
   lastcountupdate: qword;
 
-  mbase: qword;
+  //mbase: qword;
   pvalue: qword;
+  totalcount: qword;
 begin
   OutputDebugString('TReversePointerListHandler.createFromStream');
 
-  //first read the modulelist. Not used for the scan itself, but needed when saving as the base maintainer
+  totalcount:=LoadHeader(s);
+
   bigalloc:=TBigMemoryAllocHandler.create;
 
   if progressbar<>nil then
@@ -779,25 +865,7 @@ begin
     progressbar.max:=100;
   end;
 
-
-  modulelist:=TStringList.create;
-  mlistlength:=s.ReadDWord;
-  for i:=0 to mlistlength-1 do
-  begin
-    x:=s.ReadDWord;
-    getmem(mname, x);
-    s.ReadBuffer(mname^, x);
-    mname[x]:=#0;
-    mbase:=s.ReadQWord;
-
-    modulelist.AddObject(mname, tobject(mbase));
-    freemem(mname);
-  end;
-
-  maxlevel:=s.ReadDWord;
-  totalcount:=s.ReadQWord;
-
-  getmem(level0list, sizeof(TReversePointerListArray));
+  level0list:=bigalloc.alloc(sizeof(TReversePointerListArray));
   ZeroMemory(level0list, sizeof(TReversePointerListArray));
 
   count:=0;
@@ -806,10 +874,6 @@ begin
   while (count<totalcount) do
   begin
     pvalue:=s.ReadQWord;
-    if pvalue=$08EAE5F4-$34 then
-    begin
-      beep;
-    end;
     plist:=findoraddpointervalue(pvalue);
 
 
@@ -819,14 +883,14 @@ begin
       numberofpointers:=s.ReadDWord;
 
       plist.pos:=numberofpointers;
-      getmem(plist.list, numberofpointers*sizeof(TPointerDataArray));
+      plist.list:=bigalloc.alloc(numberofpointers*sizeof(TPointerDataArray));
 
       for i:=0 to numberofpointers-1 do
       begin
         plist.list[i].address:=s.ReadQWord;
         if s.ReadByte=1 then //has staticdata
         begin
-          getmem(plist.list[i].staticdata, sizeof(TStaticData));
+          plist.list[i].staticdata:=bigalloc.alloc(sizeof(TStaticData));
           plist.list[i].staticdata.moduleindex:=s.ReadDWord;
           plist.list[i].staticdata.offset:=s.readDword;
         end
@@ -849,7 +913,7 @@ begin
 
 end;
 
-constructor TReversePointerListHandler.create(start, stop: ptrUint; alligned: boolean; progressbar: tprogressbar; noreadonly: boolean; mustbeclasspointers, allowNonModulePointers: boolean; useStacks: boolean; stacksAsStaticOnly: boolean; threadstacks: integer; stacksize: integer; specificBaseAsStaticOnly: boolean; baseStart: ptruint; baseStop: ptruint);
+constructor TReversePointerListHandler.create(start, stop: ptrUint; alligned: boolean; progressbar: tprogressbar; noreadonly: boolean; mustbeclasspointers, allowNonModulePointers: boolean; useStacks: boolean; stacksAsStaticOnly: boolean; threadstacks: integer; stacksize: integer; specificBaseAsStaticOnly: boolean; baseStart: ptruint; baseStop: ptruint; includeSystemModules: boolean=false);
 var bytepointer: PByte;
     dwordpointer: PDword absolute bytepointer;
     qwordpointer: PQword absolute bytepointer;
@@ -939,7 +1003,7 @@ begin
 
     while (Virtualqueryex(processhandle,pointer(address),mbi,sizeof(mbi))<>0) and (address<stop) and ((address+mbi.RegionSize)>address) do
     begin
-      if (not symhandler.inSystemModule(ptrUint(mbi.baseAddress))) and (not (not scan_mem_private and (mbi._type=mem_private))) and (not (not scan_mem_image and (mbi._type=mem_image))) and (not (not scan_mem_mapped and ((mbi._type and mem_mapped)>0))) and (mbi.State=mem_commit) and ((mbi.Protect and page_guard)=0) and ((mbi.protect and page_noaccess)=0) then  //look if it is commited
+      if (includeSystemModules or (not symhandler.inSystemModule(ptrUint(mbi.baseAddress))) ) and (not (not scan_mem_private and (mbi._type=mem_private))) and (not (not scan_mem_image and (mbi._type=mem_image))) and (not (not scan_mem_mapped and ((mbi._type and mem_mapped)>0))) and (mbi.State=mem_commit) and ((mbi.Protect and page_guard)=0) and ((mbi.protect and page_noaccess)=0) then  //look if it is commited
       begin
         if (Skip_PAGE_NOCACHE and ((mbi.AllocationProtect and PAGE_NOCACHE)=PAGE_NOCACHE)) or
            (noreadonly and (mbi.protect in [PAGE_READONLY, PAGE_EXECUTE, PAGE_EXECUTE_READ]))  then
@@ -1265,7 +1329,7 @@ begin
       progressbar.Position:=0;
 
     finally
-      OutputDebugString('Freeing the buffer');
+      //OutputDebugString('Freeing the buffer');
       if buffer<>nil then
         freemem(buffer);
 
@@ -1277,7 +1341,7 @@ begin
 
     end;
 
-    OutputDebugString('TReversePointerListHandler.create: Finished without an exception');
+    //OutputDebugString('TReversePointerListHandler.create: Finished without an exception');
 
   except
     on e: exception do

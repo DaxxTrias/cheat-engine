@@ -9,7 +9,7 @@ interface
 
 uses
   Classes, SysUtils, sockets, resolve, syncobjs, math, winsock2, CELazySocket,
-  PointerscanNetworkCommands;
+  PointerscanNetworkCommands, NewKernelHandler;
 
 
 type
@@ -165,6 +165,8 @@ var
   ss: TSocketStream;
   result: byte;
 
+
+  wait: boolean;
 begin
   i:=0;
   while not terminated do
@@ -176,12 +178,16 @@ begin
 
     try
 
+      wait:=false;
       listcs.enter;
 
       //check the list
       try
         if i>=list.count  then //start from the beginning
+        begin
+          wait:=true; //end of the list, wait a bit to prevent hammering
           i:=0;
+        end;
 
         if i<list.count then
           entry:=list[i];
@@ -189,6 +195,11 @@ begin
       finally
         listcs.leave;
       end;
+
+
+      if wait then sleep(1000);
+
+      if terminated then exit;
 
       if entry<>nil then
       begin
@@ -264,9 +275,8 @@ begin
           end;
         end;
 
-      end
-      else //empty list
-        sleep(10000);
+      end;
+
 
     except
       on e: exception do
@@ -274,12 +284,12 @@ begin
         if sockethandle<>INVALID_SOCKET then
           closesocket(sockethandle);
 
+        OutputDebugString('Error while connecting: '+e.message);
         log(e.message);
         sleep(1000);
       end;
     end;
     inc(i);
-
   end;
 end;
 

@@ -30,6 +30,7 @@ type
     procedure ListView1Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure Delete1Click(Sender: TObject);
+    procedure ListView1DblClick(Sender: TObject);
     procedure MenuItem1Click(Sender: TObject);
   private
     { Private declarations }
@@ -44,6 +45,8 @@ var
   frmSymbolhandler: TfrmSymbolhandler;
 
 implementation
+
+uses MemoryBrowserFormUnit;
 
 resourcestring
   rsAreYouSureYouWantToRemoveThisSymbolFromTheList = 'Are you sure you want to remove this symbol from the list?';
@@ -122,7 +125,11 @@ begin
     li:=listview1.Items[listview1.itemindex];
 
     edtSymbolname.Text:=li.Caption;
-    edtAddress.text:=li.SubItems[0];
+    if li.SubItems.Count>0 then
+      edtAddress.text:=li.SubItems[0]
+    else
+      edtAddress.text:='';
+
   end;
 end;
 
@@ -141,6 +148,13 @@ begin
       listview1.Items[listview1.ItemIndex].Delete;
     end;
   end;
+end;
+
+procedure TfrmSymbolhandler.ListView1DblClick(Sender: TObject);
+begin
+  //go to the selected address
+  if listview1.ItemIndex<>-1 then
+    MemoryBrowser.disassemblerview.TopAddress:=symhandler.GetUserdefinedSymbolByName(listview1.Items[listview1.ItemIndex].Caption);
 end;
 
 procedure TfrmSymbolhandler.MenuItem1Click(Sender: TObject);

@@ -4,10 +4,19 @@ unit MemoryRecordUnit;
 
 interface
 
+{$ifdef windows}
 uses
   Windows, forms, graphics, Classes, SysUtils, controls, stdctrls, comctrls,symbolhandler,
   cefuncproc,newkernelhandler, autoassembler, hotkeyhandler, dom, XMLRead,XMLWrite,
-  customtypehandler, fileutil, LCLProc;
+  customtypehandler, fileutil, LCLProc, commonTypeDefs, pointerparser;
+{$endif}
+
+{$ifdef unix}
+//only used as a class to store entries and freeze/setvalue. It won't have a link with the addresslist and does not decide it's position
+uses
+  unixporthelper, Classes, sysutils, symbolhandler, NewKernelHandler, DOM,
+  XMLRead, XMLWrite, CustomTypeHandler, FileUtil, commonTypeDefs, math, pointerparser;
+{$endif}
 
 type TMemrecHotkeyAction=(mrhToggleActivation, mrhToggleActivationAllowIncrease, mrhToggleActivationAllowDecrease, mrhActivate, mrhDeactivate, mrhSetValue, mrhIncreaseValue, mrhDecreaseValue);
 
@@ -100,6 +109,8 @@ type
     fDropDownDescriptionOnly: boolean;
     fDisplayAsDropDownListItem: boolean;
 
+    fDontSave: boolean;
+
     fonactivate, fondeactivate: TMemoryRecordActivateEvent;
     fOnDestroy: TNotifyEvent;
     function getByteSize: integer;
@@ -149,17 +160,16 @@ type
     Extra: TMemRecExtraData;
     AutoAssemblerData: TMemRecAutoAssemblerData;
 
-
-
+    {$ifndef unix}
     treenode: TTreenode;
+    autoAssembleWindow: TForm; //window storage for an auto assembler editor window
+    {$endif}
 
     isSelected: boolean; //lazarus bypass. Because lazarus does not implement multiselect I have to keep track of which entries are selected
 
     //showAsHex: boolean;
 
     //free for editing by user:
-    autoAssembleWindow: TForm; //window storage for an auto assembler editor window
-
     function hasSelectedParent: boolean;
     function hasParent: boolean;
 
@@ -188,10 +198,12 @@ type
     property bytesize: integer read getByteSize;
 
     function hasHotkeys: boolean;
+
     function Addhotkey(keys: tkeycombo; action: TMemrecHotkeyAction; value, description: string): TMemoryRecordHotkey;
     function removeHotkey(hk: TMemoryRecordHotkey): boolean;
 
     procedure DoHotkey(hk :TMemoryRecordHotkey); //execute the specific hotkey action
+
 
     procedure disablewithoutexecute;
     procedure refresh;
@@ -229,6 +241,7 @@ type
     property CustomTypeName: string read fCustomTypeName write setCustomTypeName;
     property Value: string read GetValue write SetValue;
     property DisplayValue: string read GetDisplayValue;
+    property DontSave: boolean read fDontSave write fDontSave;
     property AllowDecrease: boolean read fallowDecrease write setAllowDecrease;
     property AllowIncrease: boolean read fallowIncrease write setAllowIncrease;
     property ShowAsHex: boolean read fShowAsHex write setShowAsHex;
@@ -277,7 +290,15 @@ function TextToMemRecHotkeyAction(text: string): TMemrecHotkeyAction;
 
 implementation
 
-uses mainunit, addresslist, formsettingsunit, LuaHandler, lua, lauxlib, lualib, processhandlerunit;
+{$ifdef windows}
+uses mainunit, addresslist, formsettingsunit, LuaHandler, lua, lauxlib, lualib,
+  processhandlerunit, Parsers;
+{$endif}
+
+{$ifdef unix}
+uses processhandlerunit, Parsers;
+{$endif}
+
 
 {-----------------------------TMemoryRecordHotkey------------------------------}
 constructor TMemoryRecordHotkey.create(AnOwner: TMemoryRecord);
@@ -288,13 +309,17 @@ begin
   fowner.hotkeylist.Add(self);
 
   keys[0]:=0;
-
+{$ifdef windows}
   RegisterHotKey2(mainform.handle, 0, keys, self);
+{$endif}
+
 end;
 
 destructor TMemoryRecordHotkey.destroy;
 begin
+{$ifdef windows}
   UnregisterAddressHotkey(self);
+{$endif}
 
   //remove this hotkey from the memoryrecord
   if owner<>nil then
@@ -349,15 +374,20 @@ end;
 function TMemoryRecord.getChildCount: integer;
 begin
   result:=0;
+  {$ifndef unix}
   if treenode<>nil then
     result:=treenode.Count;
+  {$endif}
 end;
 
 function TMemoryRecord.getChild(index: integer): TMemoryRecord;
 begin
+
+  {$IFNDEF UNIX}
   if index<Count then
     result:=TMemoryRecord(treenode.Items[index].Data)
   else
+  {$ENDIF}
     result:=nil;
 end;
 
@@ -413,12 +443,14 @@ begin
     autoassemblerdata.registeredsymbols.free;
 
   //free the group's children
+  {$IFNDEF UNIX}
   while (treenode.count>0) do
     TMemoryRecord(treenode[0].data).free;
 
 
   if treenode<>nil then
     treenode.free;
+  {$ENDIF}
 
   if fDropDownList<>nil then
     freeandnil(fDropDownList);
@@ -432,10 +464,12 @@ end;
 procedure TMemoryRecord.SetVisibleChildrenState;
 {Called when options change and when children are assigned}
 begin
+  {$IFNDEF UNIX}
   if (not factive) and (moHideChildren in foptions) then
     treenode.Collapse(true)
   else
     treenode.Expand(true);
+  {$ENDIF}
 end;
 
 procedure TMemoryRecord.setOptions(newOptions: TMemrecOptions);
@@ -491,7 +525,10 @@ end;
 procedure TMemoryRecord.setColor(c: TColor);
 begin
   fColor:=c;
+  {$IFNDEF UNIX}
   TAddresslist(fOwner).Update;
+  {$ENDIF}
+
 end;
 
 procedure TMemoryRecord.setXMLnode(CheatEntry: TDOMNode);
@@ -505,6 +542,7 @@ var
   memrec: TMemoryRecord;
   a:TDOMNode;
 begin
+  {$IFNDEF UNIX}
   if TDOMElement(CheatEntry).TagName<>'CheatEntry' then exit; //invalid node type
 
   tempnode:=Cheatentry.FindNode('ID');
@@ -609,6 +647,7 @@ begin
 
       memrec.treenode:=treenode.owner.AddObject(nil,'',memrec);
       memrec.treenode.MoveTo(treenode, naAddChild); //make it the last child of this node
+
 
       //fill the entry with the node info
       memrec.setXMLnode(currentEntry);
@@ -781,29 +820,39 @@ begin
 
 
   SetVisibleChildrenState;
+  {$ENDIF}
 
 
 end;
 
 function TMemoryRecord.getParent: TMemoryRecord;
+{$IFNDEF UNIX}
 var tn: TTreenode;
+{$ENDIF}
 begin
+  {$IFNDEF UNIX}
   result:=nil;
   tn:=treenode.parent;
   if tn<>nil then
     result:=TMemoryRecord(tn.data);
+  {$ENDIF}
 end;
 
 function TMemoryRecord.hasParent: boolean;
 begin
+  {$IFNDEF UNIX}
   result:=treenode.parent<>nil;
+  {$ENDIF}
 end;
 
 function TMemoryRecord.hasSelectedParent: boolean;
+{$IFNDEF UNIX}
 var tn: TTreenode;
   m: TMemoryRecord;
+{$ENDIF}
 begin
   //if this node has a direct parent that is selected it returns true, else it will ask the parent if that one has a selected parent etc... untill there is no more parent, or one is selected
+  {$IFNDEF UNIX}
   result:=false;
   tn:=treenode.Parent;
   if tn<>nil then
@@ -814,9 +863,11 @@ begin
     else
       result:=m.hasSelectedParent;
   end;
+  {$ENDIF}
 end;
 
 procedure TMemoryRecord.getXMLNode(node: TDOMNode; selectedOnly: boolean);
+{$IFNDEF UNIX}
 var
   doc: TDOMDocument;
   cheatEntry: TDOMNode;
@@ -833,14 +884,18 @@ var
   s: ansistring;
 
   ddl: TDOMNode;
+{$ENDIF}
 begin
-  if selectedonly then
+  {$IFNDEF UNIX}
+ if selectedonly then
   begin
     if (not isselected) then exit; //don't add if not selected and only the selected items should be added
 
     //it is selected, check if it has a parent that is selected, if not, continue, else exit
     if hasSelectedParent then exit;
-  end;
+  end
+  else
+    if fDontSave then exit; //don't save this and it's children if it's not a selection copy (and if it is a selection, don't copy the fDontSave)
 
 
   doc:=node.OwnerDocument;
@@ -1065,11 +1120,12 @@ begin
 
 
   node.AppendChild(cheatEntry);
+ {$ENDIF}
 end;
 
 procedure TMemoryRecord.refresh;
 begin
-  treenode.Update;
+{$IFNDEF UNIX}   treenode.Update;   {$ENDIF}
 end;
 
 
@@ -1082,10 +1138,14 @@ end;
 
 function TMemoryRecord.GetShowAsSigned: boolean;
 begin
+  {$IFNDEF UNIX}
   if fShowAsSignedOverride then
     result:=fShowAsSigned
   else
     result:=formSettings.cbShowAsSigned.checked;
+  {$ELSE}
+    result:=false;
+  {$ENDIF}
 end;
 
 function TMemoryRecord.isBeingEdited: boolean;
@@ -1127,13 +1187,18 @@ end;
 
 function TMemoryRecord.getIndex: integer;
 begin
+  {$IFNDEF UNIX}
   result:=treenode.AbsoluteIndex;
+  {$ENDIF}
 end;
 
 procedure TMemoryRecord.setID(i: integer);
+{$IFNDEF UNIX}
 var a: TAddresslist;
+{$ENDIF}
 
 begin
+  {$IFNDEF UNIX}
   if i<>fid then
   begin
     //new id, check fo duplicates (e.g copy/paste)
@@ -1144,6 +1209,7 @@ begin
     else
       fid:=i;
   end;
+  {$ENDIF}
 end;
 
 function TMemoryRecord.getuniquehotkeyid: integer;
@@ -1252,9 +1318,11 @@ end;
 
 procedure TMemoryRecord.disablewithoutexecute;
 begin
+  {$IFNDEF UNIX}
   factive:=false;
   SetVisibleChildrenState;
   treenode.Update;
+  {$ENDIF}
 end;
 
 procedure TMemoryRecord.DoHotkey(hk: TMemoryRecordhotkey);
@@ -1291,7 +1359,9 @@ begin
     end;
   end;
 
+  {$IFNDEF UNIX}
   treenode.update;
+  {$ENDIF}
 end;
 
 procedure TMemoryRecord.setAllowDecrease(state: boolean);
@@ -1300,7 +1370,9 @@ begin
   if state then
     fAllowIncrease:=false; //at least one of the 2 must always be false
 
+  {$IFNDEF UNIX}
   treenode.update;
+  {$ENDIF}
 end;
 
 procedure TMemoryRecord.setAllowIncrease(state: boolean);
@@ -1309,7 +1381,9 @@ begin
   if state then
     fAllowDecrease:=false; //at least one of the 2 must always be false
 
+  {$IFNDEF UNIX}
   treenode.update;
+  {$ENDIF}
 end;
 
 procedure TMemoryRecord.setActive(state: boolean);
@@ -1319,10 +1393,13 @@ begin
   //6.0 compatibility
   if state=fActive then exit; //no need to execute this is it's the same state
 
+  outputdebugstring('setting active state with description:'+description+' to '+BoolToStr(state));
+  {$IFNDEF UNIX}
   if (state) then
     LUA_memrec_callback(self, '_memrec_'+description+'_activating')
   else
     LUA_memrec_callback(self, '_memrec_'+description+'_deactivating');
+  {$ENDIF}
 
   //6.1+
   if state then
@@ -1342,6 +1419,7 @@ begin
   begin
     if self.VarType = vtAutoAssembler then
     begin
+      {$IFNDEF UNIX}
       //aa script
       try
         if autoassemblerdata.registeredsymbols=nil then
@@ -1356,18 +1434,27 @@ begin
       except
         //running the script failed, state unchanged
       end;
+      {$ENDIF}
 
     end
     else
     begin
       //freeze/unfreeze
+
+
       if state then
       begin
+
         f:=GetValue;
 
+
         try
+
           SetValue(f);
+          OutputDebugString('SetValue returned');
+
         except
+
           fActive:=false;
           beep;
           exit;
@@ -1375,6 +1462,7 @@ begin
 
         //still here so F is ok
         //enabled
+
         FrozenValue:=f;
       end;
 
@@ -1390,6 +1478,7 @@ begin
     allowDecrease:=false;
     allowIncrease:=false;
   end;
+  {$IFNDEF UNIX}
   treenode.update;
 
   if moBindActivation in options then
@@ -1405,9 +1494,12 @@ begin
     LUA_memrec_callback(self, '_memrec_'+description+'_activated')
   else
     LUA_memrec_callback(self, '_memrec_'+description+'_deactivated');
+  {$ENDIF}
 
 
   //6.1+
+
+
   if state then
   begin
     //activating , before
@@ -1421,15 +1513,21 @@ begin
   end;
 
 
+
+
   SetVisibleChildrenState;
+
+
 
 end;
 
 procedure TMemoryRecord.setVisible(state: boolean);
 begin
   fVisible:=state;
+  {$IFNDEF UNIX}
   if treenode<>nil then
     treenode.update;
+  {$ENDIF}
 end;
 
 procedure TMemoryRecord.setShowAsHex(state:boolean);
@@ -1463,8 +1561,10 @@ begin
   end;
 
   fShowAsHex:=state;
+  {$IFNDEF UNIX}
   if treenode<>nil then
     treenode.Update;
+  {$ENDIF}
 end;
 
 function TMemoryRecord.getByteSize: integer;
@@ -1843,6 +1943,7 @@ begin
   begin
     v:=trim(v);
 
+    {$IFNDEF UNIX}
     if (length(v)>2) and (v[1]='(') and (v[length(v)]=')') then
     begin
       //yes, it's a (description)
@@ -1854,12 +1955,14 @@ begin
         v:=mr.GetValue;
 
     end;
+    {$ENDIF}
   end;
 
   if (not isfreezer) then
     undovalue:=GetValue;
 
 
+  {$IFNDEF UNIX}
   if (not isfreezer) and (moRecursiveSetValue in options) then //do this for all it's children
   begin
     for i:=0 to treenode.Count-1 do
@@ -1871,18 +1974,20 @@ begin
       end;
     end;
   end;
+  {$ENDIF}
 
   //and now set it for myself
 
 
   realAddress:=GetRealAddress; //quick update
 
+
   currentValue:={utf8toansi}(v);
 
   if fShowAsHex and (not (vartype in [vtSingle, vtDouble, vtByteArray, vtString] )) then
   begin
     currentvalue:=trim(currentValue);
-    if length(currentvalue)>1 then
+    if length(currentvalue)>0 then
     begin
       if currentvalue[1]='-' then
       begin
@@ -1893,7 +1998,6 @@ begin
     end;
   end;
 
-
   bufsize:=getbytesize;
 
   if (vartype=vtbinary) and (bufsize=3) then bufsize:=4;
@@ -1903,12 +2007,16 @@ begin
 
 
 
+
   VirtualProtectEx(processhandle, pointer(realAddress), bufsize, PAGE_EXECUTE_READWRITE, originalprotection);
   try
+
+
     check:=ReadProcessMemory(processhandle, pointer(realAddress), buf, bufsize,x);
     if vartype in [vtBinary, vtByteArray] then //fill the buffer with the original byte
       if not check then exit;
 
+    {$IFNDEF UNIX}
     if (Vartype in [vtByte..vtDouble, vtCustom]) then
     begin
       //check if it's a bracket enclosed value [    ]
@@ -1927,6 +2035,7 @@ begin
         end;
       end;
     end;
+    {$ENDIF}
 
     case VarType of
       vtCustom:
@@ -2069,11 +2178,13 @@ begin
 
   finally
     VirtualProtectEx(processhandle, pointer(realAddress), bufsize, originalprotection, originalprotection);
+
   end;
 
   freemem(buf);
 
   frozenValue:=unparsedvalue;     //we got till the end, so update the frozen value
+
 end;
 
 function TMemoryRecord.getBaseAddress: ptrUint;

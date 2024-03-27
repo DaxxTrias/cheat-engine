@@ -66,7 +66,15 @@ end;   }
 
 interface
 
-uses windows, LCLIntf,classes,sysutils,syncobjs, CEFuncProc, CustomTypeHandler;
+{$ifdef windows}
+uses windows, LCLIntf,classes,sysutils,syncobjs, CEFuncProc, CustomTypeHandler, commonTypeDefs;
+
+{$define customtypeimplemented}
+
+{$else}
+uses Classes,sysutils,syncobjs,unixporthelper, CustomTypeHandler, commonTypeDefs;
+
+{$endif}
 
 type TSavedScantype= (fs_advanced,fs_addresslist);
 //type TValueType= (vt_byte,vt_word, vt_dword, vt_single, vt_double, vt_int64, vt_all);     //todo: Make compatible with the rest of ce's vartype
@@ -214,11 +222,15 @@ begin
     vtall:
     begin
       varsize:=8;
+      {$ifdef customtypeimplemented}
       if AllIncludesCustomType then
         varsize:=max(varsize, MaxCustomTypeSize);
+      {$endif}
     end;
 
+    {$ifdef customtypeimplemented}
     vtcustom: varsize:= ct.bytesize;
+    {$endif}
   end;
 
 
@@ -355,8 +367,10 @@ begin
         vtall:
         begin
           maxaddresslistcount:=8;
+          {$ifdef customtypeimplemented}
           if AllIncludesCustomType then
             maxaddresslistcount:=max(maxaddresslistcount, MaxCustomTypeSize);
+          {$endif}
 
           if maxaddresslistcount>20*4096 then
           begin
@@ -366,7 +380,10 @@ begin
           else
             maxaddresslistcount:=20*4096 div maxaddresslistcount;
 
-        end;
+        end
+        {$ifdef customtypeimplemented}
+        ;
+
 
         vtCustom:
         begin
@@ -380,6 +397,7 @@ begin
             maxaddresslistcount:=20*4096 div maxaddresslistcount;
 
         end
+        {$endif}
 
         else
           maxaddresslistcount:=1;
@@ -469,8 +487,9 @@ begin
             vtsingle: result:=@p4[pivot];
             vtdouble: result:=@p5[pivot];
             vtQword: result:=@p6[pivot];
+            {$ifdef customtypeimplemented}
             vtCustom: result:=@p1[pivot*ct.bytesize]
-
+            {$endif}
           end;
           LastAddressAccessed.address:=address;
           LastAddressAccessed.index:=pivot;
@@ -548,9 +567,11 @@ begin
         if address=pab[pivot].address then
         begin
           //found it
+          {$ifdef customtypeimplemented}
           if AllIncludesCustomType then
             result:=@p1[pivot*max(8, MaxCustomTypeSize)]
           else
+          {$endif}
             result:=@p6[pivot]; //8 byte entries, doesnt have to match the same type, since it is the same 8 byte value that's stored
 
           LastAddressAccessed.address:=address;
@@ -586,6 +607,7 @@ var datatype: string[6];
 
     maxregionsize: integer;
 begin
+  Log('TSavedScanHandler.InitializeScanHandler');
   cleanup;
   maxregionsize:=20*4096;
   try
@@ -643,6 +665,7 @@ begin
     on e: exception do
     begin
       //clean up and raise the exception
+      log('Error during TSavedScanHandler.InitializeScanHandler:'+e.Message);
       cleanup;
       raise exception.Create(e.Message);
     end;
@@ -651,6 +674,9 @@ end;
 
 constructor TSavedScanHandler.create(scandir: string; savedresultsname: string);
 begin
+  inherited Create;
+
+  Log('TSavedScanHandler.create('''+scandir+''','''+savedresultsname+'''');
   if savedresultsname='' then
     savedresultsname:='TMP';
 
@@ -680,8 +706,11 @@ begin
     addresslistmemory:=nil;
   end;
 
-  freeandnil(SavedScanaddressFS);
-  freeandnil(SavedScanmemoryFS);
+  if SavedScanaddressFS<>nil then
+    freeandnil(SavedScanaddressFS);
+
+  if SavedScanmemoryFS<>nil then
+    freeandnil(SavedScanmemoryFS);
 end;
 
 procedure TSavedScanHandler.deinitialize;

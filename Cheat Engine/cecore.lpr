@@ -5,52 +5,111 @@ library cecore;
 //This is only for support with the android version. 
 
 
-uses {$ifdef unix}cthreads,{$endif}classes, jni, networkInterfaceApi, NewKernelHandler, networkInterface, sysutils,
-  unixporthelper, ProcessHandlerUnit, elfsymbols, resolve, Sockets, ProcessList;
+uses cthreads, classes, jni, networkInterfaceApi, NewKernelHandler,
+  networkInterface, sysutils, unixporthelper, ProcessHandlerUnit, elfsymbols,
+  resolve, Sockets, ProcessList, memscan, Parsers, Globals, commonTypeDefs,
+  strutils, savedscanhandler, VirtualQueryExCache, foundlisthelper,
+  groupscancommandparser, CustomTypeHandler, SymbolListHandler, symbolhandler,
+  DotNetTypes, DotNetPipe, byteinterpreter, MemoryRecordUnit, jnitfoundlist,
+  jniTMemScan, jniTObject, jniSymbolHandler, jniByteInterpreter, pointerparser,
+  jniAddressList;
 
 
-type TTestThread=class(TThread)
+type TMainThread=class(TThread)
 public
   procedure execute; override;
 end;
+var
+  MainThread: TMainThread;
 
+
+  memscan: TMemScan;
+
+
+procedure TMainThread.execute;
+//this thread will be responsible for calling functions that wish to synchronize with 'something' that can access the gui
+begin
+
+  //curvm^.AttachCurrentThreadAsDaemon(curvm, @env, nil);
+  curvm^.AttachCurrentThread(curvm, @MainThreadEnv, nil);
+  MainThreadID:=GetCurrentThreadId;
+
+  while not terminated do
+    CheckSynchronize(1000);
+
+  curvm^.DetachCurrentThread(curvm);
+end;
+
+//-----
+type
+  TTestThread=class(TThread)
+  private
+    procedure runinmain;
+  public
+    procedure execute; override;
+  end;
+
+procedure TTestThread.runinmain;
+begin
+  log(IntToHex(GetThreadID,8)+':runinmain:This should be running from the main thread');
+end;
 
 procedure TTestThread.execute;
 begin
-  log('Alive');
-  sleep(1000);
-  log('Still alive');
-  sleep(1000);
-  log('And I''m still alive');
+
+  log(IntToHex(GetThreadID,8)+':This should run from a separate thread');
+  synchronize(runinmain);
+
+  log(IntToHex(GetThreadID,8)+':After runinmain');
 
   FreeOnTerminate:=true;
 end;
 
-procedure Java_org_cheatengine_jnitest_MainActivity_f1(PEnv: PJNIEnv; Obj: JObject); cdecl;
+procedure Java_org_cheatengine_cecore_f1(PEnv: PJNIEnv; Obj: JObject); cdecl;
 var i: integer;
-  t: TTestThread;
+
 begin
 //small test funtion
-  log('Java_org_cheatengine_jnitest_MainActivity_f1 called');
+  log('Java_org_cheatengine_jnitest_cecore_f1 called');
 
-  log('Creating thread');
-  t:=TTestThread.Create(false);
+  log('Creating test thread');
+  TTestThread.Create(false);
   log('Thread created');
+
+
 
 end;
 
-procedure CEConnect(PEnv: PJNIEnv; Obj: JObject); cdecl;
-var c: TCEConnection;
+function CEConnect(PEnv: PJNIEnv; Obj: JObject; hname: jstring; timeout: integer): jboolean; cdecl;
+var
+  c: TCEConnection;
+  hostname: string;
+
+  t: qword;
 begin
   log('CEConnect called');
-  host:=StrToNetAddr('127.0.0.1');
+
+  hostname:=jniGetString(PEnv, hname);
+  log('address='+hostname);
+
+  host:=StrToNetAddr(hostname);
   port:=ShortHostToNet(52736);
 
   log('Host='+inttohex(host.s_addr,1));
   log('Port='+inttohex(port,1));
 
-  c:=getConnection;
+  t:=GetTickCount64;
+  while GetTickCount64<t+timeout do
+  begin
+    c:=getConnection;
+    if c<>nil then break;
+  end;
   log('c='+inttohex(ptruint(c),1));
+
+  if c=nil then
+    result:=0
+  else
+    result:=1;
 end;
 
 function GetProcessList(PEnv: PJNIEnv; Obj: JObject):jobject; cdecl;
@@ -75,8 +134,6 @@ begin
       log('EXCEPTION:'+e.message);
   end;
 
-  log('pl.count='+inttostr(pl.Count));
-
   cl:=Penv^.FindClass(PEnv, 'java/util/ArrayList');
 
   initmethod:=Penv^.GetMethodID(penv, cl, '<init>', '()V');
@@ -97,74 +154,138 @@ begin
   result:=arraylist;
 end;
 
+procedure SetNetworkRPMCacheTimeout(PEnv: PJNIEnv; Obj: JObject; timeout: jfloat); cdecl;
+begin
+  if timeout>0 then
+    networkRPMCacheTimeout:=timeout
+  else
+    networkRPMCacheTimeout:=0;
+end;
+
 procedure SelectProcess(PEnv: PJNIEnv; Obj: JObject; pid: jint); cdecl;
 begin
   processhandler.processid:=pid;
   processhandler.processhandle:=OpenProcess(PROCESS_ALL_ACCESS, false, pid);
+  symhandler.reinitialize;
+
 end;
 
+
+function GetSelectedProcessID(PEnv: PJNIEnv; Obj: JObject): jint; cdecl;
+begin
+  result:=processhandler.processid;
+end;
+
+//creatememscan ?
+
+//test:
+procedure FirstScan(PEnv: PJNIEnv; Obj: JObject; value: jint); cdecl;
+begin
+  log('FirstScan');
+
+  if memscan=nil then
+    memscan:=TMemScan.create(nil)
+  else
+    memscan.newscan;
+
+  log('created memscan');
+  memscan.firstscan(soExactValue, vtDword, rtTruncated, inttostr(value), '',0,$ffffffff, false, false, false, false);
+
+end;
+
+procedure FetchSymbols(PEnv: PJNIEnv; Obj: JObject; state: jboolean); cdecl;
+begin
+  Globals.fetchSymbols:=state<>0;
+end;
+
+procedure SetTempPath(PEnv: PJNIEnv; Obj: JObject; path: jstring); cdecl;
+var
+  _path: string;
+begin
+  log('SetTempPath');
+  _path:=jniGetString(penv, path);
+  dontusetempdir:=true;
+  tempdiralternative:=_path;
+  tempdirOverride:=_path;
+end;
+
+const methodcount=7;
+
+  //experiment: make a memscan class in java and give it references to things like memscan_firstscan where the java class contains the memscan long
+
+var jnimethods: array [0..methodcount-1] of JNINativeMethod =(
+  (name: 'CEConnect'; signature: '(Ljava/lang/String;I)Z'; fnPtr: @CEConnect),
+  (name: 'GetProcessList'; signature: '()Ljava/util/ArrayList;'; fnPtr: @GetProcessList),
+  (name: 'SelectProcess'; signature: '(I)V'; fnPtr: @SelectProcess),
+  (name: 'GetSelectedProcessID'; signature: '()I'; fnPtr: @GetSelectedProcessID),
+
+  (name: 'FetchSymbols'; signature: '(Z)V'; fnPtr: @FetchSymbols),
+  (name: 'SetTempPath'; signature: '(Ljava/lang/String;)V'; fnPtr: @SetTempPath),
+  (name: 'SetNetworkRPMCacheTimeout'; signature: '(F)V'; fnPtr: @SetNetworkRPMCacheTimeout)
+
+);
 
 function JNI_OnLoad(vm: PJavaVM; reserved: pointer): jint; cdecl;
 var env: PJNIEnv;
   c: JClass;
-  m: array [0..2] of JNINativeMethod;
-  r: integer;
+  pname: string;
 begin
+  curVM:=vm;
+
   if (vm^.GetEnv(vm, @env, JNI_VERSION_1_6) <> JNI_OK) then
     result:=-1
   else
   begin
-    log('JNI_OnLoad');
-
     InitializeNetworkInterface;
 
-
-    log('env='+inttohex(ptruint(env),8));
-
-    c:=env^.FindClass(env, 'org/cheatengine/jnitest/MainActivity');
-    log('C='+inttohex(ptruint(c),1));
+    log('Creating main thread');
+    MainThread:=TMainThread.Create(false);
 
 
-    m[0].fnPtr:=@CEConnect;
-    m[0].name:='CEConnect';
-    m[0].signature:='()V';
+    c:=env^.FindClass(env, 'org/cheatengine/cecore');  //'org/cheatengine/jnitest/cecore';
+    env^.RegisterNatives(env, c, @jnimethods[0], methodcount);
+    env^.DeleteLocalRef(env, c);
 
-    m[1].fnPtr:=@GetProcessList;
-    m[1].name:='GetProcessList';
-    m[1].signature:='()Ljava/util/ArrayList;';
+    InitializeJniTObject(env);
+    InitializeJniTMemScan(env);
+    InitializeJniTFoundList(env);
+    InitializeJniSymbolHandler(env);
+    InitializeJniByteInterpreter(env);
+    InitializeJniAddressList(env);
 
-    m[2].fnPtr:=@SelectProcess;
-    m[2].name:='SelectProcess';
-    m[2].signature:='(I)V';
-
-    r:=env^.RegisterNatives(env, c, @m[0], 3);
-
-    log('after RegisterNatives. r='+inttostr(r));
-
-
-    c:=env^.FindClass(env, 'org/cheatengine/jnitest/ProcessPicker');
-    log('C='+inttohex(ptruint(c),1));
-
-    m[0].fnPtr:=@GetProcessList;
-    m[0].name:='GetProcessList';
-    m[0].signature:='()Ljava/util/ArrayList;';
-
-    m[1].fnPtr:=@SelectProcess;
-    m[1].name:='SelectProcess';
-    m[1].signature:='(I)V';
-
-    r:=env^.RegisterNatives(env, c, @m[0], 2);
-
-    log('after RegisterNatives. r='+inttostr(r));
 
     result:=JNI_VERSION_1_6;
   end;
 end;
 
+procedure JNI_OnUnload(vm:PJavaVM;reserved:pointer); cdecl;
+begin
+  //this doesn't seem to get called
+  Log('Goodbye');
+  if memscan<>nil then
+    freeandnil(memscan);
 
-exports Java_org_cheatengine_jnitest_MainActivity_f1;
+  if MainThread<>nil then
+  begin
+    MainThread.Terminate;
+    MainThread.WaitFor;
+    freeandnil(MainThread);
+  end;
+
+
+
+
+end;
+
+
+exports Java_org_cheatengine_cecore_f1;
 exports JNI_OnLoad;
+exports JNI_OnUnload;
 
 begin
+  Log('CECORE entry point executing');
+  Log('calling symhandlerInitialize');
+  symhandlerInitialize;
+  Log('Returned from symhandlerInitialize');
 
 end.

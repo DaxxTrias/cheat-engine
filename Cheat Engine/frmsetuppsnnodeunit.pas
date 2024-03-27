@@ -157,7 +157,7 @@ begin
         cbMaxFoundResults.Checked:=reg.ReadBool('StopScansAfterResultsFound');
 
       if reg.ValueExists('StopResultCount') then
-        edtMaxTimeToScan.text:=IntToStr(reg.ReadInteger('StopResultCount'));
+        edtMaxResultsToFind.text:=IntToStr(reg.ReadInteger('StopResultCount'));
 
 
       if reg.ValueExists('StopScansAfterTime') then
@@ -186,8 +186,11 @@ var reg: TRegistry;
 begin
   threadcount:=strtoint(edtThreadcount.text);
   listenport:=strtoint(edtPort.text);
+
   if cbConnectToOtherNode.checked then
-    connectport:=strtoint(edtConnectPort.text);
+    connectport:=strtoint(edtConnectPort.text)
+  else
+    TryStrToInt(edtConnectPort.text, connectport);
 
   if cbMaxFoundResults.checked then
     maxresultstofind:=strtoint(edtMaxResultsToFind.text)
@@ -195,7 +198,7 @@ begin
     maxresultstofind:=0;
 
   if cbMaxTimeToScan.checked then
-    maxtimetoscan:=strtoint(edtMaxTimeToScan.text)*1000
+    maxtimetoscan:=strtoint(edtMaxTimeToScan.text)
   else
     maxtimetoscan:=0;
 
@@ -228,7 +231,7 @@ begin
       reg.WriteInteger('DefaultConnectPort', connectport);
       reg.WriteString('DefaultConnectPassword', edtConnectPassword.text);
       reg.WriteBool('StopScansAfterResultsFound', cbMaxFoundResults.Checked);
-      reg.WriteInteger('StopResultCount', maxtimetoscan);
+      reg.WriteInteger('StopResultCount', maxresultstofind);
       reg.WriteBool('StopScansAfterTime', cbMaxTimeToScan.Checked);
       reg.WriteInteger('StopTime', maxtimetoscan);
       reg.WriteBool('AllowTempFiles', cbAllowTempFiles.checked);

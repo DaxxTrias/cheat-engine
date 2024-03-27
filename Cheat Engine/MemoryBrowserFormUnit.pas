@@ -13,7 +13,7 @@ uses
   NewKernelHandler, ComCtrls, LResources, byteinterpreter, StrUtils, hexviewunit,
   debughelper, debuggertypedefinitions,frmMemviewPreferencesUnit, registry,
   scrollboxex, disassemblercomments, multilineinputqueryunit, frmMemoryViewExUnit,
-  LastDisassembleData, ProcessHandlerUnit;
+  LastDisassembleData, ProcessHandlerUnit, commonTypeDefs;
 
 
 type
@@ -571,7 +571,7 @@ uses Valuechange,
   frmStringpointerscanUnit,
   frmFilePatcherUnit,
   frmUltimapUnit,
-  frmAssemblyScanUnit;
+  frmAssemblyScanUnit, Parsers;
 
 
 resourcestring
@@ -2364,7 +2364,8 @@ begin
         6408..6415: regname:='R'+inttostr(i-6400);
       end;
 
-      input:=copy(labeltext,pos(' ',labeltext)+1,length(labeltext));
+
+      input:=copy(labeltext,rpos(' ',labeltext)+1,length(labeltext));
       if (i<20) or (i>6400) then
       begin
         if not inputquery(rsChangeRegister, Format(rsWhatIsTheNewValueOf, [regname]), input) then exit;

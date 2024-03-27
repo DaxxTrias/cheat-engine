@@ -6,7 +6,7 @@ interface
 
 uses
   LCLIntf, Messages, SysUtils, Classes, Graphics, Controls, Forms,
-  Dialogs, StdCtrls,CEFuncProc,ComCtrls, ExtCtrls, LResources, memscan;
+  Dialogs, StdCtrls,CEFuncProc,ComCtrls, ExtCtrls, LResources, memscan, commonTypeDefs;
 
 const wm_fw_scandone=wm_user+1;
 type
@@ -47,7 +47,7 @@ var
 
 implementation
 
-uses MemoryBrowserFormUnit, ProcessHandlerUnit;
+uses MemoryBrowserFormUnit, ProcessHandlerUnit, Parsers;
 
 resourcestring
   rsNothingFound = 'Nothing found';

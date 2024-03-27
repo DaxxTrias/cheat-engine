@@ -8,7 +8,7 @@ Just some functions to make sockets easier
 interface
 
 uses
-  Classes, SysUtils, Sockets, winsock, ssockets;
+  Classes, SysUtils, Sockets, winsock, ssockets, NewKernelHandler;
 
 type
   TSocketException=class(Exception);
@@ -45,6 +45,10 @@ function send(socket: TSocket; buffer: pointer; size: integer; timeout: integer=
 function receive(socket: TSocket; buffer: pointer; size: integer; timeout: integer=10): integer;
 
 //todo: perhaps setup listener/connect for non blocking ?
+
+var
+  debug_connectionfailure: boolean;
+  debug_nonresponsiveconnection: boolean;
 
 implementation
 
@@ -118,7 +122,7 @@ begin
   fbecomeownerofsocket:=becomeownerofsocket;
 
   {$ifdef windows}
-    bm:=0;
+    bm:=1;
     ioctlsocket(sockethandle, FIONBIO, bm);
   {$else}
     fcntl(fSocket, F_SETFL, fcntl(socketfd, F_GETFL, 0) | O_NONBLOCK);
@@ -127,23 +131,6 @@ begin
 end;
 
 //----------------
-          {
-function TNetworkStream.WriteToSocket(s: tsocket; timeout: integer=10): integer;
-begin
-  result:=send(s, memory, size);
-end;
-
-function TNetworkStream.ReadFromSocket(s: tsocket; readsize: integer; timeout: integer=10): integer;
-var buffer: pchar;
-begin
-  getmem(buffer, readsize);
-  try
-    result:=receive(s, buffer, readsize);
-    WriteBuffer(buffer^, result);
-  finally
-    freemem(buffer);
-  end;
-end;      }
 
 function send(socket: TSocket; buffer: pointer; size: integer; timeout: integer=10): integer;
 var
@@ -151,9 +138,20 @@ var
   t: TTimeVal;
   fdset: TFDSet;
 begin
+  {$ifdef DEBUGPROTOCOL}
+  timeout:=0; //just let me test in peace
+  {$endif}
+
+  if debug_connectionfailure then
+    raise TSocketException.Create('Whoopdeedoo');
+
+
   result:=0;
   while (result<size) do
   begin
+    if debug_nonresponsiveconnection then
+      sleep(20000);
+
     i:=fpsend(socket, pointer(ptruint(buffer)+result), size, 0);
     if i<=0 then
     begin
@@ -171,8 +169,6 @@ begin
           begin
             t.tv_sec:=timeout;
             t.tv_usec:=0;
-
-
             i:=select(socket, nil, @fdset, nil, @t);
           end
           else
@@ -184,6 +180,7 @@ begin
           if i<0 then
             raise TSocketException.create('Error while sending data: '+inttostr(socketerror));
 
+          i:=0;
         end
         else
           raise TSocketException.Create('Error while sending data: '+inttostr(i));
@@ -202,12 +199,23 @@ var
   t: TTimeVal;
   fdset: TFDSet;
 begin
+  {$ifdef DEBUGPROTOCOL}
+  timeout:=0;
+  {$endif}
+
+  if debug_connectionfailure then
+    raise TSocketException.Create('Whoopdeedoo');
+
   result:=0;
   while (result<size) do
   begin
+    if debug_nonresponsiveconnection then
+      sleep(20000);
+
     i:=fprecv(socket, pointer(ptruint(buffer)+result), size-result, 0);
     if i<=0 then
     begin
+
       if i=-1 then
       begin
         i:=socketerror;
@@ -230,10 +238,15 @@ begin
 
 
           if i=0 then
+          begin
+            OutputDebugString('Timeout');
             raise TSocketException.create('Timeout while receiving data');
+          end;
 
           if i<0 then
             raise TSocketException.create('Error while receiving data: '+inttostr(i));
+
+          i:=0;
 
         end
         else

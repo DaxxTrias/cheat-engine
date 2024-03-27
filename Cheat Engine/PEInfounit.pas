@@ -12,7 +12,7 @@ interface
 uses
   windows, LCLIntf, Messages, SysUtils, Classes, Graphics, Controls, Forms,
   Dialogs, CEFuncProc, NewKernelHandler, Buttons, StdCtrls, ExtCtrls,
-  ComCtrls, LResources, symbolhandler, PEInfoFunctions;
+  ComCtrls, LResources, symbolhandler, PEInfoFunctions, commonTypeDefs;
 
 type
   TfrmPEInfo = class(TForm)
@@ -66,7 +66,7 @@ function peinfo_getheadersize(header: pointer): dword;
 
 implementation
 
-uses processhandlerunit;
+uses processhandlerunit, parsers;
 
 resourcestring
   rsThisIsNotAValidImage = 'This is not a valid image';

@@ -7,7 +7,7 @@ interface
 uses
   jwawindows, windows, LCLIntf, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
   StdCtrls, ExtCtrls, CEFuncProc,CEDebugger, ComCtrls, ImgList,
-  filehandler, Menus, LResources,{tlhelp32,}vmxfunctions, NewKernelHandler, debugHelper{, KIcon};
+  filehandler, Menus, LResources,{tlhelp32,}vmxfunctions, NewKernelHandler, debugHelper{, KIcon}, commonTypeDefs;
 
 type tprocesslistlong = class(tthread)
 private
@@ -89,7 +89,7 @@ implementation
 
 
 uses MainUnit, formsettingsunit, advancedoptionsunit,frmProcessWatcherUnit,
-  memorybrowserformunit, networkConfig, ProcessHandlerUnit, processlist;
+  memorybrowserformunit, networkConfig, ProcessHandlerUnit, processlist, globals;
 
 resourcestring
   rsIsnTAValidProcessID = '%s isn''t a valid processID';

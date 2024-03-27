@@ -27,80 +27,14 @@ hypermode,
 {$endif}
 {$endif}
 {$endif}
- math,syncobjs, shellapi, ProcessHandlerUnit, controls, shlobj, ActiveX, strutils;
+ math,syncobjs, shellapi, ProcessHandlerUnit, controls, shlobj, ActiveX, strutils,
+commontypedefs;
 
 
 
 
-//memscan
-type TScanOption=(soUnknownValue=0,soExactValue=1,soValueBetween=2,soBiggerThan=3,soSmallerThan=4, soIncreasedValue=5, soIncreasedValueBy=6, soDecreasedValue=7, soDecreasedValueBy=8, soChanged=9, soUnchanged=10, soCustom);
-type TScanType=(stNewScan, stFirstScan, stNextScan);
-type TRoundingType=(rtRounded=0,rtExtremerounded=1,rtTruncated=2);
-type TVariableType=(vtByte=0, vtWord=1, vtDword=2, vtQword=3, vtSingle=4, vtDouble=5, vtString=6, vtUnicodeString=7, vtByteArray=8, vtBinary=9, vtAll=10, vtAutoAssembler=11, vtPointer=12, vtCustom=13, vtGrouped=14, vtByteArrays=15); //all ,grouped and MultiByteArray are special types
-type TCustomScanType=(cstNone, cstAutoAssembler, cstCPP, cstDLLFunction);
-type TFastScanMethod=(fsmNotAligned=0, fsmAligned=1, fsmLastDigits=2);
-
-type TaccessRight=(arExecute, arRead, arWrite);
-type TAccessRights=set of TAccessRight;
-
-type TAddressArray=array of ptruint;
-
-Type TBytes = array of integer; //An array that represents a row of byte. Ints are used to be able to represent wildcards (-1)
-     TWindowPosArray=TBytes;
-
-type tfloatscan=(rounded,extremerounded,truncated);
-Type TMemoryRegion = record
-  BaseAddress: ptrUint;
-  MemorySize: qword;
-  IsChild: boolean;  //means there is a region before it
-  startaddress: pointer; //pointer to a spot in the whole memory copy, it means the start of this region
-  end;
-type TMemoryRegions = array of TMemoryRegion;
-type PMemoryRegions = ^TMemoryRegions;
 
 
-type
-  TGroupAddress=record
-    address: ptruint;
-    offsets: array [0..999999] of dword;
-  end;
-  PGroupAddress=^TGroupAddress;
-  PPGroupAddress=^PGroupAddress;
-  TGroupAddressArray=array [0..0] of TGroupAddress;
-  PGroupAddressArray=^TGroupAddressArray;
-
-
-
-type TBitAddress = record
-  address: ptruint;
-  bit: ptruint; //in 64-bit when it was dword it would get aligned to 64-bit anyhow
-end;
-
-type TBitAddressArray=array [0..0] of TBitAddress;
-type PBitAddressArray=^TBitAddressArray;
-
-type ToffsetList=array of integer;
-
-type TProcessListInfo=record
-  processID: dword;
-  processIcon: HICON;
-end;
-PProcessListInfo=^TProcessListInfo;
-
-
-type tmoduledata =class
-  public
-    moduleaddress: ptrUint;
-    modulesize: dword;
-end;
-
-function StrToQWordEx(s: string): qword;
-
-function ConvertHexStrToRealStr(const s: string): string;
-function HexStrToInt(const S: string): Integer;
-function HexStrToInt64(const S: string): Int64;
-
-function IntToHexSigned(v: INT64; digits: integer): string;
 
 //function NewVarTypeToOldVarType(i: TVariableType):integer;
 function OldVarTypeToNewVarType(i: integer):TVariableType;
@@ -137,12 +71,6 @@ Procedure Shutdown;
 function KeyToStr(key:word):string;
 
 
-procedure ConvertStringToBytes(scanvalue:string; hex:boolean;var bytes: TBytes);
-function GetBitCount(value: qword): integer;
-function getbit(bitnr: integer; bt: qword):integer; inline;
-procedure setbit(bitnr: integer; var bt: Byte;state:integer); overload;
-procedure setbit(bitnr: integer; var bt: dword;state:integer); overload;
-procedure setbit(bitnr: integer; var bt: qword;state:integer); overload;
 
 function eflags_setCF(flagvalue: dword; value: integer): DWORD;
 function eflags_setPF(flagvalue: dword; value: integer): DWORD;
@@ -171,8 +99,6 @@ function ByteStringToSingle(s: string;hex: boolean):single;
 function ByteStringToInt(s: string;hex: boolean):int64;
 function VarToBytes(v: pointer; size: integer): string;
 function RawToString(const buf: array of byte; vartype: integer;showashex: boolean; bufsize: integer):string;
-function IntToBin(i: qword):string;
-function BinToInt(s: string): int64;
 
 procedure decimal(var key: char);
 procedure hexadecimal(var key: char);
@@ -198,8 +124,6 @@ function AllocationProtectToAccessRights(protect: dword): TAccessRights;
 function AccessRightsToAllocationProtect(ar: TAccessRights): Dword;
 
 function freetypetostring(freetype: dword):string;
-
-function getPointerAddress(address: ptruint; const offsets: array of integer; var hasError: boolean): ptruint;
 
 function isAddress(address: ptrUint):boolean;
 function isExecutableAddress(address: ptrUint):boolean;
@@ -231,6 +155,10 @@ procedure SetLanguage;
 
 procedure DetachIfPossible;
 
+
+{$ifdef windows}
+procedure Log(s: string);
+{$endif}
 
 
 const
@@ -265,21 +193,7 @@ type
         Group:  Byte;
   end;
 
-type TCEPointer=record
-  Address: ptrUint;  //only used when last pointer in list
-  Interpretableaddress: string; //same as address
-  offset: integer;
-end;
 
-type TCEAlloc=record
-  address: ptrUint;
-  varname: string;
-  size: dword;
-  prefered: ptrUint;
-
-end;
-type PCEAlloc=^TCEAlloc;
-type TCEAllocArray=array of TCEAlloc;
 
 type
   MemoryRecord = record
@@ -311,29 +225,7 @@ type
         FrozenValue : Dword;
   end;
 
-type TPtrUintArray=array[0..100] of ptruint;
-type PPtrUintArray=^TPtrUintArray;
 
-
-type TDwordArray=array[0..100] of dword;
-type PDwordArray=^TDwordArray;
-
-type TSingleArray=array[0..100] of single;
-type PSingleArray=^TSingleArray;
-
-type TdoubleArray=array[0..100] of double;
-type PdoubleArray=^TdoubleArray;
-
-type Tint64Array=array[0..100] of int64;
-type Pint64Array=^Tint64Array;
-
-type Tuint64Array=array[0..100] of uint64;
-type Puint64Array=^Tuint64Array;
-
-type PQWordArray=Puint64Array;
-
-type TExtendedArray=array[0..100] of extended;
-type PExtendedArray=^TExtendedArray;
 
 
 
@@ -383,162 +275,7 @@ type tspeedhackspeed=record
   sleeptime: dword; //obsolete
 end;
 
-type TKeyCombo=array [0..4] of word;
-type TKeys=record
-  configured: boolean;
-  CEDir: string[255];
-  cewindow: thandle;
 
-  callibrationmode: boolean;  //false=no textureselect hud
-  callibrationkey: TKeycombo;
-
-  setcallibration: boolean;
-  mousecallibrationhorizontal1point: single;
-  mousecallibrationvertical1point: single;
-
-  mousecallibrationhorizontal2point: single;
-  mousecallibrationvertical2point: single;
-
-  mousecallibrationhorizontal5point: single;
-  mousecallibrationvertical5point: single;
-
-  mousecallibrationhorizontal10point: single;
-  mousecallibrationvertical10point: single;
-
-  mousecallibrationhorizontal20point: single;
-  mousecallibrationvertical20point: single;
-
-  mousecallibrationhorizontal40point: single;
-  mousecallibrationvertical40point: single;
-
-  loadaimsettingsfile: tkeycombo;
-  saveaimsettingsfile: tkeycombo;
-  aimsettings1: string[255];
-  Aimsettings2: string[255];
-  Aimsettings3: string[255];
-
-  setaimsetting1: tkeycombo;
-  setaimsetting2: tkeycombo;
-  setaimsetting3: tkeycombo;
-
-  nexttexture: tkeycombo;
-  previoustexture: tkeycombo;
-  locktexture: tkeycombo;
-
-  IncreaseX: tkeycombo;
-  DecreaseX: TKeyCombo;
-  Increasey: tkeycombo;
-  Decreasey: TKeyCombo;
-  Increasez: tkeycombo;
-  Decreasez: TKeyCombo;
-
-  HoldAutoaimtoggle: boolean;
-  autoshoot: boolean;
-  autoaimtoggle: tKeycombo;
-  increaselag: tkeycombo;
-  decreaselag: tkeycombo;
-
-  zoomin,zoomout: TKeyCombo;
-  nozoom: tKeyCombo;
-  zoom1: tKeyCombo;
-  zoomlevel1: single;
-  zoom2: tkeycombo;
-  zoomlevel2: single;
-  zoom3: tkeycombo;
-  zoomlevel3: single;
-  zoom4: tkeycombo;
-  zoomlevel4: single;
-  zoom5: tkeycombo;
-  zoomlevel5: single;
-
-  zoomdelta: single;
-  lagdelta: integer;
-
-  setlag: boolean;
-  lagtoset: dword;
-  usefpslag: boolean;
-
-  rotateleft: tKeycombo;
-  rotateright: tkeycombo;
-  rotateup: tkeycombo;
-  rotatedown: tkeycombo;
-  moveleft: tkeycombo;
-  moveright: tkeycombo;
-  moveup: tkeycombo;
-  movedown: tkeycombo;
-  moveforward: tkeycombo;
-  movebackwards: tkeycombo;
-
-  movespeed: single;
-  rotatespeed: single;
-
-  setcameraback: tkeycombo;
-
-  zbuffer: tkeycombo;
-  fog: tkeycombo;
-  lighting: tkeycombo;
-  wireframe: tkeycombo;
-
-  ShowKeylist: tkeycombo;
-
-  SaveAlltextures: TKeycombo;
-
-  selectedlagrecord: string[50];
-  lagmemorytype: byte;
-  getlagfrommemory: boolean;
-  nrofoffsets: dword;
-  lagaddress: ptrUint;
-  offset1: dword;
-  offset2: dword;
-  offset3: dword;
-  offset4: dword;
-  offset5: dword;
-  offset6: dword;
-  offset7: dword;
-  offset8: dword;
-  offset9: dword;
-  offset10: dword;
-  offset11: dword;
-  offset12: dword;
-  offset13: dword;
-  offset14: dword;
-  offset15: dword;
-
-
-  pollinginterval: integer;
-end;
-type PKeys= ^TKeys;
-
-type TKeys2=record
-  configured: boolean;
-  CEDir: string[255];
-  cewindow: thandle;
-
-  textures: tkeycombo;
-  lighting: tkeycombo;
-  depthtest: tkeycombo;
-  fog: tkeycombo;
-
-
-  zoomin,zoomout: TKeyCombo;
-  nozoom: tKeyCombo;
-  zoom1: tKeyCombo;
-  zoomlevel1: single;
-  zoom2: tkeycombo;
-  zoomlevel2: single;
-  zoom3: tkeycombo;
-  zoomlevel3: single;
-  zoom4: tkeycombo;
-  zoomlevel4: single;
-  zoom5: tkeycombo;
-  zoomlevel5: single;
-
-  zoomdelta: single;
-
-
-  pollinginterval: integer;
-end;
-type PKeys2= ^TKeys2;
 
 
 
@@ -554,123 +291,7 @@ make use of ProcessHandlerUnit
 //function ProcessHandle: THandle;
 
 //Global vars:
-var
-  systemtype: integer;
-  old8087CW: word;  //you never know...
-  ProcessSelected: Boolean;
-  //ProcessID: Dword; //deperecated
-  //ProcessHandle: Thandle;
 
-
-
-  Skip_PAGE_NOCACHE: boolean=false;
-  Scan_MEM_PRIVATE: boolean=true;
-  Scan_MEM_IMAGE: boolean=true;
-  Scan_MEM_MAPPED: boolean=false;
-
-  TablesDir: string;
-  CheatEngineDir: String;
-  WindowsDir: string;
-
-  username: string;
-
-//scanhelpers
-  nrofbits: integer;
-  Bitscan: array of byte;
-  tempbits: array of byte;
-
-  bitoffsetchange: integer;
-
-
-  foundaddressB: array of TBitAddress;
-  foundaddressBswitch: array of TBitAddress;  
-
-
-  tempbytearray: array of byte;
-  tempwordarray: array of word;
-  tempdwordarray: array of dword;
-  tempsinglearray: array of single;
-  tempdoublearray: array of double;
-  tempint64array: array of int64;
-
-
-//--------
-  previousmemory: array of byte;
-{  SearchAddress: array of dword;
-  searchaddressswitch: array of dword;
-
-  SearchAddressB: array of TBitAddress;}
-
- // previousmemory1,previousmemory1switch: array of Byte;
-  {previousmemory2,previousmemory2switch: array of word;
-  previousmemory3,previousmemory3switch: array of dword;
-  previousmemory4,previousmemory4switch: array of Single;
-  previousmemory5,previousmemory5switch: array of Double;
-  previousmemory6,previousmemory6switch: array of int64; //Byte;
-  PreviousMemory7,previousmemory7switch: Array of Int64;
-  PreviousMemory8,previousmemory8switch: array of byte; }
-
-//---------
-  helpstr,helpstr2: string;
-  bytes: array of integer;  //-1=wildcard
-  bytearray: array of byte;
-
-
-
-//  MemoryRegion: array of TMemoryRegion;
-//  MemoryRegions: Integer;
-  
-//  Memory: Array of Byte;
-  Memory: ^Byte;
-  memory2: ^byte;
-
-
-  advanced: boolean;
-  //global files, so when an exception happens I can close them
-//  addressfile, memoryfile: File;
-//  newAddressfile,newmemoryfile: File;
-
-  savedStackSize: dword=4096;
-  buffersize: dword=512*1024;
-  overridedebug: boolean;
-
-  totalbytes: dword;
-  currentbyte: dword;
-
-
-  //hide/show windows
-  windowlist: array of thandle;
-  lastforeground,lastactive: thandle;
-  donthidelist: array of string;
-  onlyfront: boolean;
-  allwindowsareback:boolean;
-
-  //HyperscanFileMapping: THandle;
-  //HyperscanView: ^TScanSettings;
-  
-  hookedin:boolean;
-  keys: PKeys;
-  keys2: PKeys2;
-  keysfilemapping: THandle;
-
-  //stealth globals
-  le: dword;
-  ownprocesshandle: THandle;
-  stealthhook: thandle;
-
-  //windows version data
-  iswin2kplus: boolean;
-  scanpriority: TThreadPriority; 
-
-  useAPCtoInjectDLL: boolean;
-
-
-  tempdir: pchar;
-  dontusetempdir: boolean;
-  tempdiralternative: string;
-
-  VEHRealContextOnThreadCreation: boolean;
-  waitafterguiupdate: boolean;
 
 type
   SYSTEM_INFO = record
@@ -701,7 +322,7 @@ implementation
 
 uses disassembler,CEDebugger,debughelper, symbolhandler,frmProcessWatcherUnit,
      kerneldebugger, formsettingsunit, MemoryBrowserFormUnit, savedscanhandler,
-     networkInterface, networkInterfaceApi, processlist;
+     networkInterface, networkInterfaceApi, processlist, Parsers, Globals;
 
 
 resourcestring
@@ -755,7 +376,7 @@ resourcestring
   rsICanTGetTheProcessListYouArePropablyUsingWindowsNT = 'I can''t get the process list. You are propably using windows NT. Use the window list instead!';
   rsNoKernel32DllLoaded = 'No kernel32.dll loaded';
   rsSeparator = 'Separator';
-  rsInvalidInteger = 'Invalid integer';
+
 
 function ProcessID: dword;
 begin
@@ -768,22 +389,7 @@ begin
 end;
 
 
-function StrToQWordEx(s: string): qword;
-{
-This routine will use StrToQword unless it is a negative value, in which case it will use StrToInt64
-}
-begin
-  s:=trim(s);
-  if length(s)=0 then
-    raise exception.create(rsInvalidInteger)
-  else
-  begin
-    if s[1]='-' then
-      result:=StrToInt64(s)
-    else
-      result:=StrToQWord(s);
-  end;
-end;
+
 
 procedure errorbeep;
 begin
@@ -1788,77 +1394,12 @@ begin
   result:=copy(result,1,length(result)-1);
 end;
 
-function BinToInt(s: string): int64;
-var i: integer;
-begin
-  result:=0;
-  for i:=length(s) downto 1 do
-    if s[i]='1' then result:=result+trunc(power(2,length(s)-i ));
-end;
-
-function Inttobin(i: qword): string;
-var temp,temp2: string;
-    j: integer;
-begin
-  temp:='';
-  while i>0 do
-  begin
-    if (i mod 2)>0 then temp:=temp+'1'
-                   else temp:=temp+'0';
-    i:=i div 2;
-  end;
-
-  temp2:='';
-  for j:=length(temp) downto 1 do
-    temp2:=temp2+temp[j];
-  result:=temp2;
-end;
 
 
 
-function getbit(bitnr: integer; bt: qword):integer; inline;
-begin
-  result:=(bt shr bitnr) and 1;
-end;
 
 
-procedure setbit(bitnr: integer; var bt: qword;state:integer); overload;
-{
- pre: bitnr=bit between 0 and 7
-         bt=pointer to the byte
- post: bt has the bit set specified in state
- result: bt has a bit set or unset
-}
-begin
-  bt:=bt and (not (1 shl bitnr));
-  bt:=bt or (state shl bitnr);
-end;
 
-procedure setbit(bitnr: integer; var bt: dword;state:integer); overload;
-{
- pre: bitnr=bit between 0 and 7
-         bt=pointer to the byte
- post: bt has the bit set specified in state
- result: bt has a bit set or unset
-}
-begin
-  bt:=bt and (not (1 shl bitnr));
-  bt:=bt or (state shl bitnr);
-end;
-
-procedure setbit(bitnr: integer; var bt: Byte;state:integer); overload;
-{
- pre: bitnr=bit between 0 and 7
-         bt=pointer to the byte
- post: bt has the bit set specified in state
- result: bt has a bit set or unset
-}
-var d: dword;
-begin
-  d:=bt;
-  setbit(bitnr,d,state);
-  bt:=d;
-end;
 
 function eflags_setCF(flagvalue: dword; value: integer): DWORD;
 begin
@@ -2699,58 +2240,7 @@ begin
 
 end;
 
-procedure ConvertStringToBytes(scanvalue:string; hex:boolean;var bytes: TBytes);
-{
-Converts a given string into a array of TBytes.
-TBytes are not pure bytes, they can hold -1, which indicates a wildcard
-}
-var i,j,k: integer;
-    helpstr,helpstr2:string;
-    delims: TSysCharSet;
-begin
-  setlength(bytes,0);
-  if length(scanvalue)=0 then exit;
 
-  delims:=[' ',',','-']; //[#0..#255] - ['a'..'f','A'..'F','1'..'9','0','*']; //everything except hexadecimal and wildcard
-
-  scanvalue:=trim(scanvalue);
-
-
-  for i:=1 to WordCount(scanvalue, delims) do
-  begin
-    helpstr:=ExtractWord(i, scanvalue, delims);
-
-    if helpstr<>'' then
-    begin
-      if not hex then
-      begin
-        setlength(bytes,length(bytes)+1);
-        try
-          bytes[length(bytes)-1]:=strtoint(helpstr);
-        except
-          bytes[length(bytes)-1]:=-1; //wildcard
-        end;
-      end
-      else
-      begin
-        j:=1;
-        while j<=length(helpstr) do
-        begin
-          helpstr2:=copy(helpstr, j,2);
-          setlength(bytes,length(bytes)+1);
-          try
-            bytes[length(bytes)-1]:=strtoint('$'+helpstr2);
-          except
-            bytes[length(bytes)-1]:=-1; //wildcard
-          end;
-
-          inc(j,2);
-        end;
-      end;
-
-    end;
-  end;
-end;
 
 
 
@@ -2831,15 +2321,7 @@ end;
 
 end;
 
-function GetBitCount(value: qword): integer;
-begin
-  result:=0;
-  while value>0 do
-  begin
-    if (value mod 2)=1 then inc(result);
-    value:=value shr 1;
-  end;
-end;
+
 
 function HasHyperthreading: boolean;
 type PSystemLogicalProcessorInformationArray=array [0..0] of TSystemLogicalProcessorInformation;
@@ -3108,153 +2590,6 @@ begin
     result:='.\'+copy(filename,length(CheatEnginedir)+1,length(filename));
 end;
 
-function ConvertHexStrToRealStr(const s: string): string;
-{
-Converts a string meant to be a hexadeimcal string to the real way delphi reads
-it
-e.g:
-123 > $123
--123 > -$123
-+123 > +$123
-#123 > 123
-+#123 > +123
-}
-var ishex: string;
-    start: integer;
-    i,j,k: integer;
-
-    bytes: string;
-    t: string;
-    q: qword;
-    f: single;
-    d: double;
-begin
-  if s='' then
-  begin
-    result:=s;
-    exit;
-  end;
-  start:=1;
-
-  ishex:='$';
-  for i:=start to length(s) do
-    case s[i] of
-      '''' , '"' :
-      begin
-        //char
-        if (i+2)<=length(s) then
-        begin
-          bytes:='';
-          for j:=i+2 to length(s) do
-            if s[j] in ['''','"'] then
-            begin
-              bytes:=copy(s,i+1,j-(i+1));
-
-              result:='$';
-              for k:=length(bytes) downto 1 do
-                result:=result+inttohex(byte(bytes[k]),2);
-
-              //result := '$'+inttohex(byte(s[i+1]),2);
-              exit; //this is it, no further process required, or appreciated...
-
-            end;
-
-
-
-        end;
-      end;
-
-      '#' :
-      begin
-        ishex:='';
-        start:=2;
-        break;
-      end;
-
-      '(' :
-      begin
-        if copy(s,1,5)='(INT)' then
-        begin
-          t:=copy(s,6,length(s));
-          try
-            q:=StrToQWordEx(t);
-            result:='$'+inttohex(q,8);
-            exit;
-          except
-          end;
-        end;
-
-        if copy(s,1,8)='(DOUBLE)' then
-        begin
-          t:=copy(s,9,length(s));
-          val(t, d,j);
-          if j=0 then
-          begin
-            result:='$'+inttohex(PINT64(@d)^,8);
-
-            if s[1]='-' then
-              result:='-'+result;
-
-            if s[1]='+' then
-              result:='+'+result;
-              
-            exit;
-          end;
-        end;
-
-        if copy(s,1,7)='(FLOAT)' then
-        begin
-          t:=copy(s,8,length(s));
-          val(t, f,j);
-          if j=0 then
-          begin
-            result:='$'+inttohex(pdword(@f)^,8);
-
-            if s[1]='-' then
-              result:='-'+result;
-
-            if s[1]='+' then
-              result:='+'+result;
-              
-            exit;
-          end;
-        end;
-      end;
-    end;
-
-
-  if s[1]='-' then
-  begin
-    result:='-'+ishex+copy(s,start+1,length(s))
-  end
-  else
-  if s[1]='+' then
-  begin
-    result:='+'+ishex+copy(s,start+1,length(s));
-  end
-  else
-  begin
-    result:=ishex+copy(s,start,length(s));
-  end;
-end;
-
-function IntToHexSigned(v: INT64; digits: integer): string;
-begin
-  if v>=0 then
-    result:=inttohex(v, digits)
-  else
-    result:='-'+inttohex(-v, digits);
-end;
-
-function HexStrToInt(const S: string): Integer;
-begin
-  result:=StrToint(ConvertHexStrToRealStr(s));
-end;
-
-function HexStrToInt64(const S: string): Int64;
-begin
-  result:=StrToQWordEx(ConvertHexStrToRealStr(s));
-end;
 
 function isjumporcall(address: ptrUint; var addresstojumpto: ptrUint): boolean;
 {
@@ -3723,30 +3058,6 @@ begin
 end;
 
 
-function getPointerAddress(address: ptruint; const offsets: array of integer; var hasError: boolean): ptruint;
-var realaddress, realaddress2: PtrUInt;
-    count: PtrUInt;
-    check: boolean;
-    i: integer;
-begin
-  realaddress2:=address;
-  for i:=length(offsets)-1 downto 0 do
-  begin
-    realaddress:=0;
-    check:=readprocessmemory(processhandle,pointer(realaddress2),@realaddress,processhandler.pointersize,count);
-    if check and (count=processhandler.pointersize) then
-      realaddress2:=realaddress+offsets[i]
-    else
-    begin
-      result:=0;
-
-      exit;
-    end;
-  end;
-
-  result:=realAddress2;
-  hasError:=false;
-end;
 
 
 function EscapeStringForRegEx(const S: string): string;      //copied and modified from the RegExprEscapeStr in the OldRegExpr.pp unit (it forgot the '+' check)
@@ -3932,6 +3243,10 @@ begin
     SetKernelObjectSecurity(h, DACL_SECURITY_INFORMATION, sa.lpSecurityDescriptor);
 end;
 
+procedure Log(s: string);
+begin
+  OutputDebugString(pchar(s));
+end;
 
 initialization
   ownprocesshandle := OpenProcess(PROCESS_ALL_ACCESS, True, GetCurrentProcessId);
@@ -3941,7 +3256,6 @@ initialization
   GetTempPath(256,tempdir);
   GetWindir;
   keysfilemapping:=0;
-  keys:=nil;
 
   setlength(windowlist,0);
   setlength(donthidelist,0);

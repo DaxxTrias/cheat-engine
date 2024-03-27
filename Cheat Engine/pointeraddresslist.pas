@@ -26,6 +26,8 @@ type
     modulebases: array of ptruint;
     is32bit: boolean;
   public
+
+    procedure reorderModuleIdList(ml: tstrings);  //changes the order of modules so they match the provided list (addresses stay unchanged of course)
     function getAddressFromModuleIndexPlusOffset(moduleindex: integer; offset: integer): ptruint;
     function getPointer(address: ptruint): ptruint; //return 0 if not found
     constructor createFromStream(s: TStream; progressbar: tprogressbar=nil);
@@ -33,6 +35,8 @@ type
   end;
 
 implementation
+
+uses pointervaluelist;
 
 function TPointerListHandler.getAddressFromModuleIndexPlusOffset(moduleindex: integer; offset: integer): ptruint;
 begin
@@ -59,6 +63,60 @@ begin
     result:=0;
 end;
 
+procedure TPointerListHandler.reorderModuleIdList(ml: tstrings);
+//sorts the modulelist based on the given modulelist
+var
+  oldindex: integer;
+  oldmodulename: string;
+  oldaddress :ptruint;
+  i: integer;
+begin
+
+  //example:
+  //in ml: game.exe is loaded at     20000000 (module 1)
+  //in modulelist: game is loaded at 30000000 (module 2)
+
+  //during the scan the moduleid's of ml are requested but they need to return the address as it was
+  //so if the pscan requests moduleid1+10 it must return 30000010
+
+
+  //make room for the list if it's smaller
+  while modulelist.Count<ml.count do
+  begin
+    i:=modulelist.add('missing');
+    setlength(modulebases, length(modulebases)+1);
+    modulebases[length(modulebases)-1]:=0;
+  end;
+
+  for i:=0 to ml.count-1 do
+  begin
+    //find this module in the current module list
+    oldindex:=modulelist.IndexOf(ml[i]);
+
+    if oldindex=-1 then //it wasn'tin the list, add it with address 0
+    begin
+      oldindex:=modulelist.Add(ml[i]);
+      setlength(modulebases, length(modulebases)+1);
+      modulebases[length(modulebases)-1]:=0;
+    end;
+
+    if oldindex<>i then
+    begin
+      //swap
+      oldaddress:=modulebases[oldindex];
+      oldmodulename:=modulelist[oldindex];
+
+      modulebases[oldindex]:=modulebases[i];
+      modulelist[oldindex]:=modulelist[i];
+
+      modulebases[i]:=oldaddress;
+      modulelist[i]:=oldmodulename;
+    end;
+
+  end;
+
+end;
+
 constructor TPointerListHandler.createFromStream(s: TStream; progressbar: tprogressbar=nil);
 var
   i,x: integer;
@@ -79,18 +137,26 @@ var
   limit: integer;
 begin
   //create and fill in the pointerlist based on a reversepointerlist
+  if s.ReadByte<>$ce then
+    raise exception.create('Invalid scandata file');
+
+  if s.ReadByte<>ScanDataVersion then raise exception.create('Invalid scandata version');
+
+
+
   bma:=TBigMemoryAllocHandler.create;
   pmap:=TMap.Create(ituPtrSize, sizeof(ptruint));
 
 
   modulelist:=TStringList.create;
+  modulelist.CaseSensitive:=false;
   mlistlength:=s.ReadDWord;
   setlength(modulebases, mlistlength);
 
   for i:=0 to mlistlength-1 do
   begin
     x:=s.ReadDWord;
-    getmem(mname, x);
+    getmem(mname, x+1);
     s.ReadBuffer(mname^, x);
     mname[x]:=#0;
 
@@ -98,6 +164,13 @@ begin
     modulelist.AddObject(mname, tobject(modulebases[i]));
     freemem(mname);
   end;
+
+  if s.ReadByte=1 then  //specific base as static only
+  begin
+    s.ReadQWord; //basestart
+    s.ReadQWord; //basestop
+  end;
+
 
   ml:=s.ReadDWord; //maxlevel (for determining if 32 or 64-bit)
 

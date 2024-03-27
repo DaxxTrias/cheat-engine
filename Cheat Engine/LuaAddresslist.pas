@@ -5,7 +5,7 @@ unit LuaAddresslist;
 interface
 
 uses
-  Classes, SysUtils, lua, lualib, lauxlib, LuaHandler, cefuncproc;
+  Classes, SysUtils, lua, lualib, lauxlib, LuaHandler, cefuncproc, commonTypeDefs;
 
 procedure initializeLuaAddresslist;
 
@@ -55,6 +55,7 @@ var
   addresslist: TAddresslist;
   index: integer;
 begin
+  result:=0;
   addresslist:=luaclass_getClassObject(L);
   if lua_gettop(L)>=1 then
   begin

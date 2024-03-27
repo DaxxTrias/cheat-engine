@@ -19,12 +19,15 @@ type
     fEnabled: boolean;
     eenabled: TEvent;
     timerevent: TEvent;
+
+    triggeronce: boolean;
     procedure setOnTimer(f: TNotifyEvent);
     procedure setEnabled(state: boolean);
     procedure setInterval(interval: integer);
   public
     procedure Terminate;
     procedure execute; override;
+    procedure TriggerNow; //triggers the event
     constructor create(suspended: boolean);
     destructor destroy; override;
 
@@ -67,25 +70,37 @@ begin
   Enabled:=true;
 end;
 
+procedure TAsyncTimer.TriggerNow; //triggers the event as soon as possible
+begin
+  triggeronce:=true;
+  timerevent.SetEvent;
+end;
+
 procedure TAsyncTimer.execute;
+var f: TNotifyEvent;
 begin
   while not terminated do
   begin
     while (not terminated) and (eenabled.WaitFor(INFINITE)=wrTimeout) do ;
 
-    while (not terminated) and (timerevent.WaitFor(fInterval)=wrSignaled) do //each time the interval changes this will get signaled. When that happens, wait again
+    while (not terminated) and (timerevent.WaitFor(fInterval)=wrSignaled) and (not triggeronce) do //each time the interval changes this will get signaled. When that happens, wait again
       timerevent.ResetEvent;
+
+    triggeronce:=false;
 
     if not terminated then
     begin
       try
         fOnTimerCS.enter;
         try
-          if enabled and assigned(fOnTimer) then
-            fOnTimer(self);
+          f:=fOnTimer;
         finally
           fOnTimerCS.leave;
         end;
+
+
+        if enabled and assigned(f) then
+          f(self);
       except
         //on unexpected exceptions don't destroy the timer
       end;

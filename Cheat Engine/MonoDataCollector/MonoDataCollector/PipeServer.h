@@ -27,6 +27,9 @@
 #define MONOCMD_FREEMETHOD 21
 #define MONOCMD_TERMINATE 22
 #define MONOCMD_DISASSEMBLE 23
+#define MONOCMD_GETMETHODSIGNATURE 24
+#define MONOCMD_GETPARENTCLASS 25
+#define MONOCMD_GETSTATICFIELDADDRESSFROMCLASS 26
 
 typedef void (__cdecl *MonoDomainFunc) (void *domain, void *user_data);
 typedef void (__cdecl *GFunc)          (void *data, void *user_data);
@@ -57,6 +60,12 @@ typedef void* (__cdecl *MONO_CLASS_GET)(void *image, UINT32 tokenindex);
 typedef void* (__cdecl *MONO_CLASS_GET_METHODS)(void *klass, void *iter);
 typedef void* (__cdecl *MONO_CLASS_GET_METHOD_FROM_NAME)(void *klass, char *methodname, int paramcount);
 typedef void* (__cdecl *MONO_CLASS_GET_FIELDS)(void *klass, void *iter);
+typedef void* (__cdecl *MONO_CLASS_GET_PARENT)(void *klass);
+typedef void* (__cdecl *MONO_CLASS_VTABLE)(void *domain, void *klass);
+
+
+
+
 typedef int (__cdecl *MONO_CLASS_NUM_FIELDS)(void *klass);
 typedef int (__cdecl *MONO_CLASS_NUM_METHODS)(void *klass);
 
@@ -67,6 +76,9 @@ typedef int (__cdecl *MONO_FIELD_GET_OFFSET)(void *field);
 
 typedef char* (__cdecl *MONO_TYPE_GET_NAME)(void *type);
 typedef int (__cdecl *MONO_TYPE_GET_TYPE)(void *type);
+typedef int (__cdecl *MONO_FIELD_GET_FLAGS)(void *type);
+
+
 
 
 typedef char* (__cdecl *MONO_METHOD_GET_NAME)(void *method);
@@ -83,13 +95,21 @@ typedef int (__cdecl *MONO_JIT_INFO_GET_CODE_SIZE)(void *jitinfo);
 
 typedef void* (__cdecl *MONO_METHOD_GET_HEADER)(void *method);
 typedef void* (__cdecl *MONO_METHOD_GET_CLASS)(void *method);
+typedef void* (__cdecl *MONO_METHOD_SIG)(void *method);
+typedef void* (__cdecl *MONO_METHOD_GET_PARAM_NAMES)(void *method, const char **names);
 
 typedef void* (__cdecl *MONO_METHOD_HEADER_GET_CODE)(void *methodheader, UINT32 *code_size, UINT32 *max_stack);
 typedef char* (__cdecl *MONO_DISASM_CODE)(void *dishelper, void *method, void *ip, void *end);
 
+typedef char* (__cdecl *MONO_SIGNATURE_GET_DESC)(void *signature, int include_namespace);
+typedef int (__cdecl *MONO_SIGNATURE_GET_PARAM_COUNT)(void *signature);
+typedef void* (__cdecl *MONO_SIGNATURE_GET_RETURN_TYPE)(void *signature);
 
 
 typedef void* (__cdecl *MONO_IMAGE_RVA_MAP)(void *image, UINT32 addr);
+typedef void* (__cdecl *MONO_VTABLE_GET_STATIC_FIELD_DATA)(void *vtable);
+
+
 
 class CPipeServer : Pipe
 {
@@ -106,6 +126,9 @@ private:
 	MONO_OBJECT_GET_CLASS mono_object_get_class;
 	MONO_CLASS_GET_NAME mono_class_get_name;
 	MONO_CLASS_GET_NAMESPACE mono_class_get_namespace;
+	MONO_CLASS_GET_PARENT mono_class_get_parent;
+	MONO_CLASS_VTABLE mono_class_vtable;
+
 	MONO_DOMAIN_FOREACH mono_domain_foreach;
 	MONO_DOMAIN_SET mono_domain_set;
 	MONO_ASSEMBLY_FOREACH mono_assembly_foreach;	
@@ -137,11 +160,18 @@ private:
 
 	MONO_TYPE_GET_NAME mono_type_get_name;
 	MONO_TYPE_GET_TYPE mono_type_get_type;
+	MONO_FIELD_GET_FLAGS mono_field_get_flags;
 
 
 	MONO_METHOD_GET_NAME mono_method_get_name;
 	MONO_METHOD_GET_HEADER mono_method_get_header;
 	MONO_METHOD_GET_CLASS mono_method_get_class;
+	MONO_METHOD_SIG mono_method_signature;
+	MONO_METHOD_GET_PARAM_NAMES mono_method_get_param_names;
+
+	MONO_SIGNATURE_GET_DESC mono_signature_get_desc;
+	MONO_SIGNATURE_GET_PARAM_COUNT mono_signature_get_param_count;
+	MONO_SIGNATURE_GET_RETURN_TYPE mono_signature_get_return_type;
 
 
 	MONO_COMPILE_METHOD mono_compile_method;
@@ -154,6 +184,8 @@ private:
 	
 	MONO_METHOD_HEADER_GET_CODE mono_method_header_get_code;
 	MONO_DISASM_CODE mono_disasm_code;
+
+	MONO_VTABLE_GET_STATIC_FIELD_DATA mono_vtable_get_static_field_data;
 
 	BOOL attached;
 
@@ -178,11 +210,15 @@ private:
 	void FindMethod();
 	void GetMethodName();
 	void GetMethodClass();
-	void GetClassName();
+	void GetKlassName();
 	void GetClassNamespace();
 	void FreeMethod();
 
 	void DisassembleMethod();
+	void GetMethodSignature();
+	void GetParentClass();
+
+	void GetStaticFieldAddressFromClass();
 
 public:
 	CPipeServer(void);

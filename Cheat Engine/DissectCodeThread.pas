@@ -6,7 +6,7 @@ interface
 
 uses
   windows, LCLIntf,sysutils,syncobjs,Classes,disassembler, NewKernelHandler, math,
-  CEFuncProc, maps, LastDisassembleData;
+  CEFuncProc, maps, LastDisassembleData, commonTypeDefs;
 
 
 type
@@ -127,7 +127,7 @@ var dissectcode: tdissectcodethread;
 
 implementation
 
-uses ProcessHandlerUnit;
+uses ProcessHandlerUnit, parsers;
 
 
 { TDissectCodeThread }

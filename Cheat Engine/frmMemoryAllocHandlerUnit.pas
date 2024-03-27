@@ -10,7 +10,8 @@ interface
 uses
   windows, LCLIntf, Messages, SysUtils, Variants, Classes, Graphics, Controls, Forms,
   Dialogs, StdCtrls, symbolhandler, CEFuncProc,NewKernelHandler, autoassembler,
-  ExtCtrls, ComCtrls, stacktrace2, math, Menus, syncobjs, Contnrs, circularbuffer, LResources;
+  ExtCtrls, ComCtrls, stacktrace2, math, Menus, syncobjs, Contnrs, circularbuffer,
+  LResources, commonTypeDefs;
 
 
 const
@@ -204,7 +205,7 @@ var
 implementation
 
 
-uses frmautoinjectunit, MemoryBrowserFormUnit, processhandlerunit;
+uses frmautoinjectunit, MemoryBrowserFormUnit, processhandlerunit, Globals;
 
 resourcestring
   rsQueuedMemoryEventsWaiting = 'Queued memory events waiting: %s';

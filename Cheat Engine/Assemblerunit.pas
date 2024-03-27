@@ -1635,7 +1635,7 @@ procedure unregisterAssembler(id: integer);
 implementation
 
 uses {$ifndef autoassemblerdll}CEFuncProc,{$endif}symbolhandler, lua, luahandler,
-  lualib, assemblerArm;
+  lualib, assemblerArm, Parsers;
 
 
 var ExtraAssemblers: array of TAssemblerEvent;
@@ -2785,7 +2785,7 @@ begin
 
     if processhandler.is64Bit then
     begin
-      if disp<=$FFFFFFFF then
+      if disp<=$7FFFFFFF then
       begin
         //this can be solved with an 0x25 SIB byte
         setlength(modrm,2);

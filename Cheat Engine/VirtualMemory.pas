@@ -2,9 +2,11 @@ unit VirtualMemory;
 
 {$MODE Delphi}
 
+{obsolete}
+
 interface
 
-uses windows, SysUtils,LCLIntf,NewKernelHandler,CEFuncProc,ComCtrls, symbolhandler;
+uses windows, SysUtils,LCLIntf,NewKernelHandler,CEFuncProc,ComCtrls, symbolhandler, commonTypeDefs;
 
 type TMemoryRegion2 = record
   Address: ptrUint;
@@ -34,7 +36,7 @@ end;
 
 implementation
 
-uses ProcessHandlerUnit;
+uses ProcessHandlerUnit, Globals;
 
 resourcestring
   rsNoMemoryFoundInTheSpecifiedRegion = 'No memory found in the specified '

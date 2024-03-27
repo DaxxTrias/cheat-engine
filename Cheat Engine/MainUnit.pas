@@ -23,7 +23,8 @@ uses
   FPimage, byteinterpreter, frmgroupscanalgoritmgeneratorunit, vartypestrings,
   groupscancommandparser, GraphType, IntfGraphics, RemoteMemoryManager,
   DBK64SecondaryLoader, savedscanhandler, debuggertypedefinitions, networkInterface,
-  FrmMemoryRecordDropdownSettingsUnit, xmlutils, zstream, zstreamext;
+  FrmMemoryRecordDropdownSettingsUnit, xmlutils, zstream, zstreamext, commonTypeDefs,
+  VirtualQueryExCache;
 
 //the following are just for compatibility
 
@@ -217,6 +218,9 @@ type
     MenuItem1: TMenuItem;
     MenuItem10: TMenuItem;
     MenuItem11: TMenuItem;
+    miScanDirtyOnly: TMenuItem;
+    miScanPagedOnly: TMenuItem;
+    miGeneratePointermap: TMenuItem;
     miDisplayHex: TMenuItem;
     miNetwork: TMenuItem;
     miCompression: TMenuItem;
@@ -445,12 +449,15 @@ type
     procedure Label3Click(Sender: TObject);
     procedure Label57Click(Sender: TObject);
     procedure lblcompareToSavedScanClick(Sender: TObject);
+    procedure miScanDirtyOnlyClick(Sender: TObject);
     procedure miCompressionClick(Sender: TObject);
+    procedure miGeneratePointermapClick(Sender: TObject);
     procedure miManualExpandCollapseClick(Sender: TObject);
     procedure miSaveClick(Sender: TObject);
     procedure mi3dClick(Sender: TObject);
     procedure miChangeDisplayTypeClick(Sender: TObject);
     procedure miOpenFileClick(Sender: TObject);
+    procedure miScanPagedOnlyClick(Sender: TObject);
     procedure miSetDropdownOptionsClick(Sender: TObject);
     procedure miSetupSnapshotKeysClick(Sender: TObject);
     procedure miShowAsSignedClick(Sender: TObject);
@@ -873,7 +880,8 @@ uses mainunit2, ProcessWindowUnit, MemoryBrowserFormUnit, TypePopup, HotKeys,
   frmFloatingPointPanelUnit, pluginexports, DBK32functions, frmUltimapUnit,
   frmSetCrosshairUnit, StructuresFrm2, frmMemoryViewExUnit,
   frmD3DHookSnapshotConfigUnit, frmSaveSnapshotsUnit, frmsnapshothandlerUnit,
-  frmNetworkDataCompressionUnit, ProcessHandlerUnit, ProcessList, pointeraddresslist;
+  frmNetworkDataCompressionUnit, ProcessHandlerUnit, ProcessList, pointeraddresslist,
+  PointerscanresultReader, Parsers, Globals;
 
 resourcestring
   rsInvalidStartAddress = 'Invalid start address: %s';
@@ -2971,6 +2979,11 @@ begin
 
 end;
 
+procedure TMainForm.miScanDirtyOnlyClick(Sender: TObject);
+begin
+  scan_dirtyonly:=miScanDirtyOnly.checked;
+end;
+
 procedure TMainForm.miCompressionClick(Sender: TObject);
 begin
   if frmNetworkDataCompression=nil then
@@ -2978,6 +2991,7 @@ begin
 
   frmNetworkDataCompression.show;
 end;
+
 
 procedure TMainForm.miManualExpandCollapseClick(Sender: TObject);
 begin
@@ -3044,6 +3058,11 @@ begin
 
   if ProcessWindow.modalresult=mrOK then
     openProcessEpilogue(oldprocessname, oldprocess, oldprocesshandle);
+end;
+
+procedure TMainForm.miScanPagedOnlyClick(Sender: TObject);
+begin
+  scan_pagedonly:=miScanPagedOnly.checked;
 end;
 
 procedure TMainForm.miSetDropdownOptionsClick(Sender: TObject);
@@ -4257,9 +4276,9 @@ var
 begin
   if scantablist = nil then
   begin
-    setlength(c, panel5.ControlCount);
+    {setlength(c, panel5.ControlCount);
     for i := 0 to panel5.controlcount - 1 do
-      c[i] := panel5.Controls[i];
+      c[i] := panel5.Controls[i];  }
 
 
     foundlistheightdiff := btnMemoryView.top - (foundlist3.top + foundlist3.Height);
@@ -4273,7 +4292,7 @@ begin
     scantablist.color := panel5.Color;
     scantablist.Height := 20;
 
-    scantablist.Anchors := scantablist.Anchors + [akRight];
+    scantablist.Anchors := [akTop, akLeft, akRight];
 
     i := scantablist.AddTab(rsScan + ' 1'); //original scan
 
@@ -4289,6 +4308,7 @@ begin
     scantablist.OnTabChange := ScanTabListTabChange;
     scantablist.SelectedTab := i;
 
+
     tabcounter := 3;
 
 
@@ -4297,13 +4317,13 @@ begin
     //make space for the tabs
     //luckely this routine is not called often
 
-    for i := 0 to length(c) - 1 do
+    for i := 0 to panel5.ControlCount - 1 do
     begin
-      if (c[i] <> panel7) and (c[i] <> LoadButton) and
-        (c[i] <> SaveButton) and (c[i] <> ProcessLabel) and
-        (c[i] <> Progressbar1) and (c[i] <> logopanel) and
-        (c[i] <> btnMemoryView) and (c[i] <> speedbutton2) and
-        (c[i] <> btnAddAddressManually) then
+      if ( panel5.Controls[i] <> panel7) and (panel5.Controls[i] <> LoadButton) and
+        (panel5.Controls[i] <> SaveButton) and (panel5.Controls[i] <> ProcessLabel) and
+        (panel5.Controls[i] <> Progressbar1) and (panel5.Controls[i] <> logopanel) and
+        (panel5.Controls[i] <> btnMemoryView) and (panel5.Controls[i] <> speedbutton2) and
+        (panel5.Controls[i] <> btnAddAddressManually) and (panel5.Controls[i] <> scantablist) then
       begin
         panel5.Controls[i].Top := panel5.Controls[i].Top + 20; //p.height;
         //c[i].Parent:=p;
@@ -5103,21 +5123,23 @@ begin
   if addresslist <> nil then
     addresslist.Refresh;
 
-  updatetimer.Enabled := False;
-
   Inc(reinterpretcheck);
   if reinterpretcheck mod 15 = 0 then
     reinterpretaddresses;
-
-  updatetimer.Enabled := True;
 end;
 
 procedure TMainForm.FreezeTimerTimer(Sender: TObject);
 begin
-  freezetimer.Enabled := False;
-  if addresslist <> nil then
-    addresslist.ApplyFreeze;
-  freezetimer.Enabled := True;
+  try
+    if addresslist <> nil then
+      addresslist.ApplyFreeze;
+  except
+    on e:exception do
+    begin
+      OutputDebugString('FreezeTimerTimer:'+e.Message);
+    end;
+
+  end;
 end;
 
 
@@ -5482,7 +5504,7 @@ begin
               if not (s[i] in ['0', '1']) then
                 s[i] := '0';
 
-            oldvaluei := cefuncproc.BinToInt(s);
+            oldvaluei := parsers.BinToInt(s);
           end;
         end;
 
@@ -6120,6 +6142,9 @@ begin
   Pointerscanforthisaddress1.Visible :=
     (addresslist.selectedRecord <> nil) and (not addresslist.selectedRecord.isGroupHeader) and
     (not (addresslist.selectedRecord.vartype = vtAutoAssembler));
+
+  miGeneratePointermap.Visible:=processid<>0;
+
   Findoutwhataccessesthisaddress1.Visible :=
     (addresslist.selectedRecord <> nil) and (not addresslist.selectedRecord.isGroupHeader) and
     (not (addresslist.selectedRecord.vartype = vtAutoAssembler));
@@ -6138,7 +6163,7 @@ begin
     (addresslist.selectedRecord.vartype = vtAutoAssembler) then
     Calculatenewvaluepart21.Visible := False;
 
-  n4.Visible := addresslist.Count > 0;
+  n4.Visible := (addresslist.Count > 0) or (miGeneratePointermap.visible);
 
   n1.Visible := True;
   CreateGroup.Visible := True;
@@ -6933,7 +6958,7 @@ begin
   begin
     isbit := False;
     //convert the binary text to a decimal representation
-    scanvalue.Text := IntToStr(cefuncproc.BinToInt(scanvalue.Text));
+    scanvalue.Text := IntToStr(parsers.BinToInt(scanvalue.Text));
   end;
 end;
 
@@ -7484,6 +7509,49 @@ begin
   edit;
 end;
 
+
+procedure TMainForm.miGeneratePointermapClick(Sender: TObject);
+var
+  frmPointerScanner: TfrmPointerScanner;
+  originalAlligned: boolean;
+  originalConnect: boolean;
+
+begin
+  frmPointerScanner := tfrmpointerscanner.Create(self);
+  frmPointerScanner.Show;
+
+  if frmpointerscannersettings = nil then //used over and over
+  begin
+    frmpointerscannersettings := tfrmpointerscannersettings.Create(self);
+
+    if processhandler.is64Bit then
+      frmpointerscannersettings.edtReverseStop.text:='7FFFFFFFFFFFFFFF'
+    else
+    begin
+      if Is64bitOS then
+        frmpointerscannersettings.edtReverseStop.text:='FFFFFFFF'
+      else
+        frmpointerscannersettings.edtReverseStop.text:='7FFFFFFF';
+    end;
+  end;
+  originalAlligned:=frmpointerscannersettings.CbAlligned.checked;
+  frmpointerscannersettings.CbAlligned.checked:=true;
+
+  originalConnect:=frmpointerscannersettings.cbConnectToNode.checked;
+  frmpointerscannersettings.cbConnectToNode.checked:=false;
+
+
+
+  frmpointerscannersettings.rbGeneratePointermap.checked:=true;
+  frmpointerscannersettings.btnOk.Click;
+
+  frmPointerScanner.SkipNextScanSettings:=true;
+  frmPointerScanner.Method3Fastspeedandaveragememoryusage1.Click;
+
+  frmpointerscannersettings.CbAlligned.checked:=originalAlligned;
+  frmpointerscannersettings.cbConnectToNode.checked:=originalConnect;
+end;
+
 procedure TMainForm.Pointerscanforthisaddress1Click(Sender: TObject);
 var
   address: ptrUint;
@@ -7504,34 +7572,32 @@ begin
 
     address := memrec.GetRealAddress;
 
+
+    //default
+    frmPointerScanner := tfrmpointerscanner.Create(self);
+    frmPointerScanner.Show;
+
+    if frmpointerscannersettings = nil then //used over and over
+      frmpointerscannersettings := tfrmpointerscannersettings.Create(self);
+
+    frmpointerscannersettings.cbAddress.Text := inttohex(address, 8);
+
+    if findpointeroffsets then
     begin
-      //default
-      frmPointerScanner := tfrmpointerscanner.Create(self);
-      frmPointerScanner.Show;
+      //create and fill in the offset list
 
-      if frmpointerscannersettings = nil then //used over and over
-        frmpointerscannersettings := tfrmpointerscannersettings.Create(self);
+      frmpointerscannersettings.cbMustEndWithSpecificOffset.Checked := True;
+      TOffsetEntry(frmpointerscannersettings.offsetlist[0]).offset := memrec.pointeroffsets[0];
 
-      frmpointerscannersettings.edtAddress.Text := inttohex(address, 8);
-
-      if findpointeroffsets then
+      for i := 1 to length(memrec.pointeroffsets) - 1 do
       begin
-        //create and fill in the offset list
-
-        frmpointerscannersettings.cbMustEndWithSpecificOffset.Checked := True;
-        TOffsetEntry(frmpointerscannersettings.offsetlist[0]).offset :=
-          memrec.pointeroffsets[0];
-
-        for i := 1 to length(memrec.pointeroffsets) - 1 do
-        begin
-          frmpointerscannersettings.btnAddOffset.Click;
-          TOffsetEntry(frmpointerscannersettings.offsetlist[i]).offset :=
-            memrec.pointeroffsets[i];
-        end;
+        frmpointerscannersettings.btnAddOffset.Click;
+        TOffsetEntry(frmpointerscannersettings.offsetlist[i]).offset := memrec.pointeroffsets[i];
       end;
-
-      frmPointerScanner.Method3Fastspeedandaveragememoryusage1.Click;
     end;
+
+    frmpointerscannersettings.rbFindAddress.checked:=true;
+    frmPointerScanner.Method3Fastspeedandaveragememoryusage1.Click;
 
   end;
 end;
@@ -7929,37 +7995,68 @@ end;
 
 procedure TMainForm.Label59Click(Sender: TObject);
 var
-  l: TReversePointerListHandler;
-  fs: TFileStream;
-  cs: Tdecompressionstream;
-  p: ptruint;
+  r: TPointerListHandler;
+  f: tfilestream;
+  ds: Tdecompressionstream;
 
+  i: integer;
+  sl: tstringlist;
 
-  x: TcompressionstreamWithPositionSupport;
-  y: tmemorystream;
+  psr: TPointerListHandler;
 
-  a: ptruint;
-  plist: PPointerList;
+  x: qword;
+
+  vqe: TVirtualQueryExCache;
+
+  mbi,mbi2: TMEMORYBASICINFORMATION;
+  A: PTRUINT;
+
+  shouldend: boolean;
 begin
-  fs:=tfilestream.Create('e:\ptr\SHOM-health08EAE5F4.scandata', fmOpenRead);
-  cs:=Tdecompressionstream.create(fs);
+  vqe:=TVirtualQueryExCache.create(processhandle);
+  a:=0;
+
+  while VirtualQueryEx(processhandle, pointer(a), mbi, sizeof(mbi))<>0 do
+  begin
+    vqe.AddRegion(mbi);
+    a:=a+mbi.RegionSize;
+  end;
 
 
-  l:=TReversePointerListHandler.createFromStream(cs, progressbar1);
+  a:=0;
+  vqe.getRegion($ff000000, mbi2);
 
-  a:=$08EAE5F4-$34;
-  plist:=l.findPointerValue(a,a);
+  vqe.getRegion($00400500, mbi2);
 
-  if plist=nil then
-    showmessage('fuck');
+  if vqe.getRegion(a, mbi2) then
+  begin
+    shouldend:=false;
+    while VirtualQueryEx(processhandle, pointer(a), mbi, sizeof(mbi))<>0 do
+    begin
+      if shouldend then showmessage('awww');
+      if mbi.BaseAddress<>mbi2.BaseAddress then
+      begin
+        showmessage('fuck');
+        exit;
+      end;
+
+      a:=a+mbi.RegionSize;
+
+      if vqe.getRegion(a, mbi2)=false then shouldend:=true;
+    end;
+  end
+  else
+    showmessage('doublefuck');
+
+  if shouldend=false then showmessage('hmmm');
+
+  a:=0;
+  while vqe.getregion(a,mbi) do a:=a+mbi.RegionSize;
 
 
 
-  cs.free;
-  fs.free;
 
-
-  showmessage(inttohex(p, 8)); //should be 01827d78
+  vqe.free;
 end;
 
 procedure ChangeIcon(hModule: HModule; restype: PChar; resname: PChar;
@@ -8182,6 +8279,8 @@ var
   actuallyshown: double;
   error: boolean;
   previous: string;
+
+  c: qword;
 begin
   if ScanTabList <> nil then
     ScanTabList.Enabled := True;
@@ -8221,7 +8320,8 @@ begin
     formsettings.cbShowAsSigned.Checked, not rbBit.Checked, cbunicode.Checked,
     TCustomType(VarType.items.objects[vartype.ItemIndex]));
 
-  foundcount := memscan.GetFoundCount;
+  c:=memscan.GetFoundCount;
+  foundcount := c;
 
   if PreviousResults<>nil then
     freeandnil(PreviousResults);

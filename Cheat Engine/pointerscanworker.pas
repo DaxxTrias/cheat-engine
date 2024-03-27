@@ -22,12 +22,14 @@ type
 
 
     procedure rscan(valuetofind:ptrUint; level: valSint);
-    procedure StorePath(level: valSint; staticdata: PStaticData);
-    function DoRescan(level: valSint; staticdata: PStaticData): boolean;
+    procedure StorePath(level: valSint; moduleid: integer; offset: ptruint);
+    function DoRescan(level: valSint; moduleid: integer; offset: ptruint): boolean;
   protected
+    fhasresults: boolean;
     results: tstream;
     procedure initialize; virtual; abstract;
     procedure flushresults; virtual; abstract;
+    procedure flushifneeded; virtual;
   public
     pointerlisthandler: TReversePointerListHandler;
     pathqueuesemaphore: THandle;
@@ -97,6 +99,7 @@ type
 
     compressedptr: boolean;
     MaxBitCountModuleIndex: dword;
+    MaxBitCountModuleOffset: dword;
     MaxBitCountLevel: dword;
     MaxBitCountOffset: dword;
 
@@ -117,9 +120,10 @@ type
 
     savestate: boolean;
     overflowqueuewriter:TQueueWriterMethod;
+
+    function HasResultsPending: boolean;
+
     procedure SaveStateAndTerminate;
-
-
 
     procedure execute; override;
     constructor create(suspended: boolean);
@@ -128,32 +132,35 @@ type
     property OnException: TNotifyEvent read fOnException write fOnException;
   end;
 
-  TFlushResultsEvent=function(size: integer; m: TStream): boolean of object;
+  TFlushResultsEvent=function(size: integer; m: TMemoryStream): boolean of object;
   TPointerscanWorkerNetwork=class(TPointerscanWorker)
   private
+    fFlushSize: integer;
     fOnFlushResults: TFlushResultsEvent;
     resultscs: TCompressionstreamWithPositionSupport;
     resultsms: TMemorystream;
+    procedure setFlushSize(size: integer);
   protected
     procedure initialize; override;
     procedure flushresults; override;
+    procedure flushIfNeeded; override;
   public
     destructor destroy; override;
 
     property OnFlushResults: TFlushResultsEvent read fOnFlushResults write fOnFlushResults;
+    property FlushSize: integer read fFlushSize write setFlushSize;
   end;
 
   TPointerscanWorkerLocal=class(TPointerscanWorker)
   private
     ffilename: string;
-    resumescan: boolean;
     resultsfile: tfilestream;
     resultsms: TMemorystream;
   protected
     procedure initialize; override;
     procedure flushresults; override;
   public
-    constructor create(suspended: boolean; filename: string; resumescan: boolean);
+    constructor create(suspended: boolean; filename: string);
     destructor destroy; override;
 
     property filename: string read ffilename;
@@ -168,11 +175,27 @@ uses frmMemoryAllocHandlerUnit, pointerscancontroller;
 procedure TPointerscanWorkerNetwork.initialize;
 begin
   // nothing for now
+  //fflushsize:=15*1024*1024;
 
   resultsms:=tmemorystream.create;
   resultscs:=TCompressionstreamWithPositionSupport.create(cldefault, resultsms);
 
   results:=resultscs;
+end;
+
+procedure TPointerscanWorkerNetwork.setFlushSize(size: integer);
+begin
+  fflushsize:=max(4096, min(size, 15*1024*1024)); //value between 1kb and 15mb
+
+  //debug:
+  //fflushsize:=0; //make it flush every time
+end;
+
+procedure TPointerscanWorkerNetwork.flushIfNeeded;
+begin
+
+  if (resultscs.Position>fflushsize) or (resultsms.position>fflushsize) then
+    flushresults;
 end;
 
 procedure TPointerscanWorkerNetwork.flushresults;
@@ -194,15 +217,19 @@ begin
       while fOnFlushResults(size, resultsms)=false do
       begin
         if terminated then break;
-        sleep(1000);
+        sleep(10+random(500));
       end;
     end;
 
     resultsms.position:=0;
     resultscs:=TCompressionstreamWithPositionSupport.create(cldefault, resultsms);
 
+    results:=resultscs;
+
     isFlushing:=false;
     inc(timespentwriting, gettickcount64-currentwritestart);
+
+    fHasResults:=false;
   end;
 end;
 
@@ -228,10 +255,10 @@ begin
 
 
 
-  if resumescan and fileexists(filename) then
+  if fileexists(filename) then
   begin
     //append to the end
-    resultsfile:= tfilestream.Create(filename,fmOpenWrite or fmShareDenyNone);
+    resultsfile:=tfilestream.Create(filename,fmOpenWrite or fmShareDenyNone);
     resultsfile.Seek(0, soEnd);
   end
   else
@@ -258,10 +285,9 @@ begin
   end;
 end;
 
-constructor TPointerscanWorkerLocal.create(suspended: boolean; filename: string; resumescan: boolean);
+constructor TPointerscanWorkerLocal.create(suspended: boolean; filename: string);
 begin
   self.ffilename:=filename;
-  self.resumescan:=resumescan;
 
   inherited create(suspended);
 end;
@@ -281,6 +307,11 @@ procedure TPointerscanWorker.SaveStateAndTerminate;
 begin
   savestate:=true;
   Terminate;
+end;
+
+function TPointerscanWorker.HasResultsPending: boolean;
+begin
+  fHasResults:=true;
 end;
 
 constructor TPointerscanWorker.create(suspended:boolean);
@@ -311,9 +342,7 @@ begin
     try
       Initialize;
 
-
-
-      compressedEntrySize:=32+MaxBitCountModuleIndex+MaxBitCountLevel+MaxBitCountOffset*(maxlevel-mustendwithoffsetlistlength);
+      compressedEntrySize:=MaxBitCountModuleOffset+MaxBitCountModuleIndex+MaxBitCountLevel+MaxBitCountOffset*(maxlevel-mustendwithoffsetlistlength);
       compressedEntrySize:=(compressedEntrySize+7) div 8;
 
       getmem(compressedEntry, compressedEntrySize+4); //+4 so there's some space for overhead (writing using a dword pointer to the last byte)
@@ -322,9 +351,11 @@ begin
       for i:=1 to MaxBitCountModuleIndex do
         MaskModuleIndex:=(MaskModuleIndex shl 1) or 1;
 
+      MaskLevel:=0;
       for i:=1 to MaxBitCountLevel do
         MaskLevel:=(MaskLevel shl 1) or 1;
 
+      MaskOffset:=0;
       for i:=1 to MaxBitCountOffset do
         MaskOffset:=(MaskOffset shl 1) or 1;
 
@@ -332,15 +363,17 @@ begin
 
       while (not terminated) do
       begin
-        wr:=WaitForSingleObject(pathqueueSemaphore, INFINITE); //obtain semaphore
-        if stop or terminated then
-        begin
-          ReleaseSemaphore(pathqueueSemaphore, 1, nil);
-          exit;
-        end;
+        wr:=WaitForSingleObject(pathqueueSemaphore, 500); //obtain semaphore
 
         if wr=WAIT_OBJECT_0 then
         begin
+          if stop or terminated then
+          begin
+            ReleaseSemaphore(pathqueueSemaphore, 1, nil);
+            exit;
+          end;
+
+
           //fetch the data from the queue and staticscanner
           if outofdiskspace^ then
           begin
@@ -376,6 +409,8 @@ begin
             isdone:=true;  //set isdone to true
           end;
         end;
+
+        if stop or terminated then exit;
       end;
 
     except
@@ -405,7 +440,8 @@ end;
 
 
 
-function TPointerscanWorker.DoRescan(level: valSint; staticdata: PStaticData): boolean;
+
+function TPointerscanWorker.DoRescan(level: valSint; moduleid: integer; offset: ptruint): boolean;
 var
   i,j: integer;
   a: ptruint;
@@ -414,7 +450,7 @@ begin
   result:=false;
   for i:=0 to instantrescanlistcount-1 do
   begin
-    a:=instantrescanlist[i].getAddressFromModuleIndexPlusOffset(staticdata.moduleindex, staticdata.offset);
+    a:=instantrescanlist[i].getAddressFromModuleIndexPlusOffset(moduleid, offset);
 
     for j:=level downto 0 do
     begin
@@ -429,7 +465,7 @@ begin
   result:=true;
 end;
 
-procedure TPointerscanWorker.StorePath(level: valSint; staticdata: PStaticData);
+procedure TPointerscanWorker.StorePath(level: valSint; moduleid: integer; offset: ptruint);
 {Store the current path to memory and flush if needed}
 var
   i: integer;
@@ -438,9 +474,7 @@ var
 
   bit: integer;
 begin
-  if (staticdata=nil) then exit; //don't store it
-
-  if instantrescan and (not DoRescan(level, staticdata)) then exit;
+  if instantrescan and (not DoRescan(level, moduleid, offset)) then exit;
 
   //fill in the offset list
   inc(pointersfound);
@@ -491,33 +525,18 @@ begin
 
 
     bit:=0;
-    pdword(compressedEntry)^:=staticdata.offset;
-    bit:=bit+32;
 
+    pqword(compressedEntry)^:=offset;
+    bit:=bit+MaxBitCountModuleOffset;
 
     bd8:=bit shr 3; //bit div 8;
-    pdword(@compressedEntry[bd8])^:=staticdata.moduleindex;
+    pdword(@compressedEntry[bd8])^:=moduleid;
     bit:=bit+MaxBitCountModuleIndex;
 
 
     bd8:=bit shr 3; //bit div 8;
     bm8:=bit and $7; //bit mod 8;
-        {
-    v:=pdword(@compressedEntry[bd8])^; //get the current value at the specific byte the current bit points at
-    m:=MaskLevel shl (bm8);
-    m:=not m; //invert the mask
-    v:=v and m; //keep all the bits, except those of masklevel
-    v:=v or (level shl (bm8)); //set the bits of masklevel
-    pdword(@compressedEntry[bd8])^:=v; //set the value back
-    bit:=bit+MaxBitCountLevel;    //next section
-    }
 
-    //do not save the "must end with specific offset" offsets. They are known
-
-    //startindex:=mustendwithoffsetlistlength;
-   // _level:=1+(level-mustendwithoffsetlistlength);
-
-//    pdword(@compressedEntry[bd8])^:=pdword(@compressedEntry[bd8])^ and (not (MaskLevel shl bm8)) or (_level shl bm8);
     pdword(@compressedEntry[bd8])^:=pdword(@compressedEntry[bd8])^ and (not (MaskLevel shl bm8)) or ((1+(level-mustendwithoffsetlistlength)) shl bm8);
     bit:=bit+MaxBitCountLevel;    //next section
 
@@ -528,21 +547,6 @@ begin
     begin
       bd8:=bit shr 3; //bit div 8;
       bm8:=bit and $7; //bit mod 8;
-        {
-      v:=pdword(@compressedEntry[bd8])^;
-      m:=MaskOffset shl (bm8);
-      m:=not m;
-      v:=v and m;
-
-      if alligned then
-        v:=v or ((tempresults[i] shr 2) shl (bm8))
-      else
-        v:=v or (tempresults[i] shl (bm8));
-
-
-      pdword(@compressedEntry[bd8])^:=v;
-        }
-
 
       if alligned then
         pdword(@compressedEntry[bd8])^:=pdword(@compressedEntry[bd8])^ and (not (MaskOffset shl bm8)) or ((tempresults[i] shr 2) shl bm8)
@@ -557,15 +561,25 @@ begin
   end
   else
   begin
-    results.WriteBuffer(staticdata.moduleindex, sizeof(staticdata.moduleindex));
-    results.WriteBuffer(staticdata.offset,sizeof(staticdata.offset));
+    results.WriteDword(moduleid);
+    results.WriteQword(offset);
+
     i:=level+1; //store how many offsets are actually used (since all are saved)
-    results.WriteBuffer(i,sizeof(i));
-    results.WriteBuffer(tempresults[0], maxlevel*sizeof(tempresults[0]) ); //todo for 6.3+: Change sizeof(tempresult[0]) with the max size the structsize can generate./ (e.g 4096 is  only 2 bytes, 65536 =3)
+    results.WriteDword(i);
+    results.WriteBuffer(tempresults[0], maxlevel*sizeof(tempresults[0]) );
   end;
-  if results.position>15*1024*1024 then //bigger than 15mb
+
+  fhasresults:=true;
+  flushIfNeeded;
+end;
+
+procedure TPointerscanWorker.flushifneeded;
+begin
+  //default behaviour. Override for smaller buffers
+  if results.position>15*1024*1024 then
     flushresults;
 end;
+
 
 procedure TPointerscanWorker.rscan(valuetofind:ptrUint; level: valSint);
 {
@@ -790,7 +804,7 @@ begin
               begin
                 nostatic.moduleindex:=$FFFFFFFF;
                 nostatic.offset:=plist.list[j].address;
-                StorePath(level,@nostatic);
+                StorePath(level,-1, plist.list[j].address);
               end;
 
             end
@@ -801,7 +815,7 @@ begin
               begin
                 nostatic.moduleindex:=$FFFFFFFF;
                 nostatic.offset:=plist.list[j].address;
-                StorePath(level,@nostatic);
+                StorePath(level, -1, plist.list[j].address);
               end;
             end
 
@@ -810,7 +824,7 @@ begin
         else
         begin
           //found a static one
-          StorePath(level, plist.list[j].staticdata);
+          StorePath(level, plist.list[j].staticdata.moduleindex, plist.list[j].staticdata.offset);
 
           if onlyOneStaticInPath then DontGoDeeper:=true;
         end;

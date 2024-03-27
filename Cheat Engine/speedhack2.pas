@@ -5,7 +5,7 @@ unit speedhack2;
 interface
 
 uses Classes,LCLIntf, SysUtils, NewKernelHandler,CEFuncProc, symbolhandler,
-     autoassembler, dialogs,Clipbrd;
+     autoassembler, dialogs,Clipbrd, commonTypeDefs;
 
 type TSpeedhack=class
   private
@@ -22,7 +22,7 @@ var speedhack: TSpeedhack;
 
 implementation
 
-uses frmAutoInjectUnit, networkInterface, networkInterfaceApi, ProcessHandlerUnit;
+uses frmAutoInjectUnit, networkInterface, networkInterfaceApi, ProcessHandlerUnit, Globals;
 
 resourcestring
   rsFailureEnablingSpeedhackDLLInjectionFailed = 'Failure enabling speedhack. (DLL injection failed)';

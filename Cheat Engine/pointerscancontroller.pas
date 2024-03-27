@@ -9,7 +9,7 @@ uses
   resolve, math, pointervaluelist,PointerscanWorker, PointerscanStructures,
   pointeraddresslist, PointerscanresultReader, cefuncproc, newkernelhandler,
   zstream, PointerscanConnector, PointerscanNetworkStructures, WinSock2,
-  CELazySocket, AsyncTimer, MemoryStreamReader;
+  CELazySocket, AsyncTimer, MemoryStreamReader, commonTypeDefs, NullStream;
 
 
 type
@@ -30,6 +30,18 @@ type
   PGetScanParametersOut=^TGetScanParametersOut;
 
   TPointerscanController=class;
+
+  TPointerlistloader=class(tthread)
+  private
+  public
+    filename: string;
+    memoryfilestream: TMemoryStream;
+
+    progressbar: TProgressbar;
+    pointerlisthandler: TPointerListHandler;
+    procedure execute; override;
+  end;
+
 
   TScanResultDownloader = class (TThread) //class for receiving scan results from a child
   private
@@ -55,6 +67,8 @@ type
 
   TPointerscanController = class(TThread)
   private
+    fTerminatedScan: boolean;
+
     fOnScanDone: TPointerscanDoneEvent;
     fOnStartScan: TNotifyEvent;
 
@@ -87,7 +101,7 @@ type
     childnodes: array of TPointerscanControllerChild;
 
     parentUpdater: TAsyncTimer;
-    lastUpdateSent: integer;
+    lastUpdateSent: qword;
 
 
     lastPathCheck: qword; //last time the path check checked the queues
@@ -120,7 +134,10 @@ type
     fTotalResultsReceived: qword; //updated when a child sends it results
     fTotalPathsEvaluatedByErasedChildren: qword; //when a child entry is deleted, add it's total paths evaluated value to this
 
+    wasidle: boolean; //state of isIdle since last call to waitForAndHandleNetworkEvent
 
+    procedure InitializeCompressedPtrVariables;
+    procedure InitializeEmptyPathQueue; //initializes the arrays inside the pathqueue
 
 
     procedure notifyStartScan;
@@ -128,14 +145,8 @@ type
 
     procedure EatFromOverflowQueueIfNeeded;
 
-  {  procedure launchWorker; //connect to the server
-    procedure launchServer; //start listening on the specific port
-    procedure broadcastscan; //sends a broadcast to the local network and the potentialWorkerList
-
-    function doDistributedScanningLoop: boolean;  //actually doDistributedScanningLoopIteration
-    function doDistributedScanningWorkerLoop: boolean;
-    function doDistributedScanningServerLoop: boolean;
-    procedure DispatchCommand(s: Tsocket; command: byte);  }
+    function childrenDone: boolean;
+    function localScannersDone: boolean;
 
     procedure getQueueStatistics_checkPath(path: TPathQueueElement);
     procedure getQueueStatistics;
@@ -168,15 +179,21 @@ type
     procedure SayHello(potentialparent: PPointerscanControllerParent);
 
 
-    procedure cleanupScan;
+    //procedure cleanupScan;
+    function sendPathsToParent: integer; //sends a lot of paths to the parent
+
 
     procedure HandleUpdateStatusReply_DoNewScan;
     procedure HandleUpdateStatusReply_GiveMeYourPaths;
     procedure HandleUpdateStatusReply_HereAreSomePaths;
     procedure HandleUpdateStatusReply_CurrentScanHasEnded;
+    procedure HandleUpdateStatusReply_EverythingOK;
     procedure HandleUpdateStatusReply;
 
+    procedure UpdateStatus_cleanupScan;
     procedure UpdateStatus(sender: tobject); //sends the current status to the parent
+
+    procedure HandleGoodbyeMessage(index: integer);
     procedure HandleQueueMessage(index: integer);
     procedure HandleCanUploadResultsMessage(index: integer);
     procedure HandleUploadResultsMessage(index: integer);
@@ -194,6 +211,11 @@ type
     procedure ConnectorConnect(sender: TObject; sockethandle: TSocket; IBecameAParent: boolean; entry: PConnectEntry);
 
     procedure OverflowQueueWriter(sender: TObject; PathQueueElement: TPathQueueElement);
+    function getTerminatedState: boolean;
+
+    procedure ProcessScanDataFiles;
+  protected
+    property Terminated:boolean read getTerminatedState;
   public
 
 
@@ -211,8 +233,8 @@ type
     childpassword: string;
     autoTrustIncomingChildren: boolean;
 
-    maxResultsToFind: qword;
-    maxTimeToScan: qword;
+    maxResultsToFind: qword; //number of results found
+    maxTimeToScan: qword;    //max time to scan in seconds
     allowTempFiles: boolean;
 
 
@@ -255,7 +277,7 @@ type
 
     LimitToMaxOffsetsPerNode: boolean;
     MaxOffsetsPerNode: integer; //Sets how many different offsets per node should be handled at most (specifically mentioning different offsets since a pointervalue can have multiple addresses, meaning the same offset, different paths)
-
+    includeSystemModules: boolean;
 
     fast: boolean;
     psychotic: boolean;
@@ -302,11 +324,11 @@ type
     generatePointermapOnly: boolean;
 
     compressedptr: boolean;
+    MaxBitCountModuleOffset: dword;
     MaxBitCountModuleIndex: dword;
     MaxBitCountLevel: dword;
     MaxBitCountOffset: dword;
 
-    isdone: boolean;
     staticonly: boolean; //for reverse
 
     hasError: boolean;
@@ -342,7 +364,7 @@ type
     instantrescan: boolean;
     instantrescanfiles:array of record
       filename: string;
-      memoryfilestream: TMemoryStream;
+      memoryfilestream: TMemoryStream; //if no tempfiles this holds the scandata file
       address: ptruint;
       plist: TPointerListHandler;
       progressbar: TProgressBar;
@@ -350,12 +372,11 @@ type
     end;
 
     resumescan: boolean; //if true load the pointermap from filename.resume.scandata and the queue from filename.resume.queue
-    resumefilelist: tstringlist; //list containing the files of the previous scan. If less threads are created make sure at least all these files stay part of the .ptr file
-    resumePtrFilename: string;
 
     downloadingscandata: boolean; //true while scandata is being downloaded
     downloadingscandata_received: qword;
     downloadingscandata_total: qword;
+    downloadingscandata_starttime, downloadingscandata_stoptime: qword;
 
     function UploadResults(decompressedsize: integer; s: tmemorystream): boolean; //sends the given results (compressed) to the parent.
 
@@ -370,26 +391,30 @@ type
     function hasNetworkResponsibility: boolean;
 
     function isIdle: boolean;
+    function isDone: boolean;
     procedure getMinAndMaxPath(var minpath: TDynDwordArray; var maxpath: TDynDwordArray);
     procedure getThreadStatuses(s: TStrings);
     function getTotalTimeWriting: qword;
     function getTotalPathsEvaluated: qword;
+    function getLocalPathsEvaluated: qword;
     function getTotalResultsFound: qword;
     function getTotalPathQueueSize: integer;
     function getPointerlistHandlerCount: qword;
     function getActualThreadCount: integer;
-    function getTotalThreadCount: integer;
+    function getPotentialThreadCount: integer;
     procedure getConnectingList(var l: TConnectEntryArray);
     procedure getConnectionList(var l: TConnectionEntryArray);
     procedure getParentData(var d: TPublicParentData);
 
     procedure TerminateAndSaveState;
+    procedure execute_nonInitializer;
     procedure execute; override;
     constructor create(suspended: boolean);
     destructor destroy; override;
 
     property starttime: Qword read fstarttime;
     property totalpathsevaluated: qword read getTotalPathsEvaluated;
+    property localpathsevaluated: qword read getLocalPathsEvaluated;
     property OnScanDone: TPointerscanDoneEvent read fOnScanDone write fOnScanDone;
     property OnStartScan: TNotifyEvent read fOnStartScan write fOnStartScan;
   end;
@@ -418,10 +443,41 @@ type
 
 implementation
 
-uses PointerscanNetworkCommands, ValueFinder, ProcessHandlerUnit;
+uses PointerscanNetworkCommands, ValueFinder, ProcessHandlerUnit, Parsers;
 
 resourcestring
   rsFailureCopyingTargetProcessMemory = 'Failure copying target process memory';
+
+//------------------------POINTERLISTLOADER-------------
+procedure TPointerlistloader.execute;
+var
+  s: TStream;
+  ds: Tdecompressionstream;
+begin
+  try
+    s:=memoryfilestream;
+    if s=nil then
+      s:=tfilestream.Create(filename, fmOpenRead or fmShareDenyNone);
+
+    s.position:=0;
+
+    ds:=Tdecompressionstream.create(s);
+
+    pointerlisthandler:=TPointerListHandler.createFromStream(ds, progressbar);
+
+    ds.free;
+
+    if s is TFileStream then
+      s.free;
+
+  except
+    on e:exception do
+    begin
+      OutputDebugString('TPointerlistloader exception:'+e.message);
+    end;
+  end;
+end;
+
 
 //------------------------SCANRESULTDOWNLOADER-------------
 procedure TScanResultDownloader.execute;
@@ -436,8 +492,18 @@ var
 
   resultstream: Tfilestream;
   i: integer;
+  EntrySize: integer;
 begin
   //first get the socketstream
+
+  if fcontroller.compressedptr then
+  begin
+    EntrySize:=fcontroller.MaxBitCountModuleOffset+fcontroller.MaxBitCountModuleIndex+fcontroller.MaxBitCountLevel+fcontroller.MaxBitCountOffset*(fcontroller.maxlevel-length(fcontroller.mustendwithoffsetlist));
+    EntrySize:=(EntrySize+7) div 8;
+  end
+  else
+    EntrySize:=sizeof(dword)+sizeof(integer)+sizeof(integer)+fcontroller.maxlevel*sizeof(dword);
+
   s:=nil;
   ms:=nil;
   ds:=nil;
@@ -476,6 +542,7 @@ begin
 
     //tell the child it was received
     s.WriteByte(0);
+    s.flushWrites;
   except
     on e:exception do
     begin
@@ -501,6 +568,7 @@ begin
   try
     if ms<>nil then
     begin
+      ms.position:=0;
       try
         if fcontroller.initializer then
         begin
@@ -520,9 +588,12 @@ begin
                   else
                   begin
                     //create a resultstream
-                    resultstream:=TFileStream.Create(fcontroller.filename+'.child'+inttostr(fChildID), fmCreate);
+                    resultstream:=TFileStream.Create(fcontroller.filename+'.results.child'+inttostr(fChildID), fmCreate);
                     fcontroller.childnodes[i].resultstream:=resultstream;
                   end;
+
+                  inc(fcontroller.childnodes[i].resultsfound, decompressedStreamSize div EntrySize);
+
                   break;
                 end;
               end;
@@ -531,8 +602,15 @@ begin
               fcontroller.childnodescs.Leave;
             end;
 
+
             if resultstream<>nil then
-              resultstream.CopyFrom(ds, decompressedStreamSize);
+            begin
+              i:=resultstream.CopyFrom(ds, 0);
+              if i=0 then
+                OutputDebugString('FUUUCK');
+            end;
+
+
 
 
           finally
@@ -541,9 +619,10 @@ begin
         end
         else
         begin
+
           while fcontroller.UploadResults(decompressedStreamSize, ms)=false do
           begin
-            sleep(250);
+            sleep(10+random(500));
             if terminated then exit;
           end;
         end;
@@ -591,20 +670,16 @@ end;
 //--------------------------SCANDATAUPLOADER--------------
 procedure TScanDataUploader.UpdateChildProgress(sent: qword; total: qword);
 var
-  percentage: integer;
   i: integer;
 begin
-  percentage:=ceil(sent/total*100);
-
   fcontroller.childnodescs.Enter;
   try
     for i:=0 to length(fcontroller.childnodes)-1 do
     begin
       if fcontroller.childnodes[i].childid=fchildid then
       begin
-
-        fcontroller.childnodes[i].receivingScanDataProgress:=percentage;
-        fcontroller.childnodes[i].receivingScanDataSpeed:=ceil((sent/(GetTickCount64-starttime))*1000); //bytes/s
+        fcontroller.childnodes[i].ScanDataSent:=sent;
+        fcontroller.childnodes[i].ScanDataTotalSize:=total;
         break;
       end;
     end;
@@ -640,6 +715,7 @@ begin
         if fcontroller.childnodes[i].childid=fchildid then
         begin
           s:=fcontroller.childnodes[i].socket;
+          fcontroller.childnodes[i].ScanDataStartTime:=GetTickCount64;
           break;
         end;
       end;
@@ -649,10 +725,10 @@ begin
   end;
 
   if s=nil then exit; //
-
-  if self.terminated then exit;
-
   try
+    if self.terminated then raise exception.create('The upload was terminated');
+
+
     s.WriteByte(PSUPDATEREPLYCMD_DONEWSCAN);
     s.WriteDWord(fchildid);  //tell it the childid (it's new scannerid)
 
@@ -685,7 +761,7 @@ begin
 
       s.flushWrites;
 
-      if self.terminated then exit;
+      if self.terminated then raise exception.create('The scan was terminated');
 
 
       setlength(f, length(instantrescanfiles)+1);
@@ -702,7 +778,7 @@ begin
           //get the .scandata files from memory
           f[0]:=TMemoryStreamReader.create(pointerlisthandlerfile);
           for i:=0 to length(instantrescanfiles)-1 do
-            f[i]:=TMemoryStreamReader.create(instantrescanfiles[i].memoryfilestream);
+            f[i+1]:=TMemoryStreamReader.create(instantrescanfiles[i].memoryfilestream);
         end;
 
 
@@ -722,10 +798,14 @@ begin
 
         sent:=0;
 
-        for i:=0 to length(instantrescanfiles)-1 do
+        for i:=0 to length(f)-1 do
         begin
           //send a header
-          s.WriteDWord(ifthen(i=0,0,instantrescanfiles[i-1].address));  //not important for the main  (automaticaddress)
+          if i>0 then
+            s.WriteQword(instantrescanfiles[i-1].address)
+          else
+            s.WriteQWord(0);  //not important for the main  (automaticaddress)
+
           s.WriteQWord(f[i].Size);
 
           //and now send the file (in 64KB blocks)
@@ -737,7 +817,7 @@ begin
             s.flushWrites;
             UpdateChildProgress(sent, totalsize);
 
-            if self.terminated then exit;
+            if self.terminated then raise exception.create('The scan was terminated');
           end;
 
         end;
@@ -752,7 +832,29 @@ begin
 
 
       if s.ReadByte<>0 then
+      begin
         raise TSocketException.create('Invalid result received after uploading the scanresults');
+      end
+      else
+      begin
+        OutputDebugString('Succesfully sent scandata to child');
+
+        //mark it as a child we should keep track off
+        fcontroller.childnodescs.Enter;
+        try
+          for i:=0 to length(fcontroller.childnodes)-1 do
+          begin
+            if fcontroller.childnodes[i].childid=fchildid then
+            begin
+              fcontroller.childnodes[i].hasReceivedScandata:=true;
+              break;
+            end;
+          end;
+        finally
+          fcontroller.childnodescs.Leave;
+        end;
+
+      end;
 
     end;
 
@@ -792,6 +894,61 @@ end;
 
 //-------
 
+function TPointerscanController.LocalScannersDone: boolean;
+var i: integer;
+begin
+  result:=true;
+  pathqueueCS.enter;
+  localscannersCS.Enter;
+  try
+    for i:=0 to length(localscanners)-1 do
+    begin
+      if localscanners[i].Finished then continue;
+
+      if localscanners[i].isdone=false then
+      begin
+        result:=false;
+        exit;
+      end;
+    end;
+  finally
+    localscannersCS.Leave;
+    pathqueueCS.Leave;
+  end;
+end;
+
+function TPointerscanController.childrendone: boolean;
+var i: integer;
+begin
+  result:=true;
+  childnodescs.enter;
+  try
+    for i:=0 to length(childnodes)-1 do
+      if childnodes[i].actualthreadcount>0 then //it still has some threads, so not done. (they can still flush their results when they get destroyed)
+      begin
+        result:=false;
+        exit;
+      end;
+  finally
+    childnodescs.leave;
+  end;
+end;
+
+function TPointerscanController.isDone: boolean;
+var i: integer;
+begin
+  if not initializer then
+    result:=isidle and (getActualThreadCount=0)
+  else
+  begin
+    result:=isidle;
+
+    if result then
+      result:=childrendone;
+
+  end;
+end;
+
 function TPointerscanController.isIdle: boolean;
 var
   i: integer;
@@ -803,7 +960,7 @@ begin
   try
     for i:=0 to length(childnodes)-1 do
     begin
-      if childnodes[i].idle then
+      if not childnodes[i].idle then
         exit;
     end;
   finally
@@ -822,16 +979,7 @@ begin
 
   //the children are idle and all queue entries are empty
 
-  localscannersCS.Enter;
-  try
-    for i:=0 to length(localscanners)-1 do
-    begin
-      if localscanners[i].isdone=false then
-        exit;
-    end;
-  finally
-    localscannersCS.Leave;
-  end;
+  if localscannersdone=false then exit;
 
   //the children are idle and all queue entries are empty and no thread is currently doing anything
 
@@ -844,22 +992,38 @@ begin
     fOnStartScan(self);
 end;
 
+function TPointerscanController.getTerminatedState: boolean;
+begin
+  result:=(inherited Terminated) or fTerminatedScan;
+end;
+
 function TPointerscanController.getActualThreadCount: integer;
+var i: integer;
 begin
   localscannerscs.Enter;
   result:=length(localscanners);
   localscannerscs.Leave;
-end;
-
-function TPointerscanController.getTotalThreadCount: integer;
-var i: integer;
-begin
-  result:=getActualThreadCount;
 
   childnodescs.enter;
   try
     for i:=0 to length(childnodes)-1 do
-      inc(result, childnodes[i].totalthreadcount);
+      inc(result, childnodes[i].actualthreadcount);
+  finally
+    childnodescs.leave;
+  end;
+
+end;
+
+
+function TPointerscanController.getPotentialThreadCount: integer;
+var i: integer;
+begin
+  result:=threadcount;
+
+  childnodescs.enter;
+  try
+    for i:=0 to length(childnodes)-1 do
+      inc(result, childnodes[i].potentialThreadCount);
   finally
     childnodescs.leave;
   end;
@@ -1042,22 +1206,31 @@ end;
 
 procedure TPointerscanController.getThreadStatuses(s: TStrings);
 var i: integer;
+  e: string;
 begin
   s.Clear;
   localscannersCS.enter;
   try
     for i:=0 to length(localscanners)-1 do
     begin
+      if localscanners[i].haserror then
+        e:=' (Error: '+localscanners[i].errorString+')'
+      else
+        e:='';
+
+
       if localscanners[i].hasTerminated then
-        s.add(IntToStr(i)+':Terminated')
+        s.add(IntToStr(i)+':Terminated'+e)
       else
       if localscanners[i].isdone then
-        s.add(IntToStr(i)+':Sleeping')
+        s.add(IntToStr(i)+':Sleeping'+e)
       else
       if localscanners[i].isFlushing then
-        s.add(IntToStr(i)+':Writing to disk')
+        s.add(IntToStr(i)+':Writing to disk'+e)
       else
-        s.add(IntToStr(i)+':Working');
+        s.add(IntToStr(i)+':Working'+e);
+
+
     end;
   finally
     localscannersCS.leave;
@@ -1092,11 +1265,10 @@ begin
   end;
 end;
 
-function TPointerscanController.getTotalPathsEvaluated: qword;
+function TPointerscanController.getLocalPathsEvaluated: qword;
 var i: integer;
 begin
-  result:=getTotalPathsEvaluatedbyChildren;
-
+  result:=0;
   localscannersCS.enter;
   try
     for i:=0 to length(localscanners)-1 do
@@ -1104,6 +1276,11 @@ begin
   finally
     localscannersCS.leave;
   end;
+end;
+
+function TPointerscanController.getTotalPathsEvaluated: qword;
+begin
+  result:=getTotalPathsEvaluatedbyChildren+getLocalPathsEvaluated
 end;
 
 function TPointerscanController.getTotalPathQueueSize: integer;
@@ -1134,6 +1311,11 @@ begin
   finally
     localscannersCS.leave;
   end;
+
+  childnodescs.enter;
+  for i:=0 to length(childnodes)-1 do
+    inc(result, childnodes[i].resultsfound);
+  childnodescs.leave;
 end;
 
 function TPointerscanController.getPointerlistHandlerCount: qword;
@@ -1155,17 +1337,21 @@ begin
       l[i].ip:=childnodes[i].ip;
       l[i].port:=childnodes[i].port;
       l[i].isidle:=childnodes[i].idle;
-      l[i].threadcount:=childnodes[i].totalthreadcount;
+      l[i].potentialthreadcount:=childnodes[i].potentialthreadcount;
+      l[i].actualthreadcount:=childnodes[i].actualthreadcount;
       l[i].trustedconnection:=childnodes[i].trusted;
       l[i].pathquesize:=childnodes[i].pathqueuesize;
       l[i].totalpathqueuesize:=childnodes[i].totalpathqueuesize;
       l[i].pathsevaluated:=childnodes[i].totalPathsEvaluated;
       l[i].resultsfound:=childnodes[i].resultsfound;
       l[i].disconnected:=childnodes[i].socket=nil;
+      l[i].lasterror:=childnodes[i].Error;
       l[i].uploadingscandata:=childnodes[i].scandatauploader<>nil;
-      l[i].uploadscandataprogress:=childnodes[i].receivingScanDataProgress;
-      l[i].uploadscandataspeed:=childnodes[i].receivingScanDataSpeed;
+      l[i].ScanDataSent:=childnodes[i].ScanDataSent;
+      l[i].ScanDataTotalSize:=childnodes[i].ScanDataTotalSize;
+      l[i].ScanDataStartTime:=childnodes[i].ScanDataStartTime;
       l[i].downloadingResuls:=childnodes[i].scanresultDownloader<>nil;
+      l[i].lastUpdateReceived:=childnodes[i].lastUpdateReceived;
     end;
   finally
     childnodescs.leave;
@@ -1192,9 +1378,14 @@ end;
 
 
 procedure TPointerscanController.appendDynamicPathQueueToOverflowQueue(paths: TDynPathQueue);
+{
+Add the paths in this array to the and of the overflow queue, and then add them to the main queue if there is room
+}
 var oldstart: integer;
   i: integer;
 begin
+  wasidle:=false; //small speedup to let children tell the parent they are idle
+
   overflowqueuecs.Enter;
   try
     oldstart:=length(overflowqueue);
@@ -1204,6 +1395,8 @@ begin
   finally
     overflowqueuecs.Leave;
   end;
+
+  EatFromOverflowQueueIfNeeded;
 end;
 
 
@@ -1268,12 +1461,12 @@ var
 begin
   s.WriteDWord(element.startlevel);
   s.WriteQWord(element.valuetofind);
-  for i:=0 to maxlevel+1 do
+  for i:=0 to maxlevel do
     s.writedword(element.tempresults[i]);
 
   if noloop then
-    for i:=0 to maxlevel+1 do
-      s.writedword(element.valuelist[i]);
+    for i:=0 to maxlevel do
+      s.writeqword(element.valuelist[i]);
 end;
 
 procedure TPointerscanController.LoadPathQueueElementFromStream(s: Tstream; element: PPathQueueElement);
@@ -1289,7 +1482,7 @@ begin
   if length(element.tempresults)<maxlevel+1 then
     setlength(element.tempresults, maxlevel+1);
 
-  for i:=0 to maxlevel+1 do
+  for i:=0 to maxlevel do
     element.tempresults[i]:=s.ReadDWord;
 
   if noloop then
@@ -1297,7 +1490,7 @@ begin
     if length(element.valuelist)<maxlevel+1 then
       setlength(element.valuelist, maxlevel+1);
 
-    for i:=0 to maxlevel+1 do
+    for i:=0 to maxlevel do
       element.valuelist[i]:=s.ReadQWord;
   end;
 end;
@@ -1347,6 +1540,9 @@ begin
             oi:=length(overflowqueue)-1-(i-pathqueuelength);
             pathqueue[i].startlevel:=overflowqueue[oi].startlevel;
             pathqueue[i].valuetofind:=overflowqueue[oi].valuetofind;
+
+
+
             copymemory(@pathqueue[i].tempresults[0], @overflowqueue[oi].tempresults[0], listsize);
             if noLoop then
               copymemory(@pathqueue[i].valuelist[0], @overflowqueue[oi].valuelist[0], listsize);
@@ -1367,951 +1563,6 @@ begin
     overflowqueuecs.leave;
   end;
 end;
-      {
-obsolete
-procedure TPointerscanController.broadcastscan;
-var
-  cecommand: packed record
-    id: byte; //$ce
-    operation: byte;
-    port: word;
-    test: word;
-  end;
-
-  RecvAddr: sockaddr_in;
-  i: integer;
-  s: Tsocket;
-  v: boolean;
-
-  r: integer;
-begin
-  //sends a broadcast to the local network and the potentialWorkerList
-  cecommand.id:=$ce;
-  cecommand.operation:=0;   //poinerscan
-  cecommand.port:=distributedport;
-  cecommand.test:=(cecommand.id+cecommand.operation+cecommand.port)*599;
-
-  s:=fpsocket(PF_INET, SOCK_DGRAM, 0);
-  v:=true;
-  if fpsetsockopt(s, SOL_SOCKET, SO_BROADCAST, @v, sizeof(v)) >=0 then
-  begin
-    RecvAddr.sin_family:=AF_INET;
-    RecvAddr.sin_addr.s_addr:=htonl(INADDR_BROADCAST);
-    RecvAddr.sin_port:=htons(3297);
-
-    fpsendto(s,  @cecommand, sizeof(cecommand), 0, @RecvAddr, sizeof(RecvAddr));
-
-    for i:=0 to length(potentialWorkerList)-1 do
-    begin
-      RecvAddr.sin_addr:=potentialWorkerList[i];
-      fpsendto(s,  @cecommand, sizeof(cecommand), 0, @RecvAddr, sizeof(RecvAddr));
-
-    end;
-  end;
-
-  CloseSocket(s);
-end;
-
-procedure TPointerscanController.launchServer;
-var
-  B: BOOL;
-  i: integer;
-  sockaddr: TInetSockAddr;
-
-  s: Tfilestream;
-  cs: Tcompressionstream;
-begin
-  //start listening on the given port.  doDistributedScanningEvent will be responsible for accepting connections
-  sockethandle:=socket(AF_INET, SOCK_STREAM, 0);
-
-  if sockethandle=INVALID_SOCKET then
-    raise Exception.create('Failure creating socket');
-
-  B:=TRUE;
-  fpsetsockopt(sockethandle, SOL_SOCKET, SO_REUSEADDR, @B, sizeof(B));
-
-
-  sockaddr.sin_family:=AF_INET;
-  sockaddr.sin_port:=htons(distributedport);
-  sockaddr.sin_addr.s_addr:=INADDR_ANY;
-  i:=bind(sockethandle, @sockaddr, sizeof(sockaddr));
-
-  if i=SOCKET_ERROR then
-    raise exception.create('Failure to bind port '+inttostr(distributedport));
-
-  i:=listen(sockethandle, 32);
-  if i=SOCKET_ERROR then
-    raise exception.create('Failure to listen');
-
-
-  if useLoadedPointermap=false then
-  begin
-    LoadedPointermapFilename:=self.filename+'.scandata';
-    s:=TFileStream.Create(LoadedPointermapFilename, fmCreate);
-    try
-      cs:=Tcompressionstream.Create(clfastest, s);
-      try
-        pointerlisthandler.exportToStream(cs);
-      finally
-        cs.free;
-      end;
-    finally
-      s.free;
-    end;
-  end;
-
-  //do this in a separate thread as to not cause a bottleneck for actual scanners waiting for paths, and slow downloaders
-  scandatauploader:=TScanDataUploader.create(loadedPointermapFilename, distributedScandataDownloadPort);
-
-
-
-end;
-
-
-
-procedure TPointerscanController.launchWorker;
-var
-  sockaddr: TInetSockAddr;
-  connected: boolean;
-  getScanParameters: packed record
-    command: byte;
-    wantedID: Int32;
-    threadcount: UInt32;
-  end;
-
-  sp: TGetScanParametersOut;
-
-  fname: pchar;
-
-  hr: THostResolver;
-
-  starttime: dword;
-
-  f: TFileStream;
-
-  buffer: pointer;
-  totalsize: qword;
-  totaldownloaded: qword;
-  chunksize: integer;
-
-  downloadsocket: TSocket;
-  command: byte;
-  gsd: packed record
-    command: byte;
-    offset: qword;
-    chunksize: dword;
-  end;
-
-begin
-  //try to connect to the server until it works, or timeouit (60 seconds)
-  firsttime:=true;
-  sockethandle:=socket(AF_INET, SOCK_STREAM, 0);
-
-  if sockethandle=INVALID_SOCKET then
-    raise Exception.create('Failure creating socket');
-
-  sockaddr.sin_family:=AF_INET;
-  sockaddr.sin_port:=htons(distributedport);
-
-  hr:=THostResolver.Create(nil);
-  try
-
-    sockaddr.sin_addr:=StrToNetAddr(distributedServer);
-
-    if sockaddr.sin_addr.s_bytes[4]=0 then
-    begin
-      if hr.NameLookup(distributedServer) then
-        sockaddr.sin_addr:=hr.NetHostAddress
-      else
-        raise exception.create('host:'+distributedServer+' could not be resolved');
-    end;
-
-
-  finally
-    hr.free;
-  end;
-
-
-  starttime:=gettickcount;
-  connected:=false;
-  while (not connected) and (gettickcount<starttime+60000) do
-  begin
-    connected:=fpconnect(sockethandle, @SockAddr, sizeof(SockAddr))=0;
-    if not connected then sleep(500) else break;
-  end;
-
-  if not connected then raise exception.create('Failure (re)connecting to server. No connection made within 60 seconds');
-
-  //still here, so ask for the scan config
-  getScanParameters.command:=CMD_GETSCANPARAMETERS;
-  getScanParameters.threadcount:=threadcount;
-  getScanParameters.wantedID:=myid;
-  send(sockethandle, @getScanParameters, sizeof(getScanParameters));
-
-  //receive the result
-  receive(sockethandle, @sp, sizeof(sp));
-
-  getmem(fname, sp.FilenameSize+1);
-  try
-    receive(sockethandle, fname, sp.FilenameSize);
-    fname[sp.FilenameSize]:=#0;
-
-    filename:=ExtractFilePath(filename)+fname;
-  finally
-    freemem(fname);
-  end;
-
-  myID:=sp.yourID;
-  maxlevel:=sp.maxlevel;
-  sz:=sp.structsize;
-  compressedptr:=sp.compressedptr<>0;
-  staticonly:=sp.staticonly<>0;
-  noLoop:=sp.noLoop<>0;
-
-  LimitToMaxOffsetsPerNode:=sp.LimitToMaxOffsetsPerNode<>0;
-  unalligned:=not (sp.Alligned<>0);
-  MaxOffsetsPerNode:=sp.MaxOffsetsPerNode;
-
-
-  if UseLoadedPointermap=false then
-  begin
-    //download the pointermap from the server
-    //connect to sp.DownloadPort and fetch the file
-    LoadedPointermapFilename:=filename+'.scandata';
-
-    downloadsocket:=socket(AF_INET, SOCK_STREAM, 0);
-
-    if downloadsocket=INVALID_SOCKET then
-      raise Exception.create('Failure creating download socket');
-
-    sockaddr.sin_port:=htons(sp.DownloadPort); //update the port
-    //let's assume the host didn't get a different ip address since last connect...
-
-
-    starttime:=gettickcount;
-    connected:=false;
-    while (not connected) and (gettickcount<starttime+60000) do
-    begin
-      connected:=fpconnect(downloadsocket, @SockAddr, sizeof(SockAddr))=0;
-      if not connected then sleep(500) else break;
-    end;
-
-    if not connected then raise exception.create('Failure connecting to downloadserver. No connection made within 60 seconds');
-
-
-    f:=TFileStream.Create(LoadedPointermapFilename, fmCreate);
-
-    command:=DCMD_GETSCANDATASIZE;
-    send(downloadsocket, @command, sizeof(command));
-    receive(downloadsocket, @totalsize, sizeof(totalsize));
-
-    totaldownloaded:=0;
-    getmem(buffer, 64*1024);
-
-    while totaldownloaded<totalsize do
-    begin
-      gsd.command:=DCMD_GETSCANDATA;
-      gsd.offset:=totaldownloaded;
-      gsd.chunksize:=64*1024;
-
-      try
-        send(downloadsocket, @gsd, sizeof(gsd));
-        receive(downloadsocket, @chunksize, sizeof(chunksize));
-        receive(downloadsocket, buffer, chunksize);
-
-        f.WriteBuffer(buffer^, chunksize);
-      except
-        on e: TSocketException do
-        begin
-          CloseSocket(downloadsocket);
-          OutputDebugString('Disconnected while downloading. Trying to reconnect');
-
-          //try to reconnect
-          connected:=false;
-          while (not connected) and (gettickcount<starttime+60000) do
-          begin
-            connected:=fpconnect(downloadsocket, @SockAddr, sizeof(SockAddr))=0;
-            if not connected then sleep(500) else break;
-          end;
-
-          if not connected then raise exception.create('Failure reconnecting to downloadserver. No connection made within 60 seconds');
-        end;
-      end;
-
-      inc(totaldownloaded, chunksize);
-    end;
-
-    freemem(buffer);
-
-    f.free;
-
-    UseLoadedPointermap:=true; //in case a reconnect is needed
-  end;
-end;
-
-function TPointerscanController.doDistributedScanningWorkerLoop: boolean;
-var
-  updateworkerstatusmessage: packed record
-    command: byte;
-    pathqueuelength: int32;
-    pathsPerSecond: qword;
-    pointersfound: qword;
-    outofdiskspace: byte;
-    alldone: byte;
-  end;
-
-  answer: byte;
-  elementcount: byte;
-
-  TransmittedQueueMessage: PTransmittedQueueMessageClient;
-  i,j: integer;
-
-  buffer: pointer;
-  p: PByteArray;
-begin
-  result:=true; //or CMDUPDATEREPLY_GOKILLYOURSELF is received or it failed to reconnect
-
-
-  //send state to the server and ask if it has or needs queuedpaths
-  if not firsttime then
-    sleep(1000+random(2000)); //wait between 1 and 3 seconds before doing something)
-
-  firsttime:=false;
-  updateworkerstatusmessage.command:=CMD_UPDATEWORKERSTATUS;
-  updateworkerstatusmessage.pathqueuelength:=pathqueuelength;
-  updateworkerstatusmessage.pointersfound:=0;//scount;
-  updateworkerstatusmessage.pathsPerSecond:=0;//trunc((totalpathsevaluated / (gettickcount-starttime))*1000);
-  if outofdiskspace then
-    updateworkerstatusmessage.outofdiskspace:=1
-  else
-    updateworkerstatusmessage.outofdiskspace:=0;
-
-
-
-  updateworkerstatusmessage.alldone:=0;
-  if pathqueuelength=0 then //could be everything is done
-  begin
-    pathqueueCS.enter;
-
-    if pathqueuelength=0 then //still 0
-    begin
-      updateworkerstatusmessage.alldone:=1; //it's now more likely that it's done. But check anyhow
-      for i:=0 to length(reversescanners)-1 do
-      begin
-        if reversescanners[i].isdone=false then
-        begin
-          updateworkerstatusmessage.alldone:=0;
-          break;
-        end;
-      end;
-    end;
-    pathqueueCS.Leave;
-  end;
-
-  try
-    send(sockethandle, @updateworkerstatusmessage, sizeof(updateworkerstatusmessage));
-
-    receive(sockethandle, @answer, sizeof(answer));
-    case answer of
-      CMDUPDATEREPLY_EVERYTHINGOK: ;  //do nothing
-
-      CMDUPDATEREPLY_HEREARESOMEPATHSTOEVALUATE:
-      begin
-        //new paths, weeee!
-        receive(sockethandle, @elementcount, sizeof(elementcount));
-
-        getmem(buffer, getPathQueueElementSize*elementcount);
-        try
-          receive(sockethandle, buffer, elementcount*getPathQueueElementSize);
-
-          i:=length(overflowqueue);
-          setlength(overflowqueue, length(overflowqueue)+elementcount);
-
-
-          //load them into the overflow queue
-          p:=buffer;
-          for j:=i to length(overflowqueue)-1 do
-            LoadPathQueueElementFromMemory(@overflowqueue[j], p);
-
-        finally
-          freemem(buffer);
-        end;
-
-
-        //and from the overflow queue into the real queue
-        EatFromOverflowQueueIfNeeded;
-      end;
-
-      CMDUPDATEREPLY_PLEASESENDMESOMEPATHS:
-      begin
-        //note: This is basically a 1-on-1 copy of the server dispatcher with the exception of no command
-        //send about 50% of my queue elements to the server (or max)
-        receive(sockethandle, @elementcount, sizeof(elementcount));
-
-        if outofdiskspace then
-          elementcount:=length(overflowqueue)+pathqueuelength
-        else
-          elementcount:=min(elementcount, length(overflowqueue)+pathqueuelength div 2);
-
-        GetMem(TransmittedQueueMessage, 1+getPathQueueElementSize*elementcount);
-        TransmittedQueueMessage.elementcount:=0;
-
-        try
-          p:=@TransmittedQueueMessage.elements;
-          for i:=0 to length(overflowqueue)-1 do
-          begin
-            WritePathQueueElementToMemory(@overflowqueue[length(overflowqueue)-1-i], p);
-            inc(TransmittedQueueMessage.elementcount);
-
-            if TransmittedQueueMessage.elementcount=elementcount then break;
-          end;
-
-          setlength(overflowqueue, length(overflowqueue)-TransmittedQueueMessage.elementcount);
-          dec(elementcount, TransmittedQueueMessage.elementcount);
-
-          if elementcount>0 then
-          begin
-            pathqueueCS.enter;
-            //get the actual size (must be smaller or equal to the current elementcount)
-
-            elementcount:=min(elementcount, min(32, pathqueuelength div 2));
-
-            //lock the path for as many times as possible (in case the queue suddenly got eaten up completely)
-            j:=0;
-            for i:=0 to elementcount-1 do
-            begin
-              if WaitForSingleObject(pathqueueSemaphore, 0)=WAIT_OBJECT_0 then
-                inc(j)
-              else
-                break; //unable to lower the semaphore count
-            end;
-
-            elementcount:=j; //the actual number of queue elements that got obtained
-
-
-            //send from the first elements (tends to be a lower level resulting in more paths)
-            for i:=0 to elementcount-1 do
-            begin
-              WritePathQueueElementToMemory(@pathqueue[i], p);
-              inc(TransmittedQueueMessage.elementcount);
-            end;
-
-            //move the other queue elements up by elementcount
-            for i:=elementcount to pathqueuelength-1 do
-              pathqueue[i-elementcount]:=pathqueue[i];
-
-            dec(pathqueuelength, elementcount); //adjust length
-
-            pathqueueCS.leave;
-          end;
-
-          send(sockethandle, TransmittedQueueMessage, 1+getPathQueueElementSize*TransmittedQueueMessage.elementcount);
-
-        finally
-          freemem(TransmittedQueueMessage);
-        end;
-
-
-      end;
-
-      CMDUPDATEREPLY_GOKILLYOURSELF:
-      begin
-        result:=false;
-      end;
-    end;
-
-  except
-    on e: TSocketException do
-    begin
-      try
-        //try to reconnect
-        launchWorker;
-      except
-        sockethandle:=-1;
-        result:=false;
-      end;
-    end;
-  end;
-
-end;
-
-procedure TPointerscanController.DispatchCommand(s: TSocket; command: byte);
-var
-  getScanParametersIn: packed record
-    wantedID: Int32;
-    threadcount: UInt32;
-  end;
-
-  getScanParametersOut: PGetScanParametersOut;
-
-  UpdateWorkerStatus: packed record
-    pathqueuelength: int32;
-    pathsPerSecond: qword;
-    pointersFound: qword;
-    outofdiskspace: byte;
-    alldone: byte;
-  end;
-
-  i, j,index: integer;
-  found: boolean;
-
-
-  packetsize: integer;
-
-  TransmittedQueueMessage: PTransmittedQueueMessage;
-  RequestQueueMessage: packed record
-    replymessage: byte;
-    max: byte;
-  end;
-  elementcount: integer;
-
-  receivedQueueListCount: byte;
-  tempqueue: array of TPathQueueElement;
-
-  fname: string;
-
-  everyonedone: boolean;
-
-  p: PByteArray;
-
-  buffer: pointer;
-
-  _workersPathPerSecondTotal: qword;
-  _workersPointersfoundTotal: qword;
-begin
-
-
-  //see pointerscancommands.txt
-  try
-
-    case command of
-      CMD_GETSCANPARAMETERS:
-      begin
-        //read out the client parameters (wanted ID, threadcount)
-        receive(s, @getScanParametersIn, sizeof(getScanParametersIn));
-
-
-        if getScanParametersIn.wantedID=-1 then
-        begin
-          //new connection
-          index:=length(workers);
-          setlength(workers, length(workers)+1);
-          workers[index].id:=length(workers)-1;
-          workers[index].s:=s;
-          workers[index].threadcount:=getScanParametersIn.threadcount;
-        end
-        else
-        begin
-          //reconnected
-          found:=false;
-          for i:=0 to length(workers)-1 do
-          begin
-            if workers[i].id=getScanParametersIn.wantedID then
-            begin
-              if workers[i].s<>-1 then //the client disconnected and reconnected before the server saw it
-                closehandle(workers[i].s);
-
-              index:=i;
-              workers[i].s:=s;
-              workers[i].threadcount:=getScanParametersIn.threadcount;
-              found:=true;
-              break;
-            end;
-          end;
-
-          if not found then //wtf?
-          begin
-            OutputDebugString(pchar('A client reconnected with an ID that isn''t in the list: ('+inttostr(getScanParametersIn.wantedID)+')'));
-            CloseSocket(s); //ditch it
-            exit;
-          end;
-        end;
-
-        //tell the caller the scanparameters and it's new ID
-
-        fname:=ExtractFileName(filename);
-
-        packetsize:=sizeof(TGetScanParametersOut)+length(fname);
-        getmem(getScanParametersOut, packetsize);
-        getScanParametersOut.yourID:=index;
-        getScanParametersOut.maxlevel:=maxlevel;
-        getScanParametersOut.structsize:=sz;
-        getScanParametersOut.compressedptr:=ifthen(compressedptr, 1, 0);
-        getScanParametersOut.staticonly:=ifthen(staticonly, 1, 0);
-        getScanParametersOut.noLoop:=ifthen(noLoop, 1, 0);
-        getScanParametersOut.LimitToMaxOffsetsPerNode:=ifthen(LimitToMaxOffsetsPerNode,1,0);
-        getScanParametersOut.Alligned:=ifthen(not self.unalligned,1,0);
-        getScanParametersOut.MaxOffsetsPerNode:=MaxOffsetsPerNode;
-        getScanParametersOut.DownloadPort:=distributedScandataDownloadPort;
-        getScanParametersOut.FilenameSize:=length(fname);
-        CopyMemory(@getScanParametersOut.Filename, @fname[1], length(fname));
-
-        send(s, getScanParametersOut, packetsize);
-      end;
-
-      CMD_UPDATEWORKERSTATUS:
-      begin
-        receive(s, @UpdateWorkerStatus, sizeof(UpdateWorkerStatus));
-
-        //update the stats
-        _workersPathPerSecondTotal:=0;
-        _workersPointersfoundTotal:=0;
-
-        for i:=0 to length(workers)-1 do
-        begin
-          if workers[i].s=s then
-          begin
-            workers[i].pathsPerSecond:=UpdateWorkerStatus.pathsPerSecond;
-            workers[i].pointersfound:=UpdateWorkerStatus.pointersfound;
-            workers[i].outofdiskspace:=UpdateWorkerStatus.outofdiskspace<>0;
-            workers[i].alldone:=UpdateWorkerStatus.alldone<>0;
-          end;
-
-          inc(_workersPathPerSecondTotal, workers[i].pathsPerSecond);
-          inc(_workersPointersfoundTotal, workers[i].pointersfound);
-        end;
-
-        workersPathPerSecondTotal:=_workersPathPerSecondTotal;
-        workersPointersfoundTotal:=_workersPointersfoundTotal;
-
-        EatFromOverFlowQueueIfNeeded;
-
-        if (UpdateWorkerStatus.outofdiskspace<>0) or //the worker is out of diskspace
-           (
-            (length(reversescanners)>0) and (
-           ((pathqueuelength+length(overflowqueue)<32) and (UpdateWorkerStatus.pathqueuelength>32)) or //Normalize queue
-           ((pathqueuelength+length(overflowqueue)<4) and (UpdateWorkerStatus.pathqueuelength>1)))
-           ) then
-        begin
-          //ask the client for his queue elements
-
-          RequestQueueMessage.replymessage:=CMDUPDATEREPLY_PLEASESENDMESOMEPATHS;
-          RequestQueueMessage.max:=0;
-
-          if UpdateWorkerStatus.outofdiskspace>0 then
-            RequestQueueMessage.max:=UpdateWorkerStatus.pathqueuelength //get all of it (even if I'm out of space as well)
-          else
-          begin
-            if not outofdiskspace then
-              RequestQueueMessage.max:=MAXQUEUESIZE-(pathqueuelength+length(overflowqueue));
-          end;
-
-          if RequestQueueMessage.max>0 then
-          begin
-            send(s, @RequestQueueMessage, sizeof(RequestQueueMessage));
-
-            //wait for the result
-
-            receive(s, @receivedQueueListCount, sizeof(receivedQueueListCount));
-
-            if receivedQueueListCount>0 then
-            begin
-              getmem(buffer, receivedQueueListCount*getPathQueueElementSize);
-              try
-                receive(s, buffer, getPathQueueElementSize*receivedQueueListCount);
-                setlength(tempqueue, receivedQueueListCount);
-
-                p:=buffer;
-                for i:=0 to receivedQueueListCount-1 do
-                  LoadPathQueueElementFromMemory(@tempqueue[i], p);
-
-              finally
-                freemem(buffer);
-              end;
-
-              j:=length(overflowqueue);
-              setlength(overflowqueue, length(overflowqueue)+length(tempqueue));
-
-              for i:=j to j+length(tempqueue)-1 do
-                overflowqueue[j+i]:=tempqueue[i];
-
-              EatFromOverflowQueueIfNeeded; //and use what can be used
-            end;
-          end
-          else
-          begin
-            command:=CMDUPDATEREPLY_EVERYTHINGOK;
-            send(s, @command, sizeof(command));
-          end;
-
-
-        end
-        else
-        if (outofdiskspace) or //i'm out of diskspace
-           ((UpdateWorkerStatus.pathqueuelength<32) and (pathqueuelength+length(overflowqueue)>32)) or
-           ((UpdateWorkerStatus.pathqueuelength<4) and (pathqueuelength+length(overflowqueue)>=1)) then
-        begin
-          //send some (about 50%) que elements to the client
-          elementcount:=min(32, length(overflowqueue)+(pathqueuelength div 2));
-          if elementcount=0 then
-            elementcount:=1;
-
-          getmem(TransmittedQueueMessage, 2+getPathQueueElementSize*elementcount);
-          TransmittedQueueMessage.replymessage:=CMDUPDATEREPLY_HEREARESOMEPATHSTOEVALUATE;
-          TransmittedQueueMessage.elementcount:=0;
-
-          try
-            //aquire a the pathqueue lock
-            //first copy the overflow queue
-
-            p:=@TransmittedQueueMessage.elements;
-
-            for i:=0 to length(overflowqueue)-1 do
-            begin
-              WritePathQueueElementToMemory(@overflowqueue[length(overflowqueue)-1-i], p);
-
-              inc(TransmittedQueueMessage.elementcount);
-              if TransmittedQueueMessage.elementcount=elementcount then break;
-            end;
-
-            setlength(overflowqueue, length(overflowqueue)-TransmittedQueueMessage.elementcount);
-            dec(elementcount, TransmittedQueueMessage.elementcount);
-
-            if elementcount>0 then //probably yes
-            begin
-              pathqueueCS.enter;
-              //get the actual size (must be smaller or equal to the current elementcount)
-
-              elementcount:=min(elementcount, min(32, pathqueuelength div 2));
-              if elementcount=0 then
-                elementcount:=max(pathqueuelength,1);
-
-              //lock the path for as many times as possible (in case the queue suddenly got eaten up completely)
-              j:=0;
-              for i:=0 to elementcount-1 do
-              begin
-                if WaitForSingleObject(pathqueueSemaphore, 0)=WAIT_OBJECT_0 then
-                  inc(j)
-                else
-                  break; //unable to lower the semaphore count
-              end;
-
-              elementcount:=j; //the actual number of queue elements that got obtained
-
-
-              //send from the first elements (tends to be a lower level resulting in more paths)
-              for i:=0 to elementcount-1 do
-              begin
-                WritePathQueueElementToMemory(@pathqueue[i], p);
-                inc(TransmittedQueueMessage.elementcount);
-              end;
-
-              //move the other queue elements up by elementcount
-              for i:=elementcount to pathqueuelength-1 do
-                pathqueue[i-elementcount]:=pathqueue[i];
-
-              dec(pathqueuelength, elementcount); //adjust length
-
-              pathqueueCS.leave;
-
-            end;
-
-            //transfer the list to the client
-            if TransmittedQueueMessage.elementcount>0 then
-            begin
-              send(s, TransmittedQueueMessage, 2+getPathQueueElementSize*TransmittedQueueMessage.elementcount);
-
-              //mark this worker as not done
-              for i:=0 to length(workers)-1 do
-                if workers[i].s=s then
-                  workers[i].alldone:=false;
-            end
-            else
-            begin
-              //I have no que elements to send...
-              command:=CMDUPDATEREPLY_EVERYTHINGOK;
-              send(s, @command, sizeof(command));
-            end;
-
-          finally
-            freemem(TransmittedQueueMessage);
-          end;
-        end
-        else
-        begin
-          //check if all threads are done
-          everyonedone:=true;
-          for i:=0 to length(workers)-1 do
-          begin
-            if (workers[i].s<>-1) and (workers[i].alldone=false) then
-            begin
-              everyonedone:=false;
-              break;
-            end;
-          end;
-
-          if everyonedone then
-          begin
-            //check if all my own scanners are done
-            if pathqueuelength=0 then //the queue seems to be empty
-            begin
-              pathqueueCS.Enter;
-              if pathqueuelength=0 then //it's still 0, so no thread added a new one
-              begin
-                for i:=0 to length(reversescanners)-1 do
-                begin
-                  if reversescanners[i].isdone=false then
-                  begin
-                    everyonedone:=false;  //this thread was not yet done, it may add a new queue element
-                    break;
-                  end;
-                end;
-              end;
-
-              pathqueueCS.Leave;
-
-              if everyonedone then
-              begin
-                command:=CMDUPDATEREPLY_GOKILLYOURSELF;
-                send(s, @command, sizeof(command));
-                raise TSocketException.Create('No more work for thread');
-              end;
-            end;
-
-
-
-          end;
-
-          //tell the client to go on as usual
-          command:=CMDUPDATEREPLY_EVERYTHINGOK;
-          send(s, @command, sizeof(command));
-        end;
-
-
-
-      end;
-
-    end;
-
-
-  except
-    on e: TSocketException do
-    begin
-      //an socket error happened (read/write error. Disconnect. Done)
-      for i:=0 to length(workers)-1 do
-        if workers[i].s=s then
-        begin
-          workers[i].s:=-1; //mark as disconnected
-          break;
-        end;
-      CloseSocket(s);
-    end;
-  end;
-end;
-
-function TPointerscanController.doDistributedScanningServerLoop: boolean;
-var
-  readfds: PFDSet;
-  i,r: integer;
-  timeout: TTimeVal;
-
-  client: TSockAddrIn;
-  clientsize: integer;
-  command: byte;
-
-  maxfd: integer;
-begin
-  //wait for a status update from any worker, and then either request and send queued paths
-
-  result:=true;
-
-  if broadcastThisScanner and (broadcastcount<10) and (gettickcount>lastBroadcast+1000) then
-  begin
-    inc(broadcastcount);
-    lastbroadcast:=gettickcount;
-    broadcastscan;
-  end;
-
-
-  getmem(readfds, sizeof(PtrUInt)+sizeof(TSocket)*(length(workers)+1));
-  try
-
-    readfds^.fd_count:=1;
-    readfds^.fd_array[0]:=sockethandle;
-
-    maxfd:=sockethandle;
-    for i:=1 to length(workers) do
-    begin
-      if workers[i-1].s<>-1 then //don't add scanners that got disconnected. (they can reconnect)
-      begin
-        readfds.fd_array[i]:=workers[i-1].s;
-        maxfd:=max(maxfd, workers[i-1].s);
-        inc(readfds^.fd_count);
-      end;
-    end;
-
-    timeout.tv_sec:=1;
-    timeout.tv_usec:=0;
-    i:=select(maxfd, readfds, nil, nil, @timeout);
-    if i=-1 then
-      raise exception.create('Select failed');
-
-    if i>0 then
-    begin
-      //at least one is signaled
-      if FD_ISSET(sockethandle, readfds^) then
-      begin
-        //read event on the listening socket (something tries to connect)
-        FD_CLR(sockethandle, readfds^);
-
-        clientsize:=sizeof(client);
-        i:=fpaccept(sockethandle, @client, @clientsize);
-        if i<>INVALID_SOCKET then
-        begin
-          //wait for the first command (MUST be a "GetScanParameters")
-          try
-            receive(i, @command, 1);
-            if (command=CMD_GETSCANPARAMETERS) then
-              DispatchCommand(i, command)
-            else
-              closehandle(i);
-          except
-            on e: TSocketException do
-            begin
-              closehandle(i); //bad connection
-            end;
-          end;
-
-        end;
-      end;
-
-
-      for i:=0 to length(workers)-1 do //also read from newly created sockets. They always send a message anyhow (getScanParameters)
-      begin
-        if FD_ISSET(workers[i].s, readfds^) then
-        begin
-          //handle it
-          try
-            receive(workers[i].s, @command, 1);
-            dispatchCommand(workers[i].s, command);
-          except
-            on e: TSocketException do
-            begin
-              CloseSocket(workers[i].s);
-              workers[i].s:=-1;
-            end;
-          end;
-        end;
-      end;
-    end;
-
-
-  finally
-    Freemem(readfds);
-  end;
-end;
-
-
-function TPointerscanController.doDistributedScanningLoop: boolean;
-begin
-  if distributedWorker then
-    result:=doDistributedScanningWorkerLoop
-  else
-    result:=doDistributedScanningServerLoop;
-end;
-
-
-         }
 
 function TPointerscanController.ismatchtovalue(p: pointer): boolean;
 begin
@@ -2420,7 +1671,9 @@ begin
 end;
 
 procedure TPointerscanController.SaveAndClearQueue(s: TStream);
-var i: integer;
+var
+  i: integer;
+  pathslocked: boolean;
 begin
   if s=nil then exit; //can happen if stop is pressed right after the scan is done but before the gui is updated
 
@@ -2483,6 +1736,35 @@ var
 
   cs: Tcompressionstream;
   s: TFileStream;
+  procedure handleNetwork;
+  begin
+    if useLoadedPointermap=false then  //one time init. (no incomming connections will get accepted during this time
+    begin
+      //create a scandata file to send to the children if it gets any
+      childnodescs.Enter;   //prevents the connector from adding a child to the list.
+      try
+        LoadedPointermapFilename:=self.filename+'.scandata';
+        s:=TFileStream.Create(LoadedPointermapFilename, fmCreate);
+        try
+          cs:=Tcompressionstream.Create(clfastest, s);
+          try
+            pointerlisthandler.exportToStream(cs);
+          finally
+            cs.free;
+          end;
+        finally
+          s.free;
+        end;
+      finally
+        childnodescs.leave;
+      end;
+
+      useLoadedPointermap:=true;
+    end;
+
+    waitForAndHandleNetworkEvent;
+  end;
+
 begin
 
   //scan the buffer
@@ -2522,7 +1804,7 @@ begin
             addedToQueue:=false;
             while (not terminated) and (not addedToQueue) do
             begin
-              if pathqueuelength<MAXQUEUESIZE-1 then //no need to lock
+              if pathqueuelength<MAXQUEUESIZE-1 then
               begin
                 pathqueueCS.enter;
                 //setup the queueelement
@@ -2546,7 +1828,12 @@ begin
               end;
 
               if (not addedToQueue) and (not terminated) then
-                sleep(500); //wait till there is space in the queue
+              begin
+                if hasNetworkResponsibility then
+                  handleNetwork
+                else
+                  sleep(500); //wait till there is space in the queue
+              end;
             end;
 
           end;
@@ -2629,42 +1916,13 @@ begin
             end;
           end;
 
-
-          if not savestate then
-            ReleaseSemaphore(pathqueueSemaphore, MAXQUEUESIZE, nil); //release all queues
         end;
 
 
         EatFromOverflowQueueIfNeeded;
 
         if hasNetworkResponsibility then
-        begin
-          if useLoadedPointermap=false then  //one time init. (no incomming connections will get accepted during this time
-          begin
-            //create a scandata file to send to the children if it gets any
-            childnodescs.Enter;   //prevents the connector from adding a child to the list.
-            try
-              LoadedPointermapFilename:=self.filename+'.scandata';
-              s:=TFileStream.Create(LoadedPointermapFilename, fmCreate);
-              try
-                cs:=Tcompressionstream.Create(clfastest, s);
-                try
-                  pointerlisthandler.exportToStream(cs);
-                finally
-                  cs.free;
-                end;
-              finally
-                s.free;
-              end;
-            finally
-              childnodescs.leave;
-            end;
-
-            useLoadedPointermap:=true;
-          end;
-
-          waitForAndHandleNetworkEvent;
-        end
+          HandleNetwork
         else
         begin
           if terminated and savestate then
@@ -2680,69 +1938,21 @@ begin
           EatFromOverflowQueueIfNeeded;
 
           pathqueueCS.Enter;
-          if (pathqueuelength=0) or terminated then
-          begin //still 0
-            alldone:=true;
-
-
-            localscannersCS.Enter;
-            for i:=0 to length(localscanners)-1 do
-            begin
-              if localscanners[i].haserror then
-              begin
-
-                OutputDebugString('A worker had an error: '+localscanners[i].errorstring);
-
-                haserror:=true;
-                errorstring:=localscanners[i].errorstring;
-
-                for j:=0 to length(localscanners)-1 do localscanners[j].terminate; //even though the reversescanner already should have done this, let's do it myself as well
-
-                alldone:=true;
-                break;
-              end;
-
-              if not (localscanners[i].hasTerminated or localscanners[i].isdone) then //isdone might be enabled
-              begin
-                if terminated then
-                  OutputDebugString('Worker '+inttostr(i)+' is still active. Waiting till it dies...');
-
-                alldone:=false;
-                break;
-              end;
-            end;
-
-            localscannersCS.Leave;
+          if not terminated then
+          begin
+            if pathqueuelength=0 then  //still 0
+              alldone:=isdone
+            else
+              alldone:=false;
           end
           else
-            alldone:=false;
+            alldone:=LocalScannersDone and ChildrenDone; //don't bother about paths, they will get saved later, or discarded
+
 
           if terminated and savestate then
             saveAndClearQueue(savedqueue);
 
           pathqueueCS.Leave;
-          {
-          if (not terminated) and alldone and distributedScanning then
-          begin
-            //if this is a distributed scan
-            if distributedWorker then
-            begin
-
-              if doDistributedScanningLoop then
-                alldone:=false; //the server didn't tell me to go kill myself
-            end
-            else
-            begin
-              //server scanners are done, check if all the workers are done
-              for i:=0 to length(workers)-1 do
-                if (workers[i].alldone=false) then
-                begin
-                  alldone:=false;
-                  break; //still some workers active. do not terminate the scan
-                end;
-            end;
-          end;}
-
         end;
 
       end;
@@ -2750,16 +1960,18 @@ begin
 
     end;
 
-    isdone:=true;
 
 
     //all threads are done
     localscannerscs.Enter;
     for i:=0 to length(localscanners)-1 do
+    begin
+
+      localscanners[i].terminate;
       localscanners[i].stop:=true;
+    end;
     localscannerscs.Leave;
 
-    ReleaseSemaphore(pathqueueSemaphore, MAXQUEUESIZE, nil);
 
     localscannersCS.enter;
     try
@@ -2836,40 +2048,25 @@ begin
   result:=bitcount;
 end;
 
-type
-  TPointerlistloader=class(tthread)
-  private
-  public
-    filename: string;
-    progressbar: TProgressbar;
-    pointerlisthandler: TPointerListHandler;
-    procedure execute; override;
-  end;
 
-procedure TPointerlistloader.execute;
-var
-  fs: TFileStream;
-  cs: Tdecompressionstream;
-begin
-  fs:=tfilestream.Create(filename, fmOpenRead or fmShareDenyNone);
-  cs:=Tdecompressionstream.create(fs);
-
-  pointerlisthandler:=TPointerListHandler.createFromStream(cs, progressbar);
-
-  cs.free;
-  fs.free;
-
-end;
 
 procedure TPointerscanController.WorkerException(sender: TObject);
 //usually called by workers
 var i: integer;
 begin
-  reverseScanCS.Enter;
-  for i:=0 to length(localscanners)-1 do
-    localscanners[i].Terminate;
+  if localscannersCS.TryEnter then
+  begin
+    for i:=0 to length(localscanners)-1 do
+      localscanners[i].Terminate;
 
-  reverseScanCS.leave;
+    if haserror=false then
+    begin
+      haserror:=true;
+      errorstring:=TPointerscanWorker(sender).errorstring;
+    end;
+
+    localscannersCS.leave;
+  end;
 end;
 
 function TPointerscanController.UploadResults(decompressedsize: integer; s: tmemorystream): boolean;
@@ -2883,9 +2080,30 @@ begin
   begin
     try
       //todo: test me
-      if parent.socket=nil then exit; //return to the caller (failure)
-      if parent.scanid<>currentscanid then exit; //the parent will probably tell the child to kill it's current scan (first a cleanup that will remove this caller)
+      if parent.socket=nil then
+      begin
+        OutputDebugString('Uploadresults called but parent.socket=nil');
+        if orphanedSince=0 then //give up sending these results, we have abandoned the parent
+        begin
+          result:=true;
+          OutputDebugString('The parent has been abandoned. Discarding the results');
+        end;
 
+        exit; //return to the caller (failure)
+      end;
+
+      if parent.scanid<>currentscanid then
+      begin
+        OutputDebugString('upload results: parent.scanid<>currentscanid');
+        exit; //the parent will probably tell the child to kill it's current scan (first a cleanup that will remove this caller)
+      end;
+
+      if currentscanhasended and (savestate=false) then
+      begin
+        OutputDebugString('Curent scan has ended and savestate=true');
+        result:=true;
+        exit;
+      end;
 
       try
         s.position:=0;
@@ -2896,12 +2114,15 @@ begin
         begin
           //yes
           parent.socket.WriteByte(PSCMD_UPLOADRESULTS);
+          parent.socket.WriteDWord(currentscanid);
           parent.socket.WriteDWord(s.size);
           parent.socket.WriteDWord(decompressedsize);
           parent.socket.CopyFrom(s,s.size);
           parent.socket.flushWrites;
 
-          if parent.socket.ReadByte=0 then raise exception.create('Invalid reply from PSCMD_UPLOADRESULTS');
+          if parent.socket.ReadByte<>0 then raise exception.create('Invalid reply from PSCMD_UPLOADRESULTS');
+
+          result:=true; //success
 
         end; //nope, try again later
       except
@@ -3011,10 +2232,8 @@ begin
     end;
   end;
 
-
-
-
 end;
+
 
 procedure TPointerscanController.waitForAndHandleNetworkEvent;
 var
@@ -3027,8 +2246,27 @@ var
   timeout: TTimeVal;
 
   checkedallsockets: boolean;
+
+  idle: boolean;
 begin
   //listen to the listensocket if available and for the children
+  EatFromOverflowQueueIfNeeded;
+
+  if not initializer then
+  begin
+    idle:=isIdle;
+    if idle and (wasidle=false) then
+    begin
+      wasidle:=idle;
+      if parentUpdater<>nil then
+        parentUpdater.TriggerNow; //tell the parent I recently became idle
+    end
+    else
+      wasidle:=idle;
+  end;
+
+
+
   if (listensocket=INVALID_SOCKET) and (length(childnodes)=0) then
   begin
     {
@@ -3049,7 +2287,10 @@ begin
   begin
     FD_SET(listensocket, readfds);
     maxfd:=listensocket;
-  end;
+  end
+  else
+    maxfd:=0;
+
 
 
 
@@ -3070,7 +2311,7 @@ begin
 
 
         //add this child to the list of sockets to wait for
-        if (childnodes[i].socket<>nil) and (childnodes[i].scandatauploader=nil) then  //this scandatauploader check 'should' not be necesary (the child shouldn't talk to the parent while it's receiving the scandata, not even worker threads as they should have been destroyed beforehand.
+        if (childnodes[i].socket<>nil) and (childnodes[i].scandatauploader=nil) and (childnodes[i].scanresultDownloader=nil) then
         begin
 
           FD_SET(childnodes[i].socket.sockethandle, readfds);
@@ -3090,9 +2331,17 @@ begin
     //listen for this set
     count:=readfds.fd_count;
 
-    timeout.tv_sec:=0;
-    timeout.tv_usec:=500000 div (1+(length(childnodes) div FD_SETSIZE));
-    j:=select(maxfd, @readfds, nil, nil, @timeout);
+    if count>0 then
+    begin
+      timeout.tv_sec:=0;
+      timeout.tv_usec:=500000 div (1+(length(childnodes) div FD_SETSIZE));
+      j:=select(maxfd, @readfds, nil, nil, @timeout);
+    end
+    else
+    begin
+      sleep(500);
+      j:=-1;
+    end;
 
     if j<>-1 then
     begin
@@ -3121,9 +2370,8 @@ begin
         childnodescs.leave;
       end;
 
-    end
-    else
-      OutputDebugString('Select failed');
+    end;
+
 
 
 
@@ -3154,6 +2402,9 @@ begin
         if childnodes[i].MissingSince=0 then
         begin
           //delete it
+          inc(fTotalPathsEvaluatedByErasedChildren,  childnodes[i].totalPathsEvaluated);
+          inc(fTotalResultsReceived, childnodes[i].resultsfound);
+
           if childnodes[i].scandatauploader<>nil then
           begin
             childnodes[i].scandatauploader.Terminate;
@@ -3167,6 +2418,16 @@ begin
             childnodes[i].scanresultDownloader.WaitFor;
             childnodes[i].scanresultDownloader.Free;
           end;
+
+          if childnodes[i].trusted=false then
+          begin
+            //take back the path(s) I last sent it when it was idle
+            appendDynamicPathQueueToOverflowQueue(childnodes[i].nontrustedlastpaths);
+            setlength(childnodes[i].nontrustedlastpaths,0);
+          end;
+
+          if childnodes[i].resultstream<>nil then
+            freeandnil(childnodes[i].resultstream);
 
           for j:=i to length(childnodes)-2 do
             childnodes[j]:=childnodes[j+1];
@@ -3189,16 +2450,20 @@ var
   shouldreconnect: boolean;
   host, password: string;
   port: word;
+  i: integer;
+  abandonparent: boolean;
 begin
+  OutputDebugString('Parent error: '+error);
   shouldreconnect:=false;
   parentcs.enter;
 
-  if parent.socket<>nil then
-    FreeAndNil(parent.socket);
-
   try
+    if parent.socket<>nil then
+      FreeAndNil(parent.socket);
+
     if parent.iConnectedTo then
     begin
+
       shouldreconnect:=true;
       host:=parent.connectdata.ip;
       password:=parent.connectdata.password;
@@ -3209,10 +2474,39 @@ begin
   end;
 
   if shouldreconnect then
+  begin
     BecomeChildOfNode(host, port, password);
+    OutputDebugString('Going to reconnect to parent');
+  end;
 
+  abandonparent:=currentscanhasended;
+  if abandonparent then
+  begin
+    localscannersCS.enter;
+    try
+      for i:=0 to length(localscanners)-1 do
+        if localscanners[i].HasResultsPending then
+        begin
+          OutputDebugString('Not going to abandon the parent because a worker has results for it');
+          abandonparent:=false; //try to save this
+          break;
+        end;
+    finally
+      localscannersCS.leave;
+    end;
 
-  orphanedSince:=GetTickCount64;
+  end;
+
+  if abandonparent then
+  begin
+    OutputDebugString('Abandoning this parent');
+    orphanedSince:=0; //we won't miss this one
+  end
+  else
+  begin
+    orphanedSince:=GetTickCount64;
+    OutputDebugString('Keeping this parent');
+  end;
 
 end;
 
@@ -3223,6 +2517,7 @@ var
   host, password: string;
   port: word;
 begin
+  OutputDebugString('ParentQueue error: '+error);
   shouldreconnect:=false;
 
   parentcs.enter; //shouldn't be needed as this should be called by something that already has the lock
@@ -3254,7 +2549,7 @@ end;
 procedure TPointerscancontroller.handleChildException(index: integer; error: string);
 {
 Handle socket and other exceptions that should disconnect the child
-do not clean uop anything else. (threads and other data structures will get cleared by the eventhandler)
+do not clean up anything else. (threads and other data structures will get cleared by the eventhandler)
 }
 var
   shouldreconnect: boolean;
@@ -3262,6 +2557,7 @@ var
   port: word;
   trusted: boolean;
 begin
+  OutputDebugString('Child error: '+error);
   shouldreconnect:=false;
 
   childnodescs.Enter; //shouldn't be needed as things that raise child exceptions SHOULD already have a lock on it
@@ -3269,7 +2565,12 @@ begin
     if childnodes[index].socket<>nil then
       freeandnil(childnodes[index].socket);
 
-    childnodes[index].MissingSince:=GetTickCount64;
+    if (currentscanhasended and childnodes[index].idle) or (childnodes[index].hasReceivedScandata=false) then
+      childnodes[index].MissingSince:=0   //I won't miss it
+    else
+      childnodes[index].MissingSince:=GetTickCount64;
+
+    childnodes[index].Error:=error;
     //else I won't really miss it...
 
     if childnodes[index].iConnectedTo then
@@ -3301,6 +2602,7 @@ raises Exception and SocketException
 var
   command: byte;
   s: TSocketStream;
+  canreconnect: boolean;
 begin
   s:=childnodes[index].socket;
   if s<>nil then
@@ -3308,17 +2610,22 @@ begin
     command:=s.ReadByte;
     case command of
       PSCMD_HELLO: raise exception.create('HELLO after initializtion');
-      PSCMD_YOURINTHEQUEUE: HandleQueueMessage(index);
+      PSCMD_YOUREINTHEQUEUE: HandleQueueMessage(index);
       PSCMD_UPDATESTATUS: HandleUpdateStatusMessage(index);
       PSCMD_AMITRUSTED: s.WriteByte(ifthen(childnodes[index].trusted,1,0));
       PSCMD_SENDPATHS: HandleSendPathsMessage(index);
+      PSCMD_CANUPLOADRESULTS: HandleCanUploadResultsMessage(index);
       PSCMD_UPLOADRESULTS: HandleUploadResultsMessage(index);
-      PSCMD_PREPAREFORMYTERMINATION: childnodes[index].terminating:=true;
-      PSCMD_GOODBYE:
+      PSCMD_PREPAREFORMYTERMINATION:
       begin
-        freeandnil(childnodes[index].socket);
-        childnodes[index].MissingSince:=0; //it's gone but not missing.
+        childnodes[index].terminating:=true;
+        childnodes[index].socket.WriteByte(0);//understood
+        childnodes[index].socket.flushWrites;
       end;
+
+      PSCMD_GOODBYE: HandleGoodbyeMessage(index);
+      else
+         raise exception.create('Invalid message received');
     end;
   end;
 end;
@@ -3327,6 +2634,8 @@ procedure TPointerscancontroller.HandleQueueMessage(index: integer);
 var
   s: TSocketStream;
 begin
+  OutputDebugString(childnodes[index].ip+' : HandleQueueMessage');
+
   s:=childnodes[index].socket;
 
   childnodes[index].queued:=true;
@@ -3337,13 +2646,27 @@ begin
   s.flushWrites;
 end;
 
+procedure TPointerscanController.HandleGoodbyeMessage(index: integer);
+var canreconnect: boolean;
+begin
+  canreconnect:=childnodes[index].socket.ReadByte=1;
+  freeandnil(childnodes[index].socket);
+  childnodes[index].MissingSince:=0; //it's gone but not missing.
+
+  if (connector<>nil) and childnodes[index].iConnectedTo and canreconnect then
+    connector.AddConnection(childnodes[index].connectdata.ip, childnodes[index].connectdata.port, childnodes[index].connectdata.password, false, childnodes[index].trusted);
+end;
+
 procedure TPointerscanController.HandleCanUploadResultsMessage(index: integer);
 {
 called by PSCMD_CANUPLOADRESULTS
 Checks if the current child is busy sending results to the parent
 }
 begin
-  childnodes[index].socket.WriteByte(ifthen(childnodes[index].scanresultDownloader<>nil, 1, 0));
+  OutputDebugString(childnodes[index].ip+' : HandleCanUploadResultsMessage');
+
+  childnodes[index].socket.WriteByte(ifthen(childnodes[index].scanresultDownloader=nil, 1, 0));
+  childnodes[index].socket.flushWrites;
 end;
 
 procedure TPointerscanController.HandleUploadResultsMessage(index: integer);
@@ -3352,6 +2675,8 @@ The child wants to send me it's found results
 spawn a thread that will receive the results and then pass them on to the parent or save to disk
 }
 begin
+  OutputDebugString(childnodes[index].ip+' : HandleCanUploadResultsMessage');
+
   if childnodes[index].scanresultDownloader<>nil then //the child did not call PSCMD_CANUPLOADRESULTS to see if it could send new results, or blatantly ignored it's result
     raise exception.create('The child tried to send me results while I was still busy');
 
@@ -3374,25 +2699,40 @@ var
 begin
   child:=@childnodes[index];
 
+  OutputDebugString(child.ip+' : HandleSendPathsMessage');
+  count:=child.socket.ReadDWord;
+
+
   if (currentscanhasended and savestate) or child.trusted or child.terminating then
   begin
-    count:=child.socket.ReadDWord;
+
+    if count<0 then raise exception.create('The child tried to send a negative amount');
+    if count>65536 then raise exception.create('The child tried to send more paths at once than allowed');  //actually 1000 but let's allow some customization
+
 
     setlength(paths, count);
+    if count>0 then
+    begin
 
-    ms:=TMemoryStream.Create;
-    try
-      ms.CopyFrom(child.socket, getPathQueueElementSize*count);
-      for i:=0 to length(paths)-1 do
-        LoadPathQueueElementFromStream(ms, @paths[i]);
-    finally
-      ms.free;
+      ms:=TMemoryStream.Create;
+      try
+        ms.CopyFrom(child.socket, getPathQueueElementSize*count);
+        ms.Position:=0;
+        for i:=0 to length(paths)-1 do
+          LoadPathQueueElementFromStream(ms, @paths[i]);
+      finally
+        ms.free;
+      end;
+
+      appendDynamicPathQueueToOverflowQueue(paths);
     end;
 
-    appendDynamicPathQueueToOverflowQueue(paths);
+    child.socket.WriteByte(0); //success
   end
   else
     child.socket.WriteByte(1); //fail because of untrusted
+
+  child.socket.flushWrites;
 end;
 
 procedure TPointerscanController.BuildPathListForTransmission(var paths: TDynPathQueue; count: integer; includeVeryGoodPath: boolean);
@@ -3406,6 +2746,12 @@ var
   start: integer;
   i: integer;
 begin
+  if count<0 then
+    count:=0;
+
+  if count>65535 then
+    count:=65535; //never more
+
 
   setlength(paths, count);
   actualcount:=0;
@@ -3432,6 +2778,8 @@ begin
             setlength(pathqueue[pathqueuelength-1].valuelist, maxlevel+1);
 
           dec(pathqueuelength);
+
+          inc(actualcount);
         end;
 
       end;
@@ -3439,7 +2787,7 @@ begin
     finally
       pathqueueCS.leave;
     end;
-    inc(actualcount);
+
   end;
 
   if actualcount>=count then exit; //done
@@ -3506,6 +2854,7 @@ var
   i: integer;
 begin
   //todo: test me
+
   with child^.socket do
   begin
     WriteByte(PSUPDATEREPLYCMD_GIVEMEYOURPATHS);
@@ -3513,27 +2862,79 @@ begin
     flushWrites;
 
     count:=ReadDWord;
+
+    if count>65536 then
+      raise exception.create('The child tried to send more paths than allowed after a request');
+
+
     setlength(paths, count);
 
-    buf:=TMemoryStream.Create;
-    try
-      buf.CopyFrom(child^.socket, getPathQueueElementSize*count);
 
-      buf.position:=0;
-      for i:=0 to count-1 do
-        LoadPathQueueElementFromStream(buf, @paths[i]);
-    finally
-      buf.free;
+    if count>0 then
+    begin
+      buf:=TMemoryStream.Create;
+      try
+        buf.CopyFrom(child^.socket, getPathQueueElementSize*count);
+
+        buf.position:=0;
+        for i:=0 to count-1 do
+          LoadPathQueueElementFromStream(buf, @paths[i]);
+      finally
+        buf.free;
+      end;
+
+
+      //still here so I guess it's ok
+      appendDynamicPathQueueToOverflowQueue(paths);
     end;
-
-    //still here so I guess it's ok
-    appendDynamicPathQueueToOverflowQueue(paths);
   end;
 
   EatFromOverflowQueueIfNeeded;
 end;
 
 
+function TPointerscanController.sendPathsToParent: integer;
+var
+  paths: TDynPathQueue;
+  i: integer;
+
+begin
+  result:=0;
+
+  if parent.socket=nil then exit;
+
+  if (getTotalPathQueueSize>0) and (currentscanhasended or parent.knowsIAmTerminating) then
+  begin
+    BuildPathListForTransmission(paths, 1000, false); //it's going to send 1000 paths at a time (or less if it can't do that amount)
+    if length(paths)=0 then exit; //don't bother the parent or the critical section
+
+    parentcs.enter;
+    try
+      if parent.socket<>nil then
+      begin
+        parent.socket.WriteByte(PSCMD_SENDPATHS);
+        parent.socket.WriteDWord(length(paths));
+        for i:=0 to length(paths)-1 do
+          WritePathQueueElementToStream(parent.socket, @paths[i]);
+
+        parent.socket.flushWrites;
+        if parent.socket.ReadByte<>0 then
+          appendDynamicPathQueueToOverflowQueue(paths) //failure, but don't error out
+        else
+          result:=length(paths);
+      end
+      else
+        appendDynamicPathQueueToOverflowQueue(paths); //unexpected disconnect, save these paths
+
+    finally
+      parentcs.leave;
+    end;
+
+  end;
+
+
+
+end;
 
 procedure TPointerscanController.HandleUpdateStatusMessage_SendPathsToChild(child: PPointerscancontrollerchild; count: integer);
 {
@@ -3566,7 +2967,35 @@ begin
 
 
     if not child^.trusted then //save the paths being sent
+    begin
+      if child^.idle=false then raise exception.create('For some unknown reason the untrusted child isn''t idle anymore');   //should NEVER happen (childnodescs is locked and this thread is the only one accepting update messages)
+
       child^.nontrustedlastpaths:=paths;
+
+      if child^.nontrustedlastpathstime>0 then
+      begin
+        if (gettickcount64-child^.nontrustedlastpathstime)<1000*60*5 then
+        begin
+          //it went idle within 5 minutes, trust it a bit more
+          inc(child^.trustlevel)
+        end
+        else
+        begin
+          //it took longer than 5 minutes... Let's decrease the trustlevel in case he never comes back
+          if child^.trustlevel>0 then
+            dec(child^.trustlevel);
+        end;
+
+      end;
+
+      child^.nontrustedlastpathstime:=GetTickCount64;
+    end;
+
+    inc(child^.pathqueuesize, length(paths));
+
+    if child^.idle then
+      child^.idle:=child^.pathqueuesize=0; //mark it as active if count>0
+
   except
     //add these paths to the overflow queue
     appendDynamicPathQueueToOverflowQueue(paths);
@@ -3595,31 +3024,63 @@ var
   childcount: integer;
 
   pathstosend: integer;
+
+  saveresults: boolean;
 begin
   //todo: test me
   child:=@childnodes[index];
   s:=child.socket;
 
+
+
   s.ReadBuffer(updatemsg, sizeof(updatemsg));
 
 //  update the childstatus and issue it a command
   child^.idle:=updatemsg.isidle=1;
-  child^.totalthreadcount:=updatemsg.totalthreadcount;
+  child^.potentialthreadcount:=updatemsg.potentialthreadcount;
+  child^.actualthreadcount:=updatemsg.actualthreadcount;
   child^.totalPathsEvaluated:=updatemsg.pathsevaluated;
   child^.pathqueuesize:=updatemsg.localpathqueuecount;
   child^.totalpathqueuesize:=updatemsg.totalpathQueueCount;
   child^.queuesize:=updatemsg.queuesize;
 
+  child^.LastUpdateReceived:=GetTickCount64;
+
+  OutputDebugString(child.ip+' : HandleUpdateStatusMessage(idle='+inttostr(updatemsg.isidle)+')');
+
+
+  if initializer and (isidle or terminated) then //no more pathqueues and all scanners and children's scanners are waiting for new paths (or terminated by the user)
+  begin
+    if terminated=false then
+      savestate:=true;
+
+    currentscanhasended:=true;
+  end;
+
+
   //now reply
   if currentscanhasended or ((not child^.idle) and (updatemsg.currentscanid<>currentscanid)) then //scan terminated , or
   begin
+    OutputDebugString('Telling child current scan has ended.  (currentscanhasended='+BoolToStr(currentscanhasended,'true','false')+' updatemsg.currentscanid='+inttostr(updatemsg.currentscanid)+' currentscanid='+inttostr(currentscanid));
+
     child^.socket.WriteByte(PSUPDATEREPLYCMD_CURRENTSCANHASENDED);
 
     if currentscanhasended then
-      child^.socket.WriteByte(ifthen(savestate,1,0))
+    begin
+      saveresults:=not (terminated and (savestate=false)); //only false if the user terminated the scan and chose not to save the state
+
+      if saveresults then
+        OutputDebugString('Save the results')
+      else
+        OutputDebugString('Discard the results');
+
+      child^.socket.WriteByte(ifthen(saveresults, 1, 0))
+    end
     else
     begin
       //special case that under normal situations shouldn't occur (could happen if a scan was stopped and a new one was started before the children where idle, or a long lost child joins)
+
+      OutputDebugString('Discard the results');
       child^.socket.WriteByte(0); //wrong scan id. I'm waiting for him to kill his children. Don't let him send me paths...
     end;
 
@@ -3627,6 +3088,7 @@ begin
     child^.socket.flushWrites;
     if child^.socket.ReadByte<>0 then
       raise exception.create('Invalid reply for PSUPDATEREPLYCMD_CURRENTSCANHASENDED');
+
     exit;
   end;
 
@@ -3638,7 +3100,9 @@ begin
     assert(child^.idle, 'child isn''t idle while previously it was...');
     if child^.idle then
     begin
-      child^.receivingScanDataProgress:=0;
+      child^.ScanDataTotalSize:=0;
+      child^.ScanDataSent:=0;
+      child^.ScanDataStartTime:=0;
       child^.scanDataUploader:=TScandataUploader.create(self, child.childid);
     end;
 
@@ -3663,44 +3127,74 @@ begin
     childcount:=length(childnodes);
     childnodescs.leave;
 
-    if child^.trusted then
+    if (child^.terminating) then
     begin
-      //equalize the paths
-      if (localscannercount=0) and (localpathcount>0) then
-      begin
-        //this node does not handle paths. Send them all
-        HandleUpdateStatusMessage_SendPathsToChild(child, 1+(localpathcount div childcount));
-        exit;
-      end;
+      HandleUpdateStatusMessage_RequestPathsFromChild(child,min(1000, updatemsg.localpathqueuecount));
+      exit;
+    end;
 
-      if (overflowsize>0) and (updatemsg.localpathqueuecount<MAXQUEUESIZE) then
-      begin
-        //I have some overflow. Send what I can to this child
-        HandleUpdateStatusMessage_SendPathsToChild(child, 1+min(overflowsize, MAXQUEUESIZE)-updatemsg.localpathqueuecount);
-        exit;
-      end;
-
-      if (updatemsg.localpathqueuecount<(MAXQUEUESIZE div 2)) and (localpathcount>(MAXQUEUESIZE div 2)) then
-      begin
-        //equalize (from parent->child)
-        HandleUpdateStatusMessage_SendPathsToChild(child, localpathcount-updatemsg.localpathqueuecount);
-        exit;
-      end;
-
-      if (updatemsg.localpathqueuecount>(MAXQUEUESIZE div 2)) and (localpathcount<(MAXQUEUESIZE div 2)) then
-      begin
-        //equalize (from child<-parent)
-        HandleUpdateStatusMessage_RequestPathsFromChild(child, localpathcount-updatemsg.localpathqueuecount);
-        exit;
-      end;
-
-    end
-    else
+    if (updatemsg.potentialthreadcount>0) or (updatemsg.localpathqueuecount>0) then  //check if it's something we should send or get paths from
     begin
-      if child^.idle then //only send paths to the non-trusted child if it's completely idle
+      if (child^.trusted) then
       begin
-        HandleUpdateStatusMessage_SendPathsToChild(child, child.trustlevel+1); //the trustlevel goes up if it goes idle within 5 minutes
-        exit;
+        //equalize the paths
+        if (child^.terminating=false) then
+        begin
+          if (updatemsg.potentialthreadcount=0) and (updatemsg.localpathqueuecount>0) then
+          begin
+            //get the paths from this node, it's useless (now)
+            HandleUpdateStatusMessage_RequestPathsFromChild(child, updatemsg.localpathqueuecount);
+            exit;
+          end;
+
+          if (localscannercount=0) and (localpathcount>0) then
+          begin
+            //this node does not handle paths. Send them all
+            HandleUpdateStatusMessage_SendPathsToChild(child, 1+(localpathcount div childcount));
+            exit;
+          end;
+
+          if (overflowsize>0) and (updatemsg.localpathqueuecount<MAXQUEUESIZE) then
+          begin
+            //I have some overflow. Send what I can to this child
+            HandleUpdateStatusMessage_SendPathsToChild(child, 1+min(overflowsize, MAXQUEUESIZE)-updatemsg.localpathqueuecount);
+            exit;
+          end;
+
+          if (updatemsg.localpathqueuecount<(MAXQUEUESIZE div 2)) and (localpathcount>(MAXQUEUESIZE div 2)) then
+          begin
+            //equalize (from parent->child)
+            HandleUpdateStatusMessage_SendPathsToChild(child, 1+((localpathcount-updatemsg.localpathqueuecount) div 2));
+            exit;
+          end;
+        end;
+
+        if (updatemsg.localpathqueuecount>(MAXQUEUESIZE div 2)) and (localpathcount<(MAXQUEUESIZE div 2)) then
+        begin
+          //equalize (from child<-parent)
+          HandleUpdateStatusMessage_RequestPathsFromChild(child, 1+((updatemsg.localpathqueuecount-localpathcount) div 2));
+          exit;
+        end;
+
+        if (localpathcount=0) and (localscannercount>0) then
+        begin
+          //i'm out of paths, give me half of what you have
+          HandleUpdateStatusMessage_RequestPathsFromChild(child, 1+(updatemsg.totalpathQueueCount div 2));
+          exit;
+        end;
+
+
+
+      end
+      else
+      begin
+        //unstable/untrusted
+        if child^.idle then //only send paths to the non-trusted child if it's completely idle
+        begin
+          HandleUpdateStatusMessage_SendPathsToChild(child, 1+min(child.trustlevel, (localpathcount div 4) )); //the trustlevel goes up if it goes idle within 5 minutes
+          exit;
+        end;
+
       end;
     end;
   end;
@@ -3714,57 +3208,102 @@ end;
 
 //parent->child
 
-
-procedure TPointerscanController.cleanupScan;
-//called by the controller when the parent tells it to cleanup or do a new scan. (the cleanup should have been done first though)
-var i: integer;
+procedure TPointerscanController.InitializeCompressedPtrVariables;
+var
+  f: Tfilestream;
+  ds: Tdecompressionstream;
+  tempplh: TReversePointerListHandler;
 begin
-  localscannersCS.Enter;
-
-  if length(localscanners)>0 then //close them
+  if compressedptr then
   begin
-    for i:=0 to length(localscanners)-1 do
+    //calculate the masks for compression
+    //moduleid can be negative, so keep that in mind
+    if resumescan then
     begin
-      localscanners[i].savestate:=savestate;
-      localscanners[i].Terminate;
-    end;
-
-    pathqueueCS.enter;
-    pathqueuelength:=0;
-    ReleaseSemaphore(pathqueueSemaphore, MAXQUEUESIZE, nil);
-    pathqueueCS.leave;
-
-    for i:=0 to length(localscanners)-1 do
+      if resumeptrfilereader=nil then raise exception.create('no resume ptr file reader present');
+      MaxBitCountModuleIndex:=resumeptrfilereader.MaxBitCountModuleIndex;
+      MaxBitCountModuleOffset:=resumeptrfilereader.MaxBitCountModuleOffset;
+      MaxBitCountLevel:=resumeptrfilereader.MaxBitCountLevel;
+      MaxBitCountOffset:=resumeptrfilereader.MaxBitCountOffset;
+    end
+    else
     begin
-      localscanners[i].WaitFor;
-      localscanners[i].Free;
-    end;
+      if pointerlisthandler=nil then  //should never happen, but use it as a fallback
+      begin
+        //just load the header
+        if pointerlisthandlerfile<>nil then //load it from here
+        begin
+          pointerlisthandlerfile.position:=0;
 
-    setlength(localscanners,0);
+          ds:=Tdecompressionstream.create(pointerlisthandlerfile);
+          try
+            tempplh:=TReversePointerListHandler.createFromStreamHeaderOnly(ds);
+          finally
+            ds.free;
+            pointerlisthandlerfile.position:=0;
+          end;
+        end
+        else
+        begin
+          f:=TFileStream.create(LoadedPointermapFilename, fmOpenRead or fmShareDenyNone);
+          try
+            ds:=Tdecompressionstream.create(f);
+            try
+              tempplh:=TReversePointerListHandler.createFromStreamHeaderOnly(ds);
+            finally
+              ds.free;
+            end;
+          finally
+            f.free;
+          end;
+        end;
+      end
+      else
+        tempplh:=pointerlisthandler;
 
-    //refresh this just to be sure:
-    closeHandle(pathqueueSemaphore);
-    pathqueueSemaphore:=CreateSemaphore(nil, 0, MAXQUEUESIZE, nil);
 
-    if pointerlisthandler<>nil then
-      freeAndNil(pointerlisthandler);
+      MaxBitCountModuleIndex:=getMaxBitCount(tempplh.modulelist.Count-1, true);
+      if tempplh.is64bit and ((not staticonly) or (tempplh.CanHaveStatic)) then
+        MaxBitCountModuleOffset:=64
+      else
+        MaxBitCountModuleOffset:=32;
 
-    if (not initializer) and allowtempfiles then
-      deletefile(LoadedPointermapFilename);
 
-    for i:=0 to Length(instantrescanfiles)-1 do
-    begin
-      if instantrescanfiles[i].plist<>nil then
-        freeandnil(instantrescanfiles[i].plist);
+      MaxBitCountLevel:=getMaxBitCount(maxlevel-length(mustendwithoffsetlist) , false); //counted from 1.  (if level=4 then value goes from 1,2,3,4) 0 means no offsets. This can happen in case of a pointerscan with specific end offsets, which do not get saved.
+      MaxBitCountOffset:=getMaxBitCount(sz, false);
+      if unalligned=false then MaxBitCountOffset:=MaxBitCountOffset - 2;
 
-      if instantrescanfiles[i].memoryfilestream<>nil then
-        freeandnil(instantrescanfiles[i].memoryfilestream);
-
-      if (not initializer) and allowtempfiles then
-        deletefile(instantrescanfiles[i].filename);
+      if pointerlisthandler=nil then
+        tempplh.free;
     end;
   end;
-  localscannerscs.Leave;
+
+end;
+
+procedure TPointerscanController.InitializeEmptyPathQueue;
+var i: integer;
+begin
+  pathqueueCS.enter;
+  try
+    pathqueuelength:=0;
+    for i:=0 to MAXQUEUESIZE-1 do
+    begin
+      setlength(pathqueue[i].tempresults, maxlevel+1);
+      if noLoop then
+        setlength(pathqueue[i].valuelist, maxlevel+1);
+    end;
+
+  finally
+    pathqueueCS.leave;
+  end;
+
+  overflowqueuecs.enter;
+  try
+    setlength(overflowqueue,0);
+  finally
+    overflowqueuecs.leave;
+  end;
+
 end;
 
 procedure TPointerscanController.HandleUpdateStatusReply_DoNewScan;
@@ -3777,21 +3316,32 @@ var
 
   tempfilename: string;
   currentstream: TStream;
+  ds: Tdecompressionstream;
 
   files: integer;
 
+
+  newscannerid: dword;
+  newcurrentscanid: dword;
+
+
 begin
   //todo: test me
-  if not isIdle then
-    raise exception.Create('New scan started while not idle');
+  OutputDebugString(parent.ip+' : HandleUpdateStatusReply_DoNewScan');
+  if not isDone then
+    raise exception.Create('New scan started while not done');
 
-  cleanupscan;
+  UpdateStatus_cleanupScan;
+
+  fTotalPathsEvaluatedByErasedChildren:=0;
+  fTotalResultsReceived:=0;
 
 
   with parent.socket do
   begin
-    scannerid:=ReadDWord;
-    currentscanid:=ReadDWord;
+    newscannerid:=ReadDWord;
+    newcurrentscanid:=ReadDWord;
+
     maxlevel:=ReadDWord;
     sz:=ReadDWord;
     compressedptr:=readbyte=1;
@@ -3811,19 +3361,42 @@ begin
 
     files:=readDword;
 
+    OutputDebugString('Filecount='+inttostr(files));
+
+    if files=0 then
+      raise exception.create('Invalid scandata received. filecount=0');
+
+    if length(instantrescanfiles)>0 then
+    begin
+      OutputDebugString('instantrescanfiles was not empty. Cleaning it');
+      for i:=0 to length(instantrescanfiles)-1 do
+      begin
+        if instantrescanfiles[i].memoryfilestream<>nil then
+          freeandnil(instantrescanfiles[i].memoryfilestream);
+
+        if instantrescanfiles[i].plist<>nil then
+          freeandnil(instantrescanfiles[i].plist);
+      end;
+    end;
+
+    setlength(instantrescanfiles, 0);
+
     setlength(instantrescanfiles, files-1); //-1 because the first one is the main file
 
 
     downloadingscandata_received:=0;
     downloadingscandata_total:=ReadQWord;
+    downloadingscandata_starttime:=GetTickCount64;
     downloadingscandata:=true;
 
-    for i:=0 to length(instantrescanfiles) do //not -1
+    OutputDebugString('Start downloading files');
+
+    for i:=0 to files-1 do
     begin
       if i=0 then
-        ReadDword
+        ReadQword
       else
-        instantrescanfiles[i-1].address:=ReadDWord;
+        instantrescanfiles[i-1].address:=ReadQWord;
 
       streamsize:=ReadQWord;
 
@@ -3836,13 +3409,18 @@ begin
         if i=0 then
           LoadedPointermapFilename:=tempfilename
         else
-          instantrescanfiles[i].filename:=tempfilename;
+          instantrescanfiles[i-1].filename:=tempfilename;
       end
       else //create a TMemorystream
       begin
         currentstream:=tmemorystream.create;
         if i=0 then
+        begin
+          if pointerlisthandlerfile<>nil then
+            freeandnil(pointerlisthandlerfile);
+
           pointerlisthandlerfile:=tmemorystream(currentstream)
+        end
         else
           instantrescanfiles[i-1].memoryfilestream:=tmemorystream(currentstream);
       end;
@@ -3860,49 +3438,57 @@ begin
     end;
 
     WriteByte(0); //tell the parent I received everything
+    flushWrites;
 
-    //process the streams
-    //first the main stream
-    if allowtempfiles then //open the filestream
-      currentstream:=TFileStream.create(LoadedPointermapFilename, fmOpenRead or fmShareDenyNone)
-    else
-      currentstream:=pointerlisthandlerfile;
+    OutputDebugString('Done downloading files');
 
-    //...
-    pointerlisthandler:=TReversePointerListHandler.createFromStream(currentstream);
+    OutputDebugString('Processing files');
 
+    downloadingscandata_stoptime:=GetTickCount64;
+    downloadingscandata:=false;
 
-    if allowtempfiles then
-      currentstream.free;
-
-
-    //and now the rescan streams
-    begin
-      for i:=0 to length(instantrescanfiles)-1 do
-      begin
-        if allowtempfiles then //open the filestream
-          currentstream:=TFileStream.create(instantrescanfiles[i].filename, fmOpenRead or fmShareDenyNone)
-        else
-          currentstream:=pointerlisthandlerfile;
-
-        instantrescanfiles[i].plist:=TPointerListHandler.createFromStream(currentstream);
-
-        if allowtempfiles then
-          currentstream.free;
-      end;
-    end;
+    if threadcount>0 then //if it's going to be used right away:
+      ProcessScanDataFiles;
 
     instantrescan:=length(instantrescanfiles)>0;
 
 
+    OutputDebugString('Done processing files');
 
   end;
 
   currentscanhasended:=false;
 
+  InitializeEmptyPathQueue;
+  InitializeCompressedPtrVariables;
+
+
+
+  fstarttime:=GetTickCount64;
+  if assigned(fOnStartScan) then
+    synchronize(NotifyStartScan);
+
+
   //spawn the threads:
-  for i:=0 to threadcount-1 do
-    addworkerThread;
+  if threadcount>0 then
+  begin
+    localscannersCS.enter;
+    try
+      while length(localscanners)<threadcount do
+        addworkerThread;
+    finally
+      localscannersCS.leave;
+    end;
+  end;
+
+  //got till here, so everything got loaded
+  currentscanid:=newcurrentscanid;
+  scannerid:=newscannerid;
+  parent.scanid:=currentscanid;
+
+
+
+  parentUpdater.TriggerNow; //restart the Updatestatus function as soon as possible to let the parent know it's ready
 end;
 
 procedure TPointerscanController.HandleUpdateStatusReply_GiveMeYourPaths;
@@ -3916,6 +3502,10 @@ var
 begin
   //todo: test me
   maxcount:=parent.socket.ReadDWord;
+  if maxcount<0 then
+    maxcount:=0;
+
+  OutputDebugString(parent.ip+' : HandleUpdateStatusReply_GiveMeYourPaths('+inttostr(maxcount)+')');
 
   buildPathListForTransmission(paths, maxcount, true);
   try
@@ -3952,25 +3542,42 @@ begin
   //todo: test me
   count:=parent.socket.ReadDWord;
 
-  setlength(paths, count);
-
-  buf:=TMemoryStream.Create;
-  try
-    buf.CopyFrom(parent.socket, getPathQueueElementSize*count);
-    parent.socket.WriteByte(0); //acknowledge that the paths have been received
-    parent.socket.flushWrites;
-
-    buf.position:=0;
-    for i:=0 to count-1 do
-      LoadPathQueueElementFromStream(buf, @paths[i]);
-
-    //still here so I guess it's ok
-    appendDynamicPathQueueToOverflowQueue(paths);
 
 
-  finally
-    buf.free;
+  OutputDebugString(parent.ip+' : HandleUpdateStatusReply_HereAreSomePaths('+inttostr(count)+')');
+
+  if count<0 then
+    raise exception.create('The parent tried to send me a negative ammount of paths');
+
+  if count>65536 then
+    raise exception.create('The parent tried to send me more paths than allowed (after update)');
+
+  if count>0 then
+  begin
+    setlength(paths, count);
+
+    buf:=TMemoryStream.Create;
+    try
+      buf.CopyFrom(parent.socket, getPathQueueElementSize*count);
+
+
+      buf.position:=0;
+      for i:=0 to count-1 do
+        LoadPathQueueElementFromStream(buf, @paths[i]);
+
+      //still here so I guess it's ok
+
+      appendDynamicPathQueueToOverflowQueue(paths);
+    finally
+      buf.free;
+    end;
+
+
+
   end;
+
+  parent.socket.WriteByte(0); //acknowledge that the paths have been received and handled properly
+  parent.socket.flushWrites;
 
 
 end;
@@ -3979,22 +3586,30 @@ procedure TPointerscanController.HandleUpdateStatusReply_CurrentScanHasEnded;
 {
 The scan has finished (or terminated)
 }
+var i: integer;
 begin
   //todo: test me
+  OutputDebugString(parent.ip+' : HandleUpdateStatusReply_CurrentScanHasEnded');
+
 
 
 
   //stop all the children and wait for them to end the scan (10-20 seconds)
   savestate:=parent.socket.ReadByte=1; //if this is true and currentscanhasended as well, the children will end the scan, but will also send their current paths
-  currentscanhasended:=true;  //tell the children that the scan has ended for as long as this is true
-
-
-
+  currentscanhasended:=true;  //tell the children that the scan has ended for as long as this is true (when this function returns UpdateStatus will go tell the local scanners to terminate)
 
   parent.socket.WriteByte(0); //understood
   parent.socket.flushWrites;
 
-  cleanupscan;
+
+end;
+
+procedure TPointerscanController.HandleUpdateStatusReply_EverythingOK;
+begin
+  OutputDebugString(parent.ip+' : HandleUpdateStatusReply_EverythingOK');
+
+  parent.socket.WriteByte(0); //acknowledge
+  parent.socket.flushWrites;
 end;
 
 procedure TPointerscanController.HandleUpdateStatusReply;
@@ -4010,9 +3625,53 @@ begin
     PSUPDATEREPLYCMD_GIVEMEYOURPATHS: HandleUpdateStatusReply_GiveMeYourPaths;
     PSUPDATEREPLYCMD_HEREARESOMEPATHS: HandleUpdateStatusReply_HereAreSomePaths;
     PSUPDATEREPLYCMD_CURRENTSCANHASENDED: HandleUpdateStatusReply_CurrentScanHasEnded;
-    PSUPDATEREPLYCMD_EVERYTHINGOK: exit; //everything ok
+    PSUPDATEREPLYCMD_EVERYTHINGOK: HandleUpdateStatusReply_EverythingOK; //everything ok
     else
        raise TSocketException.create('Invalid UpdateStatus reply received');
+  end;
+end;
+
+procedure TPointerscanController.UpdateStatus_cleanupScan;
+{
+Called by Updatestatus or a subfunction of it
+It will free the used memory before a new scan can start
+Usually called by the idle cleanup of UpdateStatus or by DoNewScan
+}
+var i: integer;
+begin
+  //cleanup the instantrescan files.
+  //this can be done safely here because the UpdateStatus message is the only route new scanfiles can be made
+  parentcs.Enter;
+  try
+    for i:=0 to length(instantrescanfiles)-1 do
+    begin
+      if instantrescanfiles[i].memoryfilestream<>nil then
+        freeandnil(instantrescanfiles[i].memoryfilestream);
+
+      if instantrescanfiles[i].plist<>nil then
+        freeandnil(instantrescanfiles[i].plist);
+
+      if allowtempfiles then
+        deletefile(instantrescanfiles[i].filename);
+
+      if instantrescanfiles[i].memoryfilestream<>nil then
+        freeandnil(instantrescanfiles[i].memoryfilestream);
+    end;
+
+    setlength(instantrescanfiles,0);
+
+    if pointerlisthandler<>nil then
+      freeandnil(pointerlisthandler);
+
+    if allowtempfiles then
+      deletefile(LoadedPointermapFilename);
+
+    if pointerlisthandlerfile<>nil then
+      freeandnil(pointerlisthandlerfile);
+
+
+  finally
+    parentcs.Leave;
   end;
 end;
 
@@ -4023,130 +3682,254 @@ Tells the parent the current status, and deal with it's response
 var
   i,j: integer;
   updatemsg: TPSUpdateStatusMsg;
+  allfinished: boolean;
+
+  phase: integer;
 begin
   //note: called by another thread (parent responses can take a while)
 
-
+  phase:=0;
 
   try
+    parentcs.enter;
     try
-      parentcs.enter;
+      try
+        OutputDebugString('UpdateStatus');
 
-      if parent.socket=nil then
-      begin
-        OutputDebugString('Accessing queue');
-        for i:=0 to length(parentqueue)-1 do
+
+        if parent.socket=nil then
         begin
-          if parentqueue[i].scanid=currentscanid then
+          OutputDebugString('Accessing queue');
+          for i:=0 to length(parentqueue)-1 do
           begin
-            //parent came back
-            OutputDebugString('Parent returned');
-            parent:=parentqueue[i];
-            for j:=i+1 to length(parentqueue)-2 do
-              parentqueue[j]:=parentqueue[j+1];
-
-            orphanedSince:=0;
-            break;
-          end;
-        end;
-
-        if (parent.socket=nil) then //still no parent
-        begin
-          if (currentscanid=0) or (orphanedSince=0) then
-          begin
-            //not an orphan, check the queue and make the first one in the list my new parent
-            if length(parentqueue) > 0 then
+            if parentqueue[i].scanid=currentscanid then
             begin
-              parent:=parentqueue[0];
-              for i:=1 to length(parentqueue)-2 do
-                parentqueue[i]:=parentqueue[i+1];
+              //parent came back
+              OutputDebugString('Parent returned');
+              parent:=parentqueue[i];
+              for j:=i+1 to length(parentqueue)-2 do
+                parentqueue[j]:=parentqueue[j+1];
 
               setlength(parentqueue, length(parentqueue)-1);
+              orphanedSince:=0;
+              break;
             end;
-          end
-          else
+          end;
+
+          if (not fTerminatedScan) and (parent.socket=nil) then //still no parent
           begin
-            //check if we should give up on our original parent...
-            if parent.trustsme=false then
+            if (currentscanid=0) or (orphanedSince=0) then
             begin
-              //the parent didn't trust me anyhow
-              if GetTickCount64>orphanedSince+30*60*1000 then //30 minutes
-                orphanedSince:=0; //give up and find a new parent
+              //not an orphan, check the queue and make the first one in the list my new parent
+              if length(parentqueue) > 0 then
+              begin
+                parent:=parentqueue[0];
+                parent.connecttime:=GetTickCount64; //it was accepted at this time (this way the queue time isn't counted)
+
+                for i:=1 to length(parentqueue)-2 do
+                  parentqueue[i]:=parentqueue[i+1];
+
+                setlength(parentqueue, length(parentqueue)-1);
+              end;
             end
             else
             begin
-              if GetTickCount64>orphanedSince+60*60*1000 then //1 hour
-                orphanedSince:=0; //... fuck
+              //check if we should give up on our original parent...
+              if parent.trustsme=false then
+              begin
+                //the parent didn't trust me anyhow
+                if GetTickCount64>orphanedSince+30*60*1000 then //30 minutes
+
+                  orphanedSince:=0; //give up and find a new parent
+
+              end
+              else
+              begin
+                if GetTickCount64>orphanedSince+60*60*1000 then //1 hour
+                  orphanedSince:=0; //give up and find a new parent
+
+
+              end;
+
+              if orphanedSince=0 then //give up on the current scan if one was going on
+              begin
+                savestate:=false;
+
+                OutputDebugString('Giving up on parent');
+                if currentscanhasended=false then
+                begin
+                  currentscanhasended:=true;
+                  fTerminatedScan:=true;
+                end;
+              end;
             end;
+          end;
+
+        end;
+
+
+        if parent.socket<>nil then
+        begin
+          //send the update command
+          //receive the result
+          //handle accordingly
+          phase:=1;
+
+          if currentscanhasended=false then
+          begin
+            if length(parentqueue)>0 then
+            begin
+              if maxTimeToScan>0 then
+              begin
+                //check if the scan should stop because of the time
+
+                //if so, terminate the scan,  but don't terminate the thread
+                if ((GetTickCount64-parent.connecttime) div 1000)>maxTimeToScan then
+                begin
+                  savestate:=true;
+                  fTerminatedScan:=true;  //from now on terminated will return true
+                end;
+              end;
+
+              if maxResultsToFind>0 then
+              begin
+                //check if the scan should stop because of the resultcount
+                if getTotalResultsFound>maxResultsToFind then
+                begin
+                  savestate:=true;
+                  fTerminatedScan:=true;
+                end;
+              end;
+            end;
+
+          end;
+
+
+          if terminated and (parent.knowsIAmTerminating=false) then
+          begin
+            //tell a parent i'm going to disconnect
+            parent.socket.WriteByte(PSCMD_PREPAREFORMYTERMINATION);
+            parent.socket.flushWrites;
+
+            parent.knowsIAmTerminating:=true;
+            if parent.socket.ReadByte<>0 then
+              raise exception.create('Parent didn''t respond properly to PSCMD_PREPAREFORMYTERMINATION');
+          end;
+
+
+          OutputDebugString('Updating status');
+
+
+          phase:=2;
+          updatemsg.currentscanid:=currentscanid;
+          updatemsg.isidle:=ifthen(isIdle,1,0);
+          updatemsg.potentialthreadcount:=getPotentialThreadCount;
+          updatemsg.actualthreadcount:=getActualThreadCount;
+          updatemsg.pathsevaluated:=getTotalPathsEvaluated;
+          overflowqueuecs.enter;
+          updatemsg.localpathqueuecount:=pathqueuelength+length(overflowqueue);
+          overflowqueuecs.leave;
+
+          updatemsg.totalpathQueueCount:=getTotalPathQueueSize;
+          updatemsg.queuesize:=length(parentqueue);
+
+          parent.socket.WriteByte(PSCMD_UPDATESTATUS);
+          parent.socket.WriteBuffer(updatemsg, sizeof(updatemsg));
+          parent.socket.flushWrites;
+
+          lastUpdateSent:=GetTickCount64;
+
+          HandleUpdateStatusReply;
+        end;
+
+      except
+        on e: exception do
+          handleParentException(e.message);
+      end;
+    finally
+      parentcs.leave;
+    end;
+
+    //update the queued parents
+    phase:=3;
+    parentcs.enter;
+    try
+      i:=0;
+      while i<length(parentqueue)-1 do
+      begin
+        try
+          with parentqueue[i].socket do
+          begin
+            WriteByte(PSCMD_YOUREINTHEQUEUE);
+            WriteDWord(i); //position
+            WriteDWord(length(parentqueue));
+            flushWrites;
+          end;
+
+          inc(i);
+        except
+          //error. Disconnect
+          on e: exception do
+            HandleParentQueueException(i, e.message);
+        end;
+      end;
+    finally
+      parentcs.leave;
+    end;
+
+
+    //parent released, do some cleanup
+    phase:=4;
+    if currentscanhasended then //cause a flush of the worker threads
+    begin
+      allfinished:=true;
+      localscannerscs.enter;
+      try
+        for i:=0 to length(localscanners)-1 do
+        begin
+          if not localscanners[i].Finished then
+          begin
+            allfinished:=false;
+            localscanners[i].SaveStateAndTerminate;
           end;
         end;
 
-      end;
-
-
-      if parent.socket<>nil then
-      begin
-        //send the update command
-        //receive the result
-        //handle accordingly
-
-        OutputDebugString('Updating status');
-
-
-        updatemsg.currentscanid:=currentscanid;
-        updatemsg.isidle:=ifthen(isIdle,1,0);
-        updatemsg.totalthreadcount:=getTotalThreadCount;
-        updatemsg.pathsevaluated:=getTotalPathsEvaluated;
-        overflowqueuecs.enter;
-        updatemsg.localpathqueuecount:=pathqueuelength+length(overflowqueue);
-        overflowqueuecs.leave;
-
-        updatemsg.totalpathQueueCount:=getTotalPathQueueSize;
-        updatemsg.queuesize:=length(parentqueue);
-
-        parent.socket.WriteByte(PSCMD_UPDATESTATUS);
-        parent.socket.WriteBuffer(updatemsg, sizeof(updatemsg));
-        parent.socket.flushWrites;
-
-        lastUpdateSent:=GetTickCount64;
-
-        HandleUpdateStatusReply;
-      end;
-
-    except
-      on e: exception do
-        handleParentException(e.message);
-    end;
-  finally
-    parentcs.leave;
-  end;
-
-  //update the queued parents
-  parentcs.enter;
-  try
-    i:=0;
-    while i<length(parentqueue)-1 do
-    begin
-      try
-        with parentqueue[i].socket do
+        if allfinished then
         begin
-          WriteByte(PSCMD_YOURINTHEQUEUE);
-          WriteDWord(i); //position
-          WriteDWord(length(parentqueue));
-          flushWrites;
+          for i:=0 to length(localscanners)-1 do
+            localscanners[i].free;
+
+          setlength(localscanners,0);
         end;
-
-        inc(i);
-      except
-        //error. Disconnect
-        on e: exception do
-          HandleParentQueueException(i, e.message);
+      finally
+        localscannerscs.Leave;
       end;
-    end;
-  finally
-    parentcs.leave;
-  end;
 
+      //cleanup uninitialized children
+      phase:=5;
+      childnodescs.Enter;
+      try
+        for i:=0 to length(childnodes)-1 do
+          if childnodes[i].scandatauploader<>nil then  //a child is busy getting initialized with an scan that has been terminated. Best kill it
+          begin
+            allfinished:=false;
+            childnodes[i].scandatauploader.terminate;
+          end;
+      finally
+        childnodescs.Leave;
+      end;
+
+      if allfinished then //not to be confused with isdone. This can be true, even if some children still have paths to process and send data
+        UpdateStatus_cleanupScan;
+    end;
+
+
+  except
+    on e: exception do
+    begin
+      OutputDebugString('Caught an unhandled exception in UpdateStatus: '+e.message+'  ('+inttostr(phase)+')');
+    end;
+  end;
 
 end;
 
@@ -4195,6 +3978,199 @@ begin
 end;
 
 
+procedure TPointerscanController.execute_nonInitializer;
+var
+  i: integer;
+  devnull: TNullStream;
+  alldone: boolean;
+begin
+  devnull:=TNullStream.create;
+
+  //this is a childnode
+  currentscanhasended:=true;
+  UseLoadedPointermap:=true;
+
+  //enter the networking loop and wait for the parent(if there is one) to provide messages, or handle incomming connections
+
+  //setup a parent update timer
+  if parentupdater=nil then //should be...
+  begin
+    parentupdater:=TAsyncTimer.create(false);
+    parentupdater.OnTimer:=UpdateStatus;
+    parentupdater.Interval:=8000+random(4000); //update the parent every 8 to 12 seconds
+    parentupdater.enabled:=true;
+  end;
+
+  while true do
+  begin
+    waitForAndHandleNetworkEvent;
+
+    if currentscanhasended then
+    begin
+      if savestate then
+      begin
+        try
+          sendpathsToParent
+        except
+          on e:exception do
+            handleParentException('During scan finishing: '+e.message);
+        end;
+      end
+      else
+        SaveAndClearQueue(devnull);
+
+
+      alldone:=true;
+      localscannersCS.Enter;
+      try
+        if length(localscanners)>0 then
+        begin
+          OutputDebugString('There are threads and currentscanhasended=true');
+          for i:=0 to length(localscanners)-1 do
+          begin
+            if localscanners[i].Finished=false then alldone:=false;
+
+            localscanners[i].savestate:=savestate;
+            localscanners[i].stop:=true;
+
+            if (savestate=false) or (not localscanners[i].HasResultsPending) then
+              localscanners[i].Terminate;
+          end;
+
+          if alldone then
+          begin
+            OutputDebugString('Not anymore');
+            for i:=0 to length(localscanners)-1 do
+              localscanners[i].Free;
+
+            setlength(localscanners,0);
+          end;
+        end;
+
+
+      finally
+        localscannersCS.Leave;
+      end;
+
+
+
+    end;
+
+    if terminated then
+    begin
+
+      if fTerminatedScan then
+        OutputDebugString('The current scan has been terminated')
+      else
+        OutputDebugString('The scanner is being terminated');
+
+
+      currentscanhasended:=true;
+
+      if parent.knowsIAmTerminating then
+        sendpathsToParent
+      else
+      begin
+        if parentupdater<>nil then
+          parentUpdater.TriggerNow;
+      end;
+
+      //send a message to the parent that i'm gone
+
+      parentcs.enter;
+      try
+        if (currentscanhasended and isDone) or (savestate=false) then
+        begin
+          OutputDebugString('Terminated and all children are done, or terminated and no save (savestate='+BoolToStr(savestate) +')');
+          UpdateStatus_cleanupScan;  //call this here because there may not be a newscan
+
+          if parent.socket<>nil then
+          begin
+            parent.socket.WriteByte(PSCMD_GOODBYE);
+            parent.socket.WriteByte(ifthen(fTerminatedScan,1,0)); //writes 1 if it's a fake termination
+
+            try
+              parent.socket.flushWrites;
+            except
+              //no biggy
+              OutputDebugString('The parent disconnected from me before I could tell him goodbye');
+            end;
+            freeandnil(parent.socket);
+          end;
+
+          fTerminatedScan:=false;
+
+          if terminated then break; //actually terminate if the user wanted to. it's safe
+        end
+        else
+          OutputDebugString('Scan not finished yet');
+
+      finally
+        parentcs.Leave;
+      end;
+
+      if (not savestate) and (not fTerminatedScan) then //really terminated and savestate was false
+      begin
+        OutputDebugString('Savestate is false and it''s an actual termination. Goodbye');
+        break;
+      end;
+    end;
+  end;
+
+
+
+  //cleanup some memory
+  if parentUpdater<>nil then
+  begin
+    parentUpdater.Terminate;
+    parentUpdater.WaitFor;
+    freeandnil(parentUpdater);
+  end;
+
+  if connector<>nil then
+  begin
+    connector.Terminate;
+    connector.WaitFor;
+    freeandnil(connector);
+  end;
+
+  childnodescs.enter;
+  try
+    for i:=0 to length(childnodes)-1 do
+    begin
+      if childnodes[i].scanresultDownloader<>nil then
+      begin
+        childnodes[i].scanresultDownloader.terminate;
+        childnodes[i].scanresultDownloader.WaitFor;
+        freeandnil(childnodes[i]);
+      end;
+
+      if childnodes[i].scanresultDownloader<>nil then
+      begin
+        childnodes[i].scanresultDownloader.terminate;
+        childnodes[i].scanresultDownloader.waitfor;
+        freeandnil(childnodes[i].scanresultDownloader);
+      end;
+
+      if childnodes[i].resultstream<>nil then
+        freeandnil(childnodes[i].resultstream);
+
+      if childnodes[i].socket<>nil then
+        freeandnil(childnodes[i].socket);
+
+    end;
+    setlength(childnodes,0);
+  finally
+    childnodescs.leave;
+  end;
+
+  if assigned(fOnScanDone) then
+    fOnScanDone(self, hasError, errorstring);
+
+
+  devnull.free;
+end;
+
 procedure TPointerscanController.execute;
 var
     i,j: integer;
@@ -4216,7 +4192,12 @@ var
 
 
     pointerlistloaders: array of TPointerlistloader;
+
+    oldfiles: tstringlist;
+
+
 begin
+  result:=nil;
   if terminated then exit;
 
 
@@ -4227,24 +4208,9 @@ begin
 
     if not initializer then
     begin
-      //this is a childnode
-      currentscanhasended:=true;
-
-      //enter the networking loop and wait for the parent(if there is one) to provide messages, or handle incomming connections
-
-      //setup a parent update timer
-      if parentupdater=nil then
-      begin
-        parentupdater:=TAsyncTimer.create(false);
-        parentupdater.OnTimer:=UpdateStatus;
-        parentupdater.Interval:=8000+random(4000); //update the parent every 8 to 12 seconds
-        parentupdater.enabled:=true;
-      end;
-
-      while not terminated do
-        waitForAndHandleNetworkEvent;
-
+      execute_nonInitializer;
       exit;
+
     end;
 
     //this is an initiator
@@ -4257,50 +4223,60 @@ begin
     result:=nil;
 
     if resumescan then
-      resumeptrfilereader:=TPointerscanresultReader.create(resumeptrfilename);
-
-    {
-    if distributedScanning and distributedWorker then
-      LaunchWorker; //connects and sets up the parameters
-
-    if distributedScandataDownloadPort=0 then
-      distributedScandataDownloadPort:=distributedport+1; }
-
-    phase:=1;
-    if instantrescan then
+      resumeptrfilereader:=TPointerscanresultReader.create(filename)
+    else
     begin
-      //launch threads to load these data files
-      setlength(pointerlistloaders, length(instantrescanfiles));
-      for i:=0 to length(pointerlistloaders)-1 do
-      begin
-        pointerlistloaders[i]:=TPointerlistloader.Create(true);
-        pointerlistloaders[i].progressbar:=instantrescanfiles[i].progressbar;
-        pointerlistloaders[i].filename:=instantrescanfiles[i].filename;
-        pointerlistloaders[i].Start;
-      end;
+      //not a resume, delete the old files
+      oldfiles:=tstringlist.create;
+      findAllResultFilesForThisPtr(filename, oldfiles);
+      for i:=0 to oldfiles.count-1 do
+        DeleteFile(oldfiles[i]);
+
+      oldfiles.free;
     end;
 
-    if pointerlisthandler=nil then
+    phase:=1;
+
+    if threadcount>0 then
+    begin
+      if instantrescan then
+      begin
+        //launch threads to load these data files
+        setlength(pointerlistloaders, length(instantrescanfiles));
+        for i:=0 to length(pointerlistloaders)-1 do
+        begin
+          pointerlistloaders[i]:=TPointerlistloader.Create(true);
+          pointerlistloaders[i].progressbar:=instantrescanfiles[i].progressbar;
+          pointerlistloaders[i].filename:=instantrescanfiles[i].filename;
+          pointerlistloaders[i].Start;
+        end;
+      end;
+
+    end;
+
+    if useLoadedPointermap then
+    begin
+      if threadcount>0 then  //don't load it yet if there are going to be no threads that want to use it
+      begin
+        f:=tfilestream.create(LoadedPointermapFilename, fmOpenRead or fmShareDenyNone);
+        try
+          ds:=Tdecompressionstream.create(f);
+          try
+            pointerlisthandler:=TReversePointerListHandler.createFromStream(ds, progressbar);
+          finally
+            ds.free;
+          end;
+        finally
+          f.free;
+        end;
+      end;
+    end
+    else
     begin
 
       progressbar.Position:=0;
       try
-        if useLoadedPointermap then
-        begin
-          f:=tfilestream.create(LoadedPointermapFilename, fmOpenRead or fmShareDenyNone);
-          try
-            ds:=Tdecompressionstream.create(f);
-            try
-              pointerlisthandler:=TReversePointerListHandler.createFromStream(ds, progressbar);
-            finally
-              ds.free;
-            end;
-          finally
-            f.free;
-          end;
-        end
-        else
-          pointerlisthandler:=TReversePointerListHandler.Create(startaddress,stopaddress,not unalligned,progressbar, noreadonly, MustBeClassPointers, acceptNonModuleClasses, useStacks, stacksAsStaticOnly, threadstacks, stacksize, mustStartWithBase, BaseStart, BaseStop);
+        pointerlisthandler:=TReversePointerListHandler.Create(startaddress,stopaddress,not unalligned,progressbar, noreadonly, MustBeClassPointers, acceptNonModuleClasses, useStacks, stacksAsStaticOnly, threadstacks, stacksize, mustStartWithBase, BaseStart, BaseStop, includeSystemModules);
 
 
         progressbar.position:=100;
@@ -4329,27 +4305,45 @@ begin
       begin
         pointerlistloaders[i].WaitFor;
         instantrescanfiles[i].plist:=pointerlistloaders[i].pointerlisthandler;
+
+        if pointerlisthandler<>nil then //should always be true if the pointerlistloaders got initialized
+          instantrescanfiles[i].plist.reorderModuleIdList(pointerlisthandler.modulelist);
+
         pointerlistloaders[i].Free;
       end;
     end;
 
-    if generatePointermapOnly then
-    begin
 
-      f:=tfilestream.create(filename, fmCreate);
+
+    if ((threadcount=0) and (UseLoadedPointermap=false)) or generatePointermapOnly then
+    begin
+      if generatePointermapOnly then
+        LoadedPointermapFilename:=filename
+      else
+        LoadedPointermapFilename:=filename+'.scandata';
+
+
+      f:=tfilestream.create(LoadedPointermapFilename, fmCreate);
       cs:=Tcompressionstream.create(clfastest, f);
       pointerlisthandler.exportToStream(cs);
       cs.free;
       f.free;
 
-      filename:='';
       progressbar.Position:=0;
 
-      if Assigned(fOnScanDone) then
-        fOnScanDone(self, haserror, errorstring);
+      if generatePointermapOnly then
+      begin
+        //that's all we need
+        if Assigned(fOnScanDone) then
+          fOnScanDone(self, haserror, errorstring);
 
-      terminate;
-      exit;
+        filename:='';
+
+        terminate;
+        exit;
+      end;
+
+      UseLoadedPointermap:=true;
     end;
 
     phase:=2;
@@ -4360,199 +4354,164 @@ begin
     i:=0;
 
 
-    if compressedptr then
-    begin
-      //calculate the masks for compression
-      //moduleid can be negative, so keep that in mind
-      if resumescan then
-        MaxBitCountModuleIndex:=getMaxBitCount(resumeptrfilereader.modulelistCount-1, true)
-      else
-        MaxBitCountModuleIndex:=getMaxBitCount(pointerlisthandler.modulelist.Count-1, true);
-
-      MaxBitCountLevel:=getMaxBitCount(maxlevel-length(mustendwithoffsetlist) , false); //counted from 1.  (if level=4 then value goes from 1,2,3,4) 0 means no offsets. This can happen in case of a pointerscan with specific end offsets, which do not get saved.
-      MaxBitCountOffset:=getMaxBitCount(sz, false);
-
-      if unalligned=false then MaxBitCountOffset:=MaxBitCountOffset - 2;
-    end;
-
 
 
     //setup the pathqueue
-    pathqueuelength:=0;
+    InitializeEmptyPathQueue;
+    InitializeCompressedPtrVariables;
 
 
-    for i:=0 to MAXQUEUESIZE-1 do
-    begin
-      setlength(pathqueue[i].tempresults, maxlevel+1);
-      if noLoop then
-        setlength(pathqueue[i].valuelist, maxlevel+1);
-    end;
 
     reverseScanCS:=tcriticalsection.Create;
-    try
 
-      //build a list of cpu id's
-      PA:=0;
-      GetProcessAffinityMask(GetCurrentProcess, PA, SA);
-      for i:=0 to BitSizeOf(PA)-1 do
+    setlength(PreferedProcessorList,0);
+
+    //build a list of cpu id's
+    PA:=0;
+    GetProcessAffinityMask(GetCurrentProcess, PA, SA);
+    for i:=0 to BitSizeOf(PA)-1 do
+    begin
+      if getbit(i, PA)=1 then
       begin
-        if getbit(i, PA)=1 then
+        if (i mod 2=0) or (hasHyperThreading=false) then
         begin
-          if (i mod 2=0) or (hasHyperThreading=false) then
-          begin
-            setlength(PreferedProcessorList, length(PreferedProcessorList)+1);
-            PreferedProcessorList[length(PreferedProcessorList)-1]:=i;
-          end;
+          setlength(PreferedProcessorList, length(PreferedProcessorList)+1);
+          PreferedProcessorList[length(PreferedProcessorList)-1]:=i;
         end;
       end;
+    end;
 
-      currentcpu:=0;
-
-      //create the headerfile and save header (modulelist, and levelsize)
-      if resumescan then
-      begin
-        result:=TfileStream.create(filename+'.tmp',fmcreate or fmShareDenyWrite);
-        resumePtrFileReader.saveModulelistToResults(result);
-      end
+    for i:=0 to threadcount-1 do
+    begin
+      if i<length(PreferedProcessorList) then
+        addWorkerThread(PreferedProcessorList[i])
       else
-      begin
-        result:=TfileStream.create(filename,fmcreate or fmShareDenyWrite);
-        pointerlisthandler.saveModuleListToResults(result);
-      end;
+        addWorkerThread;
+    end;
 
 
-      if resumePtrFileReader<>nil then
-        FreeAndNil(resumePtrFileReader); //free the ptr files
+    //now do the actual scan
+    if assigned(fOnStartScan) then
+      synchronize(NotifyStartScan);
 
-      for i:=0 to threadcount-1 do
-      begin
-        if i<length(PreferedProcessorList) then
-          addWorkerThread(PreferedProcessorList[i])
-        else
-          addWorkerThread;
-      end;
-
-      if assigned(fOnStartScan) then
-        synchronize(NotifyStartScan);
-
-      //levelsize
-      result.Write(maxlevel,sizeof(maxlevel)); //write max level (maxlevel is provided in the message (it could change depending on the settings)
-
-      //todo: change the way the pointerfiles are stored
-      //pointerstores
-      if resumescan then
-      begin
-        for i:=0 to length(localscanners)-1 do
-        begin
-          j:=resumefilelist.IndexOf(TPointerscanWorkerLocal(localscanners[i]).filename);
-          if j<>-1 then
-            resumefilelist.Delete(j);
-        end;
-      end;
-
-      temp:=length(localscanners);
-      if resumefilelist<>nil then
-        inc(temp, resumefilelist.count);
-
-      result.Write(temp,sizeof(temp));
-      for i:=0 to length(localscanners)-1 do
-      begin
-        tempstring:=ExtractFileName(TPointerscanWorkerLocal(localscanners[i]).filename);
-        temp:=length(tempstring);
-        result.Write(temp,sizeof(temp));
-        result.Write(tempstring[1],temp);
-      end;
-
-      if resumefilelist<>nil then
-      begin
-        for i:=0 to resumefilelist.count-1 do
-        begin
-          tempstring:=resumefilelist[i];
-          temp:=length(tempstring);
-          result.Write(temp,sizeof(temp));
-          result.Write(tempstring[1],temp);
-        end;
-      end;
-
-
-      freeandnil(result);
-
-
-
-      //now do the actual scan
+    try
       reversescan;
 
-      //returned from the scan, save the rest
 
-      if resumescan then
-        result:=TfileStream.create(filename+'.tmp',fmOpenWrite)
-      else
-        result:=TfileStream.create(filename,fmOpenWrite);
+      //when done generate the ptr file if it's not a resume scan
 
-      result.seek(0, soEnd); //append from the end
-
-
-
-      {if distributedScanning then
+      if not resumescan then //create a new ptr
       begin
-        //save the number of external workers
+        result:=TfileStream.create(filename,fmcreate or fmShareDenyWrite);
 
+        result.writeByte($ce);
+        result.writeByte(pointerscanfileversion);
 
-        result.writeDword(length(workers)); //0 for a worker (unless I decide to make it a real chaotic mess)
-
-        //save the workerid that generated these results (server=-1)
-        result.writeDword(myid);
-
-        freeandnil(result);
-
-        if scandataUploader<>nil then
+        if (pointerlisthandler=nil) then
         begin
-          scandataUploader.terminate;
-          scandataUploader.WaitFor;
-          freeandnil(scandataUploader);
-        end
+          if UseLoadedPointermap then
+          begin
+            f:=tfilestream.create(LoadedPointermapFilename, fmOpenRead);
+            ds:=Tdecompressionstream.create(f);
+            pointerlisthandler:=TReversePointerListHandler.createFromStreamHeaderOnly(ds);
+            pointerlisthandler.saveModuleListToResults(result);
 
-      end
-      else }
-      begin
-        //todo: obsolete, there are no workers and no more merging of results
-        result.writeDword(0);    //number of workers
-        result.writeDword(0);    //my id (ignored)
+            ds.free;
+            f.free;
+
+            freeandnil(pointerlisthandler);
+          end
+          else
+            raise exception.create('The pointerlisthandler was destroyed without a good reason');
+        end
+        else
+          pointerlisthandler.saveModuleListToResults(result);
+
+        //save the maxlevel:
+        result.Write(maxlevel,sizeof(maxlevel));
+
+
+        //save the compressed data fields
+        result.writeByte(ifthen(compressedptr, 1, 0));
+        if compressedptr then
+        begin
+          result.writeByte(ifthen(unalligned, 0, 1)); //1 if alligned (I should really rename this one)
+          result.writeByte(MaxBitCountModuleIndex);
+          result.writeByte(MaxBitCountModuleOffset);
+          result.writeByte(MaxBitCountLevel);
+          result.writeByte(MaxBitCountOffset);
+
+          result.writeByte(length(mustendwithoffsetlist));
+          for i:=0 to length(mustendwithoffsetlist)-1 do
+            result.writeDword(mustendwithoffsetlist[i]);
+        end;
 
       end;
 
-      result.writeDword(0); //merged worker count
-
-      result.writeDword(ifthen(compressedptr, 1, 0));
-      result.writeDword(ifthen(unalligned, 0, 1)); //1 if alligned (I should really rename this one)
-      result.writeDword(MaxBitCountModuleIndex);
-      result.writeDword(MaxBitCountLevel);
-      result.writeDword(MaxBitCountOffset);
-
-      result.writeDword(length(mustendwithoffsetlist));
-      for i:=0 to length(mustendwithoffsetlist)-1 do
-        result.writeDword(mustendwithoffsetlist[i]);
-
     finally
-
       if result<>nil then
         freeandnil(result);
 
-      freeandnil(reverseScanCS);
+      if reverseScanCS<>nil then
+        freeandnil(reverseScanCS);
 
+      if resumePtrFileReader<>nil then
+        FreeAndNil(resumePtrFileReader);
 
-
-
-      if resumescan then
+      if initializer then
       begin
-        //delete the old ptr file, it's not needed anymore
-        if resumePtrFileReader<>nil then
-          FreeAndNil(resumePtrFileReader);
+        //cleanup the connections
+        if connector<>nil then
+          connector.terminate;
 
-        deletefile(filename);
-        RenameFile(filename+'.tmp', filename);
+        childnodescs.enter;
+        try
+          for i:=0 to length(childnodes)-1 do
+          begin
+            if childnodes[i].scanresultDownloader<>nil then
+            begin
+              childnodes[i].scanresultDownloader.Terminate;
+              childnodes[i].scanresultDownloader.WaitFor;
+              freeandnil(childnodes[i].scanresultDownloader);
+            end;
+
+            if childnodes[i].scandatauploader<>nil then
+            begin
+              childnodes[i].scandatauploader.Terminate;
+              childnodes[i].scandatauploader.WaitFor;
+              freeandnil(childnodes[i].scandatauploader);
+            end;
+
+
+            if childnodes[i].resultstream<>nil then
+              freeandnil(childnodes[i].resultstream);
+
+            if childnodes[i].socket<>nil then
+              freeandnil(childnodes[i].socket);
+          end;
+
+          if connector<>nil then
+          begin
+            connector.WaitFor;
+            freeandnil(connector);
+          end;
+
+          if listensocket<>INVALID_SOCKET then
+          begin
+            closesocket(listensocket);
+            listensocket:=INVALID_SOCKET;
+          end;
+
+        finally
+          childnodescs.leave;
+        end;
+
       end;
+
     end;
+
+
+
 
 
 
@@ -4586,7 +4545,10 @@ begin
 
   receive(sockethandle, @command, 1);
   if command<>PSCMD_HELLO then
+  begin
+    OutputDebugString('WaitForHello received '+inttostr(command));
     raise TSocketException.Create('Invalid command while waiting for hello'); //invalid command
+  end;
 
   receive(sockethandle, @namelength, 1);
 
@@ -4773,15 +4735,19 @@ begin
 
 
           //you have a new daddy! Say hello to him
-          OutputDebugString('Going to say hello');
+        OutputDebugString('Going to say hello');
         sayHello(@parentqueue[length(parentqueue)-1]); //'Hello daddy'...creepy voice
         OutputDebugString('said hello');
 
       except
-        if parentqueue[length(parentqueue)-1].socket<>nil then
-          freeandnil(parentqueue[length(parentqueue)-1].socket);
+        on e:exception do
+        begin
+          OutputDebugString('Error while accepting parent:'+e.message);
+          if parentqueue[length(parentqueue)-1].socket<>nil then
+            freeandnil(parentqueue[length(parentqueue)-1].socket);
 
-        setlength(parentqueue, length(parentqueue)-1);
+          setlength(parentqueue, length(parentqueue)-1);
+        end;
       end;
 
     finally
@@ -4843,28 +4809,97 @@ begin
   end;
 end;
 
+procedure TPointerscanController.ProcessScanDataFiles;
+{
+Loads the scandata streams into memory
+}
+var
+  pointerlistloaders: array of TPointerlistloader;
+  currentstream: Tstream;
+  ds: Tdecompressionstream;
+  i: integer;
+begin
+
+  //first the rescan streams (they can be done async)
+  setlength(pointerlistloaders, length(instantrescanfiles));
+  for i:=0 to length(pointerlistloaders)-1 do
+  begin
+    pointerlistloaders[i]:=TPointerlistloader.Create(true);
+    pointerlistloaders[i].progressbar:=instantrescanfiles[i].progressbar;
+    pointerlistloaders[i].filename:=instantrescanfiles[i].filename;
+    pointerlistloaders[i].memoryfilestream:=instantrescanfiles[i].memoryfilestream;
+    pointerlistloaders[i].Start;
+  end;
+
+
+  //while they are busy do the main stream (blocking)
+  if allowtempfiles then //open the filestream
+    currentstream:=TFileStream.create(LoadedPointermapFilename, fmOpenRead or fmShareDenyNone)
+  else
+    currentstream:=pointerlisthandlerfile;
+
+
+  currentstream.position:=0;
+
+  ds:=Tdecompressionstream.create(currentstream);
+  try
+    if pointerlisthandler<>nil then
+      freeandnil(pointerlisthandler);
+
+    pointerlisthandler:=TReversePointerListHandler.createFromStream(ds);
+  finally
+    ds.free;
+    if allowtempfiles then
+      currentstream.free;
+  end;
+
+  for i:=0 to length(pointerlistloaders)-1 do
+  begin
+    pointerlistloaders[i].WaitFor;
+    instantrescanfiles[i].plist:=pointerlistloaders[i].pointerlisthandler;
+
+    if pointerlisthandler<>nil then //should always be true if the pointerlistloaders got initialized
+      instantrescanfiles[i].plist.reorderModuleIdList(pointerlisthandler.modulelist);
+
+    pointerlistloaders[i].Free;
+  end;
+
+end;
+
 procedure TPointerscanController.addworkerThread(preferedprocessor: integer=-1);
 var
   scanner: TPointerscanWorker;
   j: integer;
   NewAffinity: DWORD_PTR;
   scanfileid: integer;
+  downloadtime: qword;
+
 begin
+  if pointerlisthandler=nil then
+    processScanDataFiles;
+
+  if MaxBitCountModuleIndex=0 then
+    InitializeCompressedPtrVariables;
+
   if initializer then
   begin
     localscannersCS.enter;
     scanfileid:=length(localscanners);
     localscannersCS.leave;
 
-    scanner:=TPointerscanWorkerLocal.Create(
-                                                     true,
-                                                     self.filename+'.'+inttostr(scanfileid),
-                                                     resumescan or (scanfileid<nextscanfileid)
-                                                     );
-    nextscanfileid:=max(nextscanfileid, scanfileid+1);
+    scanner:=TPointerscanWorkerLocal.Create(true, self.filename+'.results.'+inttostr(scanfileid));
   end
   else
+  begin
     scanner:=TPointerscanWorkerNetwork.Create(true);
+    TPointerscanWorkerNetwork(scanner).OnFlushResults:=UploadResults;
+
+    if downloadingscandata_stoptime<>downloadingscandata_starttime then
+      TPointerscanWorkerNetwork(scanner).FlushSize:=floor((downloadingscandata_total / ((downloadingscandata_stoptime-downloadingscandata_starttime)/1000)) * 5) //just an arbitrary value, it doesn't mean much.
+    else
+      TPointerscanWorkerNetwork(scanner).FlushSize:=15*1024*1024;  //else just use the default size
+
+  end;
 
   scanner.OnException:=workerexception;
   scanner.overflowqueuewriter:=OverflowQueueWriter;
@@ -4913,6 +4948,7 @@ begin
 
   scanner.compressedptr:=compressedptr;
   scanner.MaxBitCountModuleIndex:=MaxBitCountModuleIndex;
+  scanner.MaxBitCountModuleOffset:=MaxBitCountModuleOffset;
   scanner.MaxBitCountLevel:=MaxBitCountLevel;
   scanner.MaxBitCountOffset:=MaxBitCountOffset;
 
@@ -4967,10 +5003,11 @@ begin
     begin
       localscanners[length(localscanners)-1].SaveStateAndTerminate;
       localscanners[length(localscanners)-1].WaitFor;
+
+      inc(fTotalPathsEvaluatedByErasedChildren, localscanners[length(localscanners)-1].pathsEvaluated);
       localscanners[length(localscanners)-1].free;
       setlength(localscanners, length(localscanners)-1);
     end;
-    dec(threadcount);
   finally
     localscannersCS.leave;
   end;
@@ -5074,7 +5111,7 @@ constructor TPointerscanController.create(suspended: boolean);
 begin
   pointersize:=processhandler.pointersize;
 
-  listensocket:=-1;
+  listensocket:=INVALID_SOCKET;
   parent.socket:=nil;
 
   parentcs:=tcriticalsection.create;
@@ -5100,8 +5137,15 @@ begin
   terminate;
   waitfor;
 
+  if connector<>nil then
+  begin
+    connector.Terminate;
+    connector.WaitFor;
+    freeandnil(connector);
+  end;
+
   if connectorcs<>nil then
-    connectorcs.free;
+    freeandnil(connectorcs);
 
     {
   if sockethandle<>-1 then
@@ -5135,9 +5179,6 @@ begin
   if resumeptrfilereader<>nil then
     freeandnil(resumeptrfilereader);
 
-  if resumefilelist<>nil then
-    freeandnil(resumefilelist);
-
   if parentcs<>nil then
     freeandnil(parentcs);
 
@@ -5158,6 +5199,8 @@ begin
 
   if parentUpdater<>nil then
     freeandnil(parentUpdater);
+
+
 
   closehandle(pathqueueSemaphore);
 

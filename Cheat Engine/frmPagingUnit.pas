@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, FileUtil, LResources, Forms, Controls, Graphics, Dialogs,
-  StdCtrls, ComCtrls, ExtCtrls, Menus,newkernelhandler,cefuncproc;
+  StdCtrls, ComCtrls, ExtCtrls, Menus,newkernelhandler,cefuncproc, commonTypeDefs;
 
 type TPageData=record
   level: integer;
@@ -57,7 +57,7 @@ implementation
 
 { TfrmPaging }
 
-uses MemoryBrowserFormUnit, ProcessHandlerUnit;
+uses MemoryBrowserFormUnit, ProcessHandlerUnit, Parsers;
 
 resourcestring
   rsNotFound = 'Not found';

@@ -85,7 +85,9 @@ uses
   pointeraddresslist, frmResumePointerscanUnit, frmSetupPSNNodeUnit,
   PointerscanWorker, PointerscanStructures, PointerscanController, zstreamext,
   PointerscanConnector, PointerscanNetworkStructures, AsyncTimer, 
-PointerscanSettingsIPConnectionList, MemoryStreamReader;
+PointerscanSettingsIPConnectionList, MemoryStreamReader, commonTypeDefs, 
+Parsers, Globals, NullStream, RipRelativeScanner, LuaRipRelativeScanner, 
+VirtualQueryExCache;
 
 {$R cheatengine.res}
 //{$R manifest.res}  //lazarus now has this build in

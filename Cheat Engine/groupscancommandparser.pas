@@ -8,8 +8,13 @@ This unit contains the class that reads a groupscan command and parses it. The r
 
 interface
 
-uses
-  Classes, SysUtils, cefuncproc, CustomTypeHandler, strutils;
+{$ifdef windows}
+uses Classes, SysUtils, cefuncproc, CustomTypeHandler, strutils, commonTypeDefs;
+{$endif}
+
+{$ifdef unix}
+uses Classes, SysUtils, strutils, CustomTypeHandler, commonTypeDefs;
+{$endif}
 
 type
   TGroupscanCommandParser=class
@@ -43,6 +48,8 @@ type
   end;
 
 implementation
+
+uses Parsers;
 
 procedure TGroupscanCommandParser.parseToken(s: string);
 var i,j,k: integer;

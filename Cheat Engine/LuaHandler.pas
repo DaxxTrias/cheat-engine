@@ -18,7 +18,7 @@ uses
   controls, LuaCaller, forms, ExtCtrls, StdCtrls, comctrls, ceguicomponents,
   generichotkey, luafile, xmplayer_server, ExtraTrainerComponents, customtimer,
   menus, XMLRead, XMLWrite, DOM,ShellApi, Clipbrd, typinfo, PEInfoFunctions,
-  LCLProc, strutils, registry, md5;
+  LCLProc, strutils, registry, md5, commonTypeDefs;
 
 
 const MAXTABLERECURSIONLOOKUP=2;
@@ -88,8 +88,8 @@ uses mainunit, mainunit2, luaclass, frmluaengineunit, plugin, pluginexports,
   LuaTableFile, LuaMemoryRecordHotkey, LuaMemoryView, LuaD3DHook, LuaDisassembler,
   LuaDissectCode, LuaByteTable, LuaBinary, lua_server, HotkeyHandler, LuaPipeClient,
   LuaPipeServer, LuaTreeview, LuaTreeNodes, LuaTreeNode, LuaCalendar, LuaSymbolListHandler,
-  LuaCommonDialog, LuaFindDialog, LuaSettings, LuaPageControl, SymbolListHandler,
-  processhandlerunit, processlist;
+  LuaCommonDialog, LuaFindDialog, LuaSettings, LuaPageControl, LuaRipRelativeScanner,
+  SymbolListHandler, processhandlerunit, processlist, Globals;
 
 resourcestring
   rsLUA_DoScriptWasNotCalledRomTheMainThread = 'LUA_DoScript was not called '
@@ -1163,7 +1163,7 @@ begin
       v:=0;
       if ReadProcessMemory(processhandle, pointer(address), @v, sizeof(v), r) then
       begin
-        lua_pushinteger(L, v);
+        lua_pushinteger(L, dword(v));
         result:=1;
       end;
 
@@ -3278,7 +3278,7 @@ begin
       writeprocessmemory(processhandle, pointer(address), f.memory, f.size, x);
 
     finally
-      freemem(f);
+      freeandnil(f);
     end;
 
 
@@ -3323,7 +3323,7 @@ begin
 
     finally
       if f<>nil then
-        freemem(f);
+        FreeAndNil(f);
 
       freemem(buf);
     end;
@@ -5440,6 +5440,7 @@ begin
   end;
 end;
 
+
 procedure InitializeLua;
 var s: tstringlist;
   k32: THandle;
@@ -5508,7 +5509,7 @@ begin
     lua_register(LuaVM, 'getProcessIDFromProcessName', getProcessIDFromProcessName);
     lua_register(LuaVM, 'openProcess', openProcess);
     lua_register(LuaVM, 'debugProcess', debugProcess);
-
+    lua_register(LuaVM, 'debug_getBreakpointList', debug_getBreakpointList);
     lua_register(LuaVM, 'debug_isDebugging', debug_isDebugging);
     lua_register(LuaVM, 'debug_canBreak', debug_canBreak);
     lua_register(LuaVM, 'debug_setBreakpoint', debug_setBreakpoint);
@@ -5855,6 +5856,7 @@ begin
     initializeLuaPageControl;
 
     initializeLuaCalendar;
+    initializeLuaRipRelativeScanner;
 
 
 

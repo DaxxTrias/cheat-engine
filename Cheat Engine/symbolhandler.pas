@@ -4,13 +4,21 @@ unit symbolhandler;
 
 interface
 
+{$ifdef windows}
 
 uses jwawindows, windows, classes,LCLIntf,imagehlp,{psapi,}sysutils, cefuncproc,
   newkernelhandler,syncobjs, SymbolListHandler, fgl, typinfo, cvconst, PEInfoFunctions,
-  DotNetPipe, DotNetTypes;
+  DotNetPipe, DotNetTypes, commonTypeDefs;
+{$endif}
 
+{$ifdef unix}
+uses unixporthelper, Classes, sysutils, NewKernelHandler, syncobjs, SymbolListHandler,
+  fgl, typinfo, cvconst, DotNetPipe, DotNetTypes, commonTypeDefs, math;
+{$endif}
 
+{$ifdef windows}
 Procedure Free (P : pointer); cdecl; external 'msvcrt' name 'free';
+{$endif}
 
 {$ifdef autoassemblerdll}
 var
@@ -73,6 +81,8 @@ type
     currentModuleIsNotStandard: boolean;
 
     extraSymbolData: TExtraSymbolData;
+    //highestsymboladdress: ptruint;
+//    highestsymbol: string;
 
     procedure EnumerateExtendedDebugSymbols;
 
@@ -143,6 +153,7 @@ type
     SymbolsLoadedNotification: array of TNotifyEvent;
 
     dotNetDataCollector: TDotNetPipe;
+
 
     dotnetModuleSymbolList: array of TDotNetModuleSymbols;
     dotnetModuleSymbolListMREW: TMultiReadExclusiveWriteSynchronizer; //MREW for adding/removing modules to the list
@@ -268,20 +279,27 @@ function registerAddressLookupCallback(callback: TAddressLookupCallback): intege
 procedure unregisterAddressLookupCallback(id: integer);
 
 
-
+{$ifdef windows}
 type TSymFromName=function(hProcess: HANDLE; Name: LPSTR; Symbol: PSYMBOL_INFO): BOOL; stdcall;
 type TSymFromAddr=function(hProcess:THANDLE; Address:dword64; Displacement:PDWORD64; Symbol:PSYMBOL_INFO):BOOL;stdcall;
 
 var SymFromName: TSymFromName;
     SymFromAddr: TSymFromAddr;
+{$endif}
 
 procedure symhandlerInitialize;
 
 implementation
 
+{$ifdef windows}
 uses assemblerunit, driverlist, LuaHandler, lualib, lua, lauxlib,
   disassemblerComments, StructuresFrm2, networkInterface, networkInterfaceApi,
-  processhandlerunit;
+  processhandlerunit, Globals, Parsers;
+{$endif}
+
+{$ifdef unix}
+uses networkInterface, networkInterfaceApi, ProcessHandlerUnit, Globals, Parsers;
+{$endif}
 
 resourcestring
   rsSymbolloaderthreadHasCrashed = 'Symbolloaderthread has crashed';
@@ -301,17 +319,22 @@ const
   LIST_MODULES_64BIT=2;
   LIST_MODULES_ALL=3;
 
+{$IFNDEF UNIX}
 type TEnumProcessModulesEx=function(hProcess: HANDLE; lphModule: PHMODULE; cb: DWORD; var lpcbNeeded: DWORD; dwFilterFlag: DWORD): BOOL; stdcall;
 type TEnumProcessModules=function(hProcess: HANDLE; lphModule: PHMODULE; cb: DWORD; var lpcbNeeded: DWORD): BOOL; stdcall;
 type TGetModuleFileNameEx=function(hProcess: HANDLE; hModule: HMODULE; lpFilename: pchar; nSize: DWORD): DWORD; stdcall;
+{$ENDIF}
 
 
-var EnumProcessModulesEx: TEnumProcessModulesEx;
-    EnumProcessModules:   TEnumProcessModules;
-    GetModuleFileNameEx:  TGetModuleFilenameEx;
+var
+  {$IFNDEF UNIX}
+  EnumProcessModulesEx: TEnumProcessModulesEx;
+  EnumProcessModules:   TEnumProcessModules;
+  GetModuleFileNameEx:  TGetModuleFilenameEx;
+  {$ENDIF}
 
-    SymbolLookupCallbacks: array [slStart..slFailure] of array of TSymbolLookupCallback;
-    AddressLookupCallbacks: array of TAddressLookupCallback;
+  SymbolLookupCallbacks: array [slStart..slFailure] of array of TSymbolLookupCallback;
+  AddressLookupCallbacks: array of TAddressLookupCallback;
 
 function registerSymbolLookupCallback(callback: TSymbolLookupCallback;  cbp: TSymbolLookupCallbackPoint): integer;
 var i: integer;
@@ -369,7 +392,11 @@ end;
 
 function EnumProcessModulesExNotImplemented(hProcess: HANDLE; lphModule: PHMODULE; cb: DWORD; var lpcbNeeded: DWORD; dwFilterFlag: DWORD): BOOL; stdcall;
 begin
+{$ifndef unix}
   result:=EnumProcessModules(hProcess,lphModule,cb,lpcbNeeded);
+{$else}
+  result:=false;
+{$endif}
 end;
 
 
@@ -382,8 +409,8 @@ var need:dword;
     modulelisttype: integer;
 
 begin
+  {$ifndef unix}
   need:=0;
-
 
   modulelisttype:=LIST_MODULES_ALL;
 
@@ -409,7 +436,7 @@ begin
     freemem(x);
   end;
 
-
+  {$endif}
 end;
 
 procedure TSymbolloaderthread.LoadDriverSymbols;
@@ -419,6 +446,7 @@ var need:dword;
     count: integer;
     drivername: pchar;
 begin
+  {$IFNDEF UNIX}
   EnumDevicedrivers(nil,0,need);
   getmem(x,need);
   try
@@ -440,6 +468,7 @@ begin
   finally
     freemem(x);
   end;
+  {$ENDIF}
 end;
 
 procedure TSymbolloaderthread.finishedLoadingSymbols;
@@ -471,6 +500,7 @@ LPIMAGEHLP_STACK_FRAME = PIMAGEHLP_STACK_FRAME;
 function symflagsToString(symflags: dword): string;
 var s: string;
 begin
+  {$IFNDEF UNIX}
   s:='';
   if (symFlags and SYMFLAG_VALUEPRESENT)>0 then
     s:=s+'VALUEPRESENT ';
@@ -498,6 +528,7 @@ begin
     s:=s+'THUNK ';
   if (symflags and SYMFLAG_TLSREL)>0 then
     s:=s+'TLSREL ';
+  {$ENDIF}
 end;
 
 function GetTypeName(h: HANDLE; modbase: UINT64; index: integer; infinitycheck: integer=50): string;
@@ -505,6 +536,7 @@ var x: dword;
     type_symtag: TSymTagEnum;
     name: PWCHAR;
 begin
+  {$IFNDEF UNIX}
   result:='';
   if infinitycheck<0 then exit;
 
@@ -599,6 +631,7 @@ begin
 
 
   end;
+  {$ENDIF}
 
 end;
 
@@ -693,6 +726,7 @@ var
 
   esde: TExtraSymbolDataEntry;
 begin
+  {$IFNDEF UNIX}
   if pSymInfo.NameLen=0 then
     exit;
 
@@ -720,6 +754,7 @@ begin
     self.extraSymbolData.locals.Add(esde);
 
   result:=(self.terminated=false);
+  {$ENDIF}
 end;
 
 procedure TSymbolloaderthread.EnumerateExtendedDebugSymbols;
@@ -727,6 +762,7 @@ var
   i: integer;
   c: IMAGEHLP_STACK_FRAME;
 begin
+  {$IFNDEF UNIX}
   for i:=0 to self.symbollist.ExtraSymbolDataList.Count-1 do
   begin
     if (not self.symbollist.ExtraSymbolDataList[i].filledin) and (self.symbollist.ExtraSymbolDataList[i].symboladdress<>0) then
@@ -744,6 +780,7 @@ begin
       self.extraSymbolData.filledin:=true;
     end;
   end;
+  {$ENDIF}
 end;
 
 function ES(pSymInfo:PSYMBOL_INFO; SymbolSize:ULONG; UserContext:pointer):BOOL;stdcall;
@@ -813,6 +850,7 @@ function EM(ModuleName:PSTR; BaseOfDll:dword64; UserContext:pointer):bool;stdcal
 var self: TSymbolloaderthread;
     mi: tmoduleinfo;
 begin
+  {$IFNDEF UNIX}
   self:=TSymbolloaderthread(UserContext);
   self.CurrentModulename:=ModuleName;
 
@@ -828,17 +866,34 @@ begin
   //mark this module as loaded
 
   symhandler.markModuleAsLoaded(baseofdll)
+  {$ENDIF}
 end;
 
 
 function TSymbolloaderthread.NetworkES(modulename: string; symbolname: string; address: ptruint; size: integer; secondary: boolean): boolean;
 begin
+
+  //if highestsymboladdress<address then
+  {
+  if symbolname='_end' then
+  begin
+    highestsymboladdress:=address;
+    highestsymbol:=symbolname;
+  end;
+  }
+
   symbollist.AddSymbol(modulename, modulename+'.'+symbolname, Address, size, secondary);
   symbollist.AddSymbol(modulename, symbolname, Address, size,true);
   result:=not terminated;
 end;
 
 procedure TSymbolloaderthread.execute;
+type
+  TModInfo=record
+    baseaddress: qword;
+    size: qword;
+  end;
+  PModInfo=^TModInfo;
 var sp: pchar;
     s: string;
 
@@ -857,6 +912,10 @@ var sp: pchar;
     address:qword;
     size: integer;
     name: string;
+
+
+
+    modinfo: PModInfo;
 begin
 
   try
@@ -876,6 +935,7 @@ begin
         owner.dotnetModuleSymbolListMREW.Endwrite;
       end;
 
+      {$IFDEF windows}
       if trim(searchpath)='' then
       begin
         s:='';
@@ -893,6 +953,7 @@ begin
 
       end
       else
+      {$ENDIF}
         s:=searchpath;
 
 
@@ -900,6 +961,8 @@ begin
 
       if c=nil then //local
       begin
+
+        {$IFDEF windows}
         if thisprocessid<>GetCurrentProcessId then //I'm quite sure ce isn't written in .net
         begin
 
@@ -991,7 +1054,10 @@ begin
 
           Symcleanup(thisprocesshandle);
 
-        end else error:=true;
+        end
+        else
+        {$ENDIF}
+          error:=true;
       end
       else
       begin
@@ -1002,13 +1068,46 @@ begin
         self.owner.modulelistMREW.Beginread;
         try
           for i:=0 to self.owner.modulelistpos-1 do
-            mpl.AddObject(self.owner.modulelist[i].modulepath, pointer(self.owner.modulelist[i].baseaddress));
+          begin
+            getmem(modinfo, sizeof(TModInfo));
+            modinfo^.baseaddress:=self.owner.modulelist[i].baseaddress;
+            modinfo^.size:=self.owner.modulelist[i].basesize;
+            mpl.AddObject(self.owner.modulelist[i].modulepath, tobject(modinfo));
+          end;
         finally
           self.owner.modulelistMREW.Endread;
         end;
 
         for i:=0 to mpl.Count-1 do
-          c.enumSymbolsFromFile(self.owner.modulelist[i].modulepath, ptruint(mpl.Objects[i]), NetworkES);
+        begin
+          modinfo:=pmodinfo(mpl.Objects[i]);
+
+
+{
+          highestsymboladdress:=0;
+          highestsymbol:='';}
+
+
+          c.enumSymbolsFromFile(self.owner.modulelist[i].modulepath, modinfo^.baseaddress, NetworkES);
+            {
+          if (modinfo^.baseaddress+modinfo^.size)<highestsymboladdress then
+          begin
+            self.owner.modulelistMREW.Beginread;
+            try
+              for j:=0 to self.owner.modulelistpos-1 do
+                if self.owner.modulelist[j].baseaddress=modinfo^.baseaddress then
+                begin
+                  self.owner.modulelist[j].basesize:=highestsymboladdress-modinfo^.baseaddress;
+                  break;
+                end;
+            finally
+              self.owner.modulelistMREW.Endread;
+            end;
+          end;  }
+
+          freemem(modinfo);
+        end;
+
 
         mpl.free;
       end;
@@ -1023,7 +1122,8 @@ begin
       if not terminated then
       begin
         OutputDebugString('Symbolhandler: sync: Calling finishedloadingsymbols');
-        synchronize(finishedloadingsymbols);
+        Queue(finishedloadingsymbols);
+        //synchronize(finishedloadingsymbols);
         OutputDebugString('after finishedloadingsymbols');
       end
       else
@@ -1035,6 +1135,8 @@ begin
   except
     outputdebugstring(rsSymbolloaderthreadHasCrashed);
   end;
+
+  isloading:=false;
 end;
 
 destructor TSymbolloaderthread.destroy;
@@ -1052,21 +1154,19 @@ begin
   self.owner:=owner;
   self.targetself:=targetself;
   
-{$ifdef autoassemblerdll}
-  _processid:=symbolhandler.ProcessID;
-  _processhandle:=symbolhandler.processhandle;
-{$else}
+  {$ifdef windows}
   if targetself then
   begin
     _processid:=getcurrentprocessid;
     _processhandle:=getcurrentprocess;
   end
   else
+  {$endif}
   begin
     _processid:=processhandlerunit.ProcessID;
     _processhandle:=processhandlerunit.ProcessHandle;
   end;
-{$endif}
+
 
   thisprocesshandle:=_processhandle;
   thisprocessid:=_processid;
@@ -1329,43 +1429,50 @@ end;
 
 procedure TSymhandler.reinitialize(force: boolean=false);
 begin
+  Log('TSymhandler.reinitialize');
   if loadmodulelist or force then //if loadmodulelist returns true it has detected a change in the previous modulelist (baseaddresschange or new/deleted module)
   begin
-
-    symbolloadervalid.Beginread;
-    try
-      if symbolloaderthread<>nil then
-      begin
-        symbolloaderthread.Terminate;
-        symbolloaderthread.WaitFor; //wait till it's done
+    if fetchSymbols then
+    begin
+      Log('loadmodulelist or force was true');
+      symbolloadervalid.Beginread;
+      try
+        if symbolloaderthread<>nil then
+          symbolloaderthread.Terminate; //let's get this started
+      finally
+        symbolloadervalid.Endread;
       end;
-    finally
-      symbolloadervalid.Endread;
+
+      dotNetDataCollector.disconnect;
+
+      if not targetself then
+        dotNetDataCollector.connect(processid, processhandler.is64Bit);
+
+      symbolloadervalid.BeginWrite;
+      try
+        if symbolloaderthread<>nil then
+        begin
+          symbolloaderthread.Terminate;
+
+          //OutputDebugString(pchar(inttostr(GetCurrentThreadId)+':Waiting'));
+          if symbolloaderthread.Finished=false then
+            symbolloaderthread.WaitFor; //wait till it's done
+
+          //OutputDebugString(pchar(inttostr(GetCurrentThreadId)+':Returned'));
+
+          freeandnil(symbolloaderthread);
+        end;
+
+        symbolloaderthread:=tsymbolloaderthread.Create(self, targetself,true);
+        symbolloaderthread.kernelsymbols:=kernelsymbols;
+        symbolloaderthread.searchpath:=searchpath;
+        symbolloaderthread.symbollist:=symbollist;
+        symbolloaderthread.start;
+      finally
+        symbolloadervalid.EndWrite;
+      end;
     end;
-
-    dotNetDataCollector.disconnect;
-
-    if not targetself then
-      dotNetDataCollector.connect(processid, processhandler.is64Bit);
-
-    symbolloadervalid.BeginWrite;
-    try
-      if symbolloaderthread<>nil then
-        freeandnil(symbolloaderthread);
-
-      symbolloaderthread:=tsymbolloaderthread.Create(self, targetself,true);
-      symbolloaderthread.kernelsymbols:=kernelsymbols;
-      symbolloaderthread.searchpath:=searchpath;
-      symbolloaderthread.symbollist:=symbollist;
-
-    finally
-      symbolloadervalid.EndWrite;
-    end;
-
-
-    symbolloaderthread.start;
   end;
-
 
   ReinitializeUserdefinedSymbolList;
 end;
@@ -1377,7 +1484,7 @@ begin
 
   if symbolloaderthread<>nil then
   begin
-    while (symbolloaderthread.isloading) and
+    while (not symbolloaderthread.Finished) and (symbolloaderthread.isloading) and
           not
           (
             (apisymbolsonly and symbolloaderthread.apisymbolsloaded) or  //true if all the symbols are loaded
@@ -1963,18 +2070,17 @@ var //symbol :PSYMBOL_INFO;
     processhandle: thandle;
     i: integer;
 begin
-{$ifdef autoassemblerdll}
-  processhandle:=symbolhandler.processhandle;
-{$else}
+{$ifdef windows}
   if targetself then
   begin
     processhandle:=getcurrentprocess;
   end
   else
+{$endif}
   begin
     processhandle:=processhandlerunit.ProcessHandle;
   end;
-{$endif}
+
 
   for i:=0 to length(AddressLookupCallbacks)-1 do
   begin
@@ -2209,6 +2315,9 @@ begin
       val(name,result,i);
       if i=0 then exit; //it's a hexadecimal string starting with a $
 
+
+
+      {$IFNDEF UNIX}
       //check if lua thingy
       i:=lua_gettop(luavm); //make sure the stack ends here when done
 
@@ -2247,6 +2356,7 @@ begin
 
         lua_settop(luavm, i);
       end;
+      {$ENDIF}
 
 
 
@@ -2254,19 +2364,16 @@ begin
     end;
   end;
 
-
-{$ifdef autoassemblerdll}
-  processhandle:=symbolhandler.processhandle;
-{$else}
+  {$ifdef windows}
   if targetself then
   begin
     processhandle:=getcurrentprocess;
   end
   else
+  {$endif}
   begin
     processhandle:=processhandlerunit.ProcessHandle;
   end;
-{$endif}
 
 
 
@@ -2332,6 +2439,7 @@ begin
               continue;
             end;
 
+            {$IFDEF windows}
             regnr:=getreg(uppercase(tokens[i]),false);
 
             if regnr<>-1 then
@@ -2367,6 +2475,7 @@ begin
               //not handled, but since it's a register, quit now
             end
             else
+            {$ENDIF}
             begin
               //no context or not a register
               result:=GetUserdefinedSymbolByName(tokens[i]);
@@ -2384,7 +2493,7 @@ begin
                 continue;
               end;
 
-              {$ifndef autoassemblerdll}
+              {$ifdef windows}
               if (DBKLoaded) and (length(tokens[i])>6) and (pos('KERNEL_',uppercase(tokens[i]))>0) then
               begin
                 tokens[i]:=copy(tokens[i],8,length(tokens[i])-7);
@@ -2442,7 +2551,7 @@ begin
 
                 if si=nil then //not found
                 begin
-
+                  {$ifdef windows}
                   if uppercase(copy(tokens[i],1,11))='THREADSTACK' then
                   begin
                     s:=copy(tokens[i], 12, length(tokens[i])-12+1);
@@ -2458,6 +2567,7 @@ begin
                       end;
                     end;
                   end;
+                  {$endif}
 
                   if waitforsymbols then
                   begin
@@ -2638,10 +2748,13 @@ var
 
   alreadyInTheList: boolean;
 
-  oldmodulelist: array of qword;
+ // oldmodulelist: array of qword;
 
   is64bitprocess: boolean;
 
+
+  newmodulelist: TModuleInfoArray;
+  newmodulelistpos: integer;
 begin
 
 
@@ -2659,6 +2772,7 @@ begin
 
     if processid=0 then exit;
 
+    {
     modulelistMREW.beginread;
 
     //make a copy of the old list addresses to compare against
@@ -2666,7 +2780,7 @@ begin
     for i:=0 to modulelistpos-1 do
       oldmodulelist[i]:=modulelist[i].baseaddress;
 
-    modulelistMREW.Endread;
+    modulelistMREW.Endread;  }
 
 
     //Note: Just TH32CS_SNAPMODULE32 will result in an empty list
@@ -2675,9 +2789,10 @@ begin
     //So for now I just check if it's a system dll, and if so, if it's in the wow64 folder or not
     ths:=CreateToolhelp32Snapshot(TH32CS_SNAPMODULE or TH32CS_SNAPMODULE32,processid);
 
-    modulelistMREW.BeginWrite;
+    modulelistMREW.BeginRead;
     try
-      modulelistpos:=0;
+      newmodulelistpos:=0;
+      setlength(newmodulelist, length(modulelist));
 
       if ths<>0 then
       begin
@@ -2696,9 +2811,9 @@ begin
 
               alreadyInTheList:=false;
               //check if this modulename is already in the list, and if so check if it's the same base, else add it
-              for i:=0 to modulelistpos-1 do
+              for i:=0 to newmodulelistpos-1 do
               begin
-                if (modulelist[i].baseaddress=ptrUint(me32.modBaseAddr)) then
+                if (newmodulelist[i].baseaddress=ptrUint(me32.modBaseAddr)) then
                 begin
                   alreadyInTheList:=true;
                   break; //it's in the list, no need to continue looking, break out of the for loop
@@ -2708,50 +2823,55 @@ begin
 
               if not alreadyInTheList then
               begin
-                if modulelistpos+1>=length(modulelist) then
-                  setlength(modulelist,length(modulelist)*2);
+                if newmodulelistpos+1>=length(newmodulelist) then
+                  setlength(newmodulelist,length(newmodulelist)*2);
 
-
-
-                modulelist[modulelistpos].modulename:=modulename;
-                modulelist[modulelistpos].modulepath:=x;
+                newmodulelist[newmodulelistpos].modulename:=modulename;
+                newmodulelist[newmodulelistpos].modulepath:=x;
 
                 //all windows folder files are system modules, except when it is an .exe (minesweeper in xp)
-                modulelist[modulelistpos].isSystemModule:=(pos(lowercase(windowsdir),lowercase(x))>0) and (ExtractFileExt(lowercase(x))<>'.exe');
+                newmodulelist[newmodulelistpos].isSystemModule:=(pos(lowercase(windowsdir),lowercase(x))>0) and (ExtractFileExt(lowercase(x))<>'.exe');
 
-                modulelist[modulelistpos].baseaddress:=ptrUint(me32.modBaseAddr);
-                modulelist[modulelistpos].basesize:=me32.modBaseSize;
+                newmodulelist[newmodulelistpos].baseaddress:=ptrUint(me32.modBaseAddr);
+                newmodulelist[newmodulelistpos].basesize:=me32.modBaseSize;
 
                 if not processhandler.isNetwork then
                 begin
-                  if peinfo_is64bitfile(x, modulelist[modulelistpos].is64bitmodule)=false then
+                  {$ifdef windows}
+                  if peinfo_is64bitfile(x, newmodulelist[newmodulelistpos].is64bitmodule)=false then
                   begin
                     //fallback
                     {$ifdef cpu64}
                     if is64bitprocess then
-                      modulelist[modulelistpos].is64bitmodule:=true
+                      newmodulelist[newmodulelistpos].is64bitmodule:=true
                     else
                     begin
-                      if modulelist[modulelistpos].isSystemModule then
+                      if newmodulelist[newmodulelistpos].isSystemModule then
                       begin
                         if pos('wow64', lowercase(ExtractFilePath(x)))>0 then  //todo: Open the file and check if it's 64-bit or not
-                          modulelist[modulelistpos].is64bitmodule:=false
+                          newmodulelist[newmodulelistpos].is64bitmodule:=false
                         else
-                          modulelist[modulelistpos].is64bitmodule:=true;
+                          newmodulelist[newmodulelistpos].is64bitmodule:=true;
                       end;
                     end;
                     {$endif}
                   end;
+                  {$endif}
                 end
                 else
-                  modulelist[modulelistpos].is64bitmodule:=processhandler.is64Bit;
+                begin
+                  newmodulelist[newmodulelistpos].is64bitmodule:=processhandler.is64Bit;
+                  if pos('/system/',lowercase(x))=1 then //android thingy
+                    newmodulelist[newmodulelistpos].isSystemModule:=true;
+                end;
 
-                if (not modulelist[modulelistpos].isSystemModule) and (commonModuleList<>nil) then //check if it's a common module (e.g nvidia physx dll's)
-                  modulelist[modulelistpos].isSystemModule:=commonModuleList.IndexOf(lowercase(modulelist[modulelistpos].modulename))<>-1;
+                if (not newmodulelist[newmodulelistpos].isSystemModule) and (commonModuleList<>nil) then //check if it's a common module (e.g nvidia physx dll's)
+                  newmodulelist[newmodulelistpos].isSystemModule:=commonModuleList.IndexOf(lowercase(newmodulelist[newmodulelistpos].modulename))<>-1;
 
+                inc(newmodulelistpos);
 
-
-                inc(modulelistpos);
+                if (modulelistpos=0) or (newmodulelistpos>modulelistpos) or (modulelist[newmodulelistpos-1].baseaddress<>newmodulelist[newmodulelistpos-1].baseaddress) then //different size or different order, return true
+                  result:=true; //different
               end;
 
             until not module32next(ths,me32);
@@ -2764,11 +2884,15 @@ begin
 
 
     finally
-      modulelistmrew.EndWrite;
+      modulelistmrew.EndRead;
+
     end;
 
-    if length(oldmodulelist)=modulelistpos then
-    begin
+    if newmodulelistpos<>modulelistpos then
+      result:=true;
+
+
+    {begin
       for i:=0 to modulelistpos-1 do
       begin
         if oldmodulelist[i]<>modulelist[i].baseaddress then
@@ -2780,16 +2904,29 @@ begin
       end;
     end
     else
-      result:=true; //the length of the list changed
+      result:=true; //the length of the list changed}
+
+    if result=true then
+    begin
+      modulelistMREW.BeginWrite;
+      try
+        modulelist:=newmodulelist;
+        modulelistpos:=newmodulelistpos;
+      finally
+        modulelistMREW.EndWrite;
+      end;
+    end;
 
   except
     //MessageBox(0,'procedure TSymhandler.loadmodulelist','procedure TSymhandler.loadmodulelist',0);
   end;
 
 
-
+{$ifndef unix}
   if result then
     reinitializeDisassemblerComments; //the comments list is depending on the modulelist since it is written using modulename+offset
+
+{$endif}
 end;
 
 
@@ -2802,6 +2939,8 @@ var
   elementname: string;
 begin
   result:=false;
+
+  {$IFNDEF UNIX}
   i:=pos('.', s); //check for the .
   if i>0 then
   begin
@@ -2834,6 +2973,7 @@ begin
       end;
     end;
   end;
+  {$ENDIF}
 end;
 
 function TSymhandler.GetAddressFromPointer(s: string; var error: boolean):ptrUint;
@@ -2844,7 +2984,7 @@ If it is a invalid pointer, or can not be resolved, the result is NULL
 var i: integer;
     list: tstringlist;
     offsets: array of integer;
-    baseaddress: dword;
+    baseaddress: ptruint;
     off: string;
     realaddress, realaddress2: ptrUint;
     check: boolean;
@@ -3100,6 +3240,7 @@ end;
 
 constructor TSymhandler.create;
 begin
+  log('TSymhandler.create');
   symbolloadervalid:=TMultiReadExclusiveWriteSynchronizer.create;
   modulelistMREW:=TMultiReadExclusiveWriteSynchronizer.create;
   userdefinedsymbolsCS:=TCriticalSection.create;
@@ -3107,8 +3248,10 @@ begin
 
   dotnetModuleSymbolListMREW:=TMultiReadExclusiveWriteSynchronizer.create;
 
+  log('TSymhandler.create 1');
   dotNetDataCollector:=TDotNetPipe.create;
 
+  log('TSymhandler.create 2');
   //setlength(internalsymbols,4);
   setlength(userdefinedsymbols,32);
   setlength(modulelist,32);
@@ -3117,7 +3260,10 @@ begin
   showsymbols:=true;
   ExceptionOnLuaLookup:=true;
 
+  log('TSymhandler.create 3');
   symbollist:=TSymbolListHandler.create;
+
+  log('TSymhandler.create exit');
 end;
 
 
@@ -3125,13 +3271,16 @@ procedure symhandlerInitialize;
 var psa,dbghlp: THandle;
 begin
   symhandler:=tsymhandler.create;
+  {$ifdef windows}
   if selfsymhandler=nil then
   begin
     selfsymhandler:=Tsymhandler.create;
     selfsymhandler.targetself:=true;
     selfsymhandler.reinitialize;
   end;
+  {$endif}
 
+{$ifdef windows}
 {$ifdef cpu32}
   dbghlp:=LoadLibrary(pchar(CheatEngineDir+'\win32\dbghelp.dll'));
 {$else}
@@ -3149,6 +3298,7 @@ begin
   GetModuleFileNameEx:=GetProcAddress(psa,'GetModuleFileNameExA');
   if not assigned(EnumProcessModulesEx) then
     EnumProcessModulesEx:=EnumProcessModulesExNotImplemented;
+{$endif}
 end;
 
 

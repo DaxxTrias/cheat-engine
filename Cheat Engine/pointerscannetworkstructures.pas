@@ -25,19 +25,28 @@ type
     parentconnectedto: boolean; //true if the parent connected to the child
     ip: string;
     port: word;
+    queued: boolean;
+    queuesize: integer;
+    queuepos: integer;
+
     isidle: boolean;
     disconnected: boolean;
+    lasterror: string;
     pathsevaluated: qword;
     trustedconnection: boolean;
-    threadcount: integer;
+    potentialthreadcount: integer;
+    actualthreadcount: integer;
     pathquesize: integer;
     totalpathqueuesize: integer;
     resultsfound: qword;
 
     uploadingscandata:boolean;
-    uploadscandataprogress: integer;
-    uploadscandataspeed: integer;
+    ScanDataSent: qword;
+    ScanDataTotalSize: qword;
+    ScanDataStartTime: qword;
     downloadingResuls: boolean;
+
+    lastUpdateReceived: qword;
   end;
 
   TConnectionEntryArray=array of TPublicConnectionEntry;
@@ -54,7 +63,8 @@ type
   TPSUpdateStatusMsg=record
     currentscanid: uint32;
     isidle: byte;
-    totalthreadcount: integer;
+    potentialthreadcount: integer;
+    actualthreadcount: integer;
     pathsevaluated: qword;
     localpathqueuecount: uint32;
     totalpathQueueCount: uint32;

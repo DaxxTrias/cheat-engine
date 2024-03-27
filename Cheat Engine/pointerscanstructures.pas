@@ -7,7 +7,9 @@ interface
 uses
   windows, Classes, SysUtils, winsock, CELazySocket;
 
-const MAXQUEUESIZE=64;
+const
+  MAXQUEUESIZE=64;
+  pointerscanfileversion=1;
 
 type
   TDynDwordArray=array of dword;
@@ -42,6 +44,8 @@ type
     port: word;
 
     trustsme: boolean;
+    knowsIAmTerminating: boolean;
+    connecttime: qword;
   end;
 
   PPointerscanControllerParent=^TPointerscanControllerParent;
@@ -49,6 +53,7 @@ type
   TPointerscancontrollerchild=record
     socket: TSocketstream;
     MissingSince: qword; //holds the time when the connection was lost. If this is set to 0 the child info will be deleted
+    Error: string;
 
     iConnectedTo: boolean;
     connectdata: record
@@ -68,7 +73,8 @@ type
     totalPathsEvaluated: qword;
     pathqueuesize: integer;
     totalpathqueuesize: integer;
-    totalthreadcount: integer;
+    potentialthreadcount: integer;
+    actualthreadcount: integer;
 
     resultsfound: qword;
 
@@ -78,10 +84,16 @@ type
 
     trustlevel: integer;
     nontrustedlastpaths: TDynPathQueue;
+    nontrustedlastpathstime: qword;
+
 
     scandatauploader: TThread;
-    receivingScanDataProgress: integer;
-    receivingScanDataSpeed: integer; //bytes/sec
+    ScanDataSent: qword;
+    ScanDataTotalSize: qword;
+    ScanDataStartTime: qword;
+    hasReceivedScandata: boolean;
+
+    LastUpdateReceived: qword;
 
     scanresultDownloader: TThread; //not nil if the results it has sent me are still being processed
     resultstream: TFilestream; //if initializer this holds an open filestream to the .ptr associated with this child

@@ -12,7 +12,7 @@ interface
 uses
   windows, Classes, SysUtils, FileUtil, LResources, Forms, Controls, Graphics, Dialogs, StdCtrls, ExtCtrls, ComCtrls,
   cefuncproc, newkernelhandler, frmStringMapUnit, MemFuncs, AvgLvlTree, Menus,
-  bigmemallochandler, math, maps, oldRegExpr, symbolhandler;
+  bigmemallochandler, math, maps, oldRegExpr, symbolhandler, commonTypeDefs;
 
 const
   wm_sps_done=wm_user+1;
@@ -335,7 +335,7 @@ implementation
 
 { TfrmStringPointerScan }
 
-uses frmStructPointerRescanUnit, MemoryBrowserFormUnit, ProcessHandlerUnit;
+uses frmStructPointerRescanUnit, MemoryBrowserFormUnit, ProcessHandlerUnit, Parsers;
 
 resourcestring
   rsGeneratingStringmap = 'Generating stringmap';
