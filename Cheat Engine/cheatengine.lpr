@@ -84,10 +84,12 @@ uses
   frmNetworkDataCompressionUnit, lazcontrols, LuaApplication, ProcessList,
   pointeraddresslist, frmResumePointerscanUnit, frmSetupPSNNodeUnit,
   PointerscanWorker, PointerscanStructures, PointerscanController, zstreamext,
-  PointerscanConnector, PointerscanNetworkStructures, AsyncTimer, 
-PointerscanSettingsIPConnectionList, MemoryStreamReader, commonTypeDefs, 
-Parsers, Globals, NullStream, RipRelativeScanner, LuaRipRelativeScanner, 
-VirtualQueryExCache, disassemblerthumb, AccessedMemory;
+  PointerscanConnector, PointerscanNetworkStructures, AsyncTimer,
+  PointerscanSettingsIPConnectionList, MemoryStreamReader, commonTypeDefs,
+  Parsers, Globals, NullStream, RipRelativeScanner, LuaRipRelativeScanner,
+  VirtualQueryExCache, disassemblerthumb, AccessedMemory, LuaStructureFrm,
+  MemoryQuery, pointerparser, GnuAssembler, binutils, dbvmLoadManual, mikmod,
+  frmEditHistoryUnit, LuaInternet;
 
 {$R cheatengine.res}
 //{$R manifest.res}  //lazarus now has this build in
@@ -200,7 +202,7 @@ begin
 end;
 
 begin
-  Application.Title:='............ 6.4';
+  Application.Title:='............ 6.5';
   Application.Initialize;
   getcedir;
 

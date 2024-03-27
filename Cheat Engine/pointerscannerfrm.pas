@@ -376,6 +376,54 @@ resourcestring
 
   rsOUTOFDISKSPACECleanUpTheDiskOrStop = 'OUT OF DISKSPACE! Clean up the disk '
     +'or stop';
+  rsPSDoYouWishToResumeTheCurrentPointerscanAtaLaterTime = 'Do you wish to resume the current pointerscan at a later time?';
+  rsPSGeneratingPointermap = 'Generating pointermap';
+  rsPSExportToDatabase = 'Export to database';
+  rsPSGiveaNameForTheseResults = 'Give a name for these results';
+  rsPSExporting = 'Exporting...';
+  rsPSThisDatabaseDoesntContainAnyPointerFiles = 'This database does not contain any pointer files';
+  rsPSInvalidDatabase = 'Invalid database';
+  rsPSSelectPtridFromPointerFilesWhereName = 'Select ptrid from pointerfiles where name="';
+  rsPSThereIsAlreadyaPointerFileWithThsiNamePresentinThisDatabase = 'There is already a pointerfile with this name present in this database. Replace it''s content with this one ?';
+  rsPSExportAborted = 'Export aborted';
+  rsPSImporting = 'Importing...';
+  rsPSStatistics = 'Statistics';
+  rsPSUniquePointervaluesInTarget = 'Unique pointervalues in target:';
+  rsPSScanDuration = 'Scan duration: ';
+  rsPSPathsEvaluated = 'Paths evaluated: ';
+  rsPSPathsSeconds = 'Paths / seconds: (%.0n / s)';
+  rsPSTotalPathsEvaluater = 'Total paths evaluated: ';
+  rsPSTotalPathsSeconds = 'Total paths / seconds: (%.0n / s)';
+  rsPSStaticQueueSize = 'Static queue size: ';
+  rsPSDynamicqueuSize = ' Dynamic queue size:';
+  rsPSResultsFound = 'Results found: ';
+  rsPSTimeSpentWriting = 'Time spent writing: ';
+  rsPSLowestKnownPath = 'Lowest known path:';
+  rsPSThreads = 'Threads';
+  rsPSNetwork = 'Network';
+  rsPSConnectingTo = 'Connecting to:';
+  rsPSTrusted = ' (Trusted)';
+  rsPSParent = 'Parent: ';
+  rsPSDownloadingScanData = 'Downloading scandata: %.1f%% (%dKB/%dKB : %d KB/sec)';
+  rsPSLastUpdate = 'Last update: ';
+  rsPSSecondsAgo = ' seconds ago';
+  rsPSParentDisconnectedWaitingForReconnect = 'Parent: <disconnected> (Waiting for reconnect)';
+  rsPSParentNone = 'Parent: <none>';
+  rsPSChildren = 'Children:';
+  rsPSDisconnected = ' (Disconnected)';
+  rsPSQueued = ' (Queued: ';
+  rsPSActive = ' (Active)';
+  rsPSIdle = ' (Idle)';
+  rsPSUploadingScandata = ' (Uploading scandata: %.1f%% (%dKB/%dKB : %d KB/sec)';
+  rsPSDownloadingAndHandlingResults = ' (Downloading and handling results)';
+  rsPSTrusted2 = 'Trusted: ';
+  rsPSThreadcount = 'Threadcount: ';
+  rsPSQueuesize = 'Queuesize: ';
+  rsPSTotalQueuesize = 'Total Queuesize: ';
+  rsPSPscanguiUpdateTimerError = 'pscangui update timer error: ';
+  rsPSREscanning = 'Rescanning';
+  rsPSFindByAddressPart1 = 'Find by address requires an address. "';
+  rsPSFindByAddressPart2 = '" is not a valid address';
 
 //----------------------- scanner info --------------------------
 //----------------------- staticscanner -------------------------
@@ -967,7 +1015,7 @@ begin
       if staticscanner.UseLoadedPointermap then
         lblProgressbar1.caption:=extractfilename(staticscanner.LoadedPointermapFilename)
       else
-        lblProgressbar1.caption:='Generating pointermap';
+        lblProgressbar1.caption:=rsPSGeneratingPointermap;
 
       if frmpointerscannersettings.cbLimitScanToRegionFile.Checked then
         staticscanner.RegionFilename:=frmpointerscannersettings.odLoadRegionFile.FileName
@@ -1191,7 +1239,7 @@ begin
     filename:=utf8toansi(sdsqlite.FileName);
     name:=extractfilename(pointerscanresults.filename);
 
-    if InputQuery('Export to database','Give a name for these results', name)=false then exit;
+    if InputQuery(rsPSExportToDatabase,rsPSGiveaNameForTheseResults, name)=false then exit;
 
 
 
@@ -1274,9 +1322,9 @@ begin
       if SQLQuery.RecordCount>0 then
       begin
         ptrid:=SQLQuery.FieldByName('ptrid').text;
-        if MessageDlg('Export to database', 'There is already a pointerfile with this name present in this database. Replace it''s content with this one ?', mtConfirmation, [mbyes, mbno], 0)<>mryes then
+        if MessageDlg(rsPSExportToDatabase, rsPSThereIsAlreadyaPointerFileWithThsiNamePresentinThisDatabase, mtConfirmation, [mbyes, mbno], 0)<>mryes then
         begin
-          showmessage('Export aborted');
+          showmessage(rsPSExportAborted);
           exit;
         end;
 
@@ -1295,7 +1343,7 @@ begin
       cursor:=crHourGlass;
 
 
-      lblProgressbar1.Caption:='Exporting...';
+      lblProgressbar1.Caption:=rsPSExporting;
       progressbar1.position:=0;
       progressbar1.max:=100;
       pnlProgress.visible:=true;
@@ -1453,7 +1501,7 @@ begin
 
     if l.Count=0 then
     begin
-      MessageDlg('This database does not contain any pointer files', mtError, [mbok],0);
+      MessageDlg(rsPSThisDatabaseDoesntContainAnyPointerFiles, mtError, [mbok],0);
       exit;
     end;
 
@@ -1481,7 +1529,7 @@ begin
     SQLQuery.Active:=true;
     try
       if (SQLQuery.RecordCount=0) or (SQLQuery.RecordCount>1) then
-        raise exception.create('Invalid database');
+        raise exception.create(rsPSInvalidDatabase);
 
       query2:=TSQLQuery.Create(self);  //extra query
       query2.DataBase:=SQLite3;
@@ -1589,7 +1637,7 @@ begin
     end;
 
     oldpb:=lblProgressbar1.Caption;
-    lblProgressbar1.Caption:='Importing...';
+    lblProgressbar1.Caption:=rsPSImporting;
     progressbar1.position:=0;
     progressbar1.max:=100;
     pnlProgress.visible:=true;
@@ -2033,7 +2081,7 @@ begin
       if infonodes.statistics.node=nil then
       begin
         //create the statistics node and the childnodes
-        infonodes.statistics.node:=tvInfo.Items.Add(nil, 'Statistics');
+        infonodes.statistics.node:=tvInfo.Items.Add(nil, rsPSStatistics);
 
         pointersInMap:=tvInfo.Items.AddChild(infonodes.statistics.node,'');
         totalTimeScanning:=tvInfo.Items.AddChild(infonodes.statistics.node,'');
@@ -2058,22 +2106,22 @@ begin
         infonodes.statistics.node.Expand(true);
       end;
 
-      pointersInMap.Text:='Unique pointervalues in target:'+IntToStr(statistics.pointersinmap);
-      totalTimeScanning.Text:='Scan duration: '+TimeToStr(TimeStampToDateTime(MSecsToTimeStamp(statistics.totalTimeScanning)));
-      localPathsEvaluated.Text:='Paths evaluated: '+IntToStr(statistics.localPathsEvaluated);
-      localPathsPerSecond.Text:=format('Paths / seconds: (%.0n / s)', [statistics.localpathspersecond]);
+      pointersInMap.Text:=rsPSUniquePointervaluesInTarget+IntToStr(statistics.pointersinmap);
+      totalTimeScanning.Text:=rsPSScanDuration+TimeToStr(TimeStampToDateTime(MSecsToTimeStamp(statistics.totalTimeScanning)));
+      localPathsEvaluated.Text:=rsPSPathsEvaluated+IntToStr(statistics.localPathsEvaluated);
+      localPathsPerSecond.Text:=format(rsPSPathsSeconds, [statistics.localpathspersecond]);
 
-      totalPathsEvaluated.Text:='Total paths evaluated: '+IntToStr(statistics.totalPathsEvaluated);
-      totalPathsPerSecond.Text:=format('Total paths / seconds: (%.0n / s)', [statistics.totalpathspersecond]);
-
-
+      totalPathsEvaluated.Text:=rsPSTotalPathsEvaluater+IntToStr(statistics.totalPathsEvaluated);
+      totalPathsPerSecond.Text:=format(rsPSTotalPathsSeconds, [statistics.totalpathspersecond]);
 
 
-      pathQueue.Text:='Static queue size: '+inttostr(statistics.pathqueuesize)+' Dynamic queue size:'+inttostr(statistics.pathqueueoverflow);
-      resultsFound.Text:='Results found: '+inttostr(statistics.resultsfound);
-      timeSpentWriting.Text:='Time spent writing: '+inttostr(statistics.timeSpentWriting)+format(' (%.2f %%)', [statistics.percentageTimeSpentWriting]) ;
 
-      minpath.text:='Lowest known path:'+statistics.minpaths;
+
+      pathQueue.Text:=rsPSStaticQueueSize+inttostr(statistics.pathqueuesize)+rsPSDynamicqueuSize+inttostr(statistics.pathqueueoverflow);
+      resultsFound.Text:=rsPSResultsFound+inttostr(statistics.resultsfound);
+      timeSpentWriting.Text:=rsPSTimeSpentWriting+inttostr(statistics.timeSpentWriting)+format(' (%.2f %%)', [statistics.percentageTimeSpentWriting]) ;
+
+      minpath.text:=rsPSLowestKnownPath+statistics.minpaths;
      // maxpath.text:='Highest known path:'+statistics.maxpaths;
 
 
@@ -2084,7 +2132,7 @@ begin
 
 
     if infonodes.localworkers.node=nil then
-      infonodes.localworkers.node:=tvInfo.Items.Add(nil, 'Threads');
+      infonodes.localworkers.node:=tvInfo.Items.Add(nil, rsPSThreads);
 
     for i:=length(infonodes.localworkers.workernodes)-1 downto length(scanners) do //delete the nodes that are too many
       if infonodes.localworkers.workernodes[i].node<>nil then
@@ -2107,7 +2155,7 @@ begin
       begin
         //display network info
         if infonodes.network.node=nil then
-          infonodes.network.node:=tvInfo.Items.Add(nil,'Network');
+          infonodes.network.node:=tvInfo.Items.Add(nil,rsPSNetwork);
 
         staticscanner.getConnectingList(connectinglist);
 
@@ -2117,7 +2165,7 @@ begin
         setlength(infonodes.network.connectingToNodes, length(connectinglist));
         //connecting to:
         if infonodes.network.connectingto=nil then
-          infonodes.network.connectingto:=tvInfo.Items.AddChild(infonodes.network.node,'Connecting to:');
+          infonodes.network.connectingto:=tvInfo.Items.AddChild(infonodes.network.node,rsPSConnectingTo);
 
 
 
@@ -2129,7 +2177,7 @@ begin
 
           s:=connectinglist[i].ip+':'+inttostr(connectinglist[i].port);
           if connectinglist[i].becomeparent=false then
-            s:=s+BoolToStr(connectinglist[i].trusted, ' (Trusted)','');
+            s:=s+BoolToStr(connectinglist[i].trusted, rsPSTrusted,'');
 
           infonodes.network.connectingToNodes[i].data.Text:=s;
         end;
@@ -2150,22 +2198,22 @@ begin
           staticscanner.getParentData(parentdata);
 
           if infonodes.network.parent=nil then
-            infonodes.network.parent:=tvInfo.Items.AddChild(infonodes.network.node,'Parent: ');
+            infonodes.network.parent:=tvInfo.Items.AddChild(infonodes.network.node,rsPSParent);
 
           if parentdata.connected then
           begin
-            infonodes.network.parent.Text:='Parent: '+parentdata.name+'('+parentdata.ip+':'+inttostr(parentdata.port)+')';
+            infonodes.network.parent.Text:=rsPSParent+parentdata.name+'('+parentdata.ip+':'+inttostr(parentdata.port)+')';
 
             if infonodes.network.parentnodes.lastUpdateSent=nil then
               infonodes.network.parentnodes.lastUpdateSent:=tvInfo.Items.AddChild(infonodes.network.parent,'');
 
             if staticscanner.downloadingscandata then
             begin
-              infonodes.network.parentnodes.lastUpdateSent.Text:=format('Downloading scandata: %.1f%% (%dKB/%dKB : %d KB/sec)', [staticscanner.downloadingscandata_received/staticscanner.downloadingscandata_total*100, staticscanner.downloadingscandata_received div 1024, staticscanner.downloadingscandata_total div 1024, ceil(((staticscanner.downloadingscandata_received / 1024)/((GetTickCount64-staticscanner.downloadingscandata_starttime)/1000)) )]);
+              infonodes.network.parentnodes.lastUpdateSent.Text:=format(rsPSDownloadingScanData, [staticscanner.downloadingscandata_received/staticscanner.downloadingscandata_total*100, staticscanner.downloadingscandata_received div 1024, staticscanner.downloadingscandata_total div 1024, ceil(((staticscanner.downloadingscandata_received / 1024)/((GetTickCount64-staticscanner.downloadingscandata_starttime)/1000)) )]);
             end
             else
             begin
-              infonodes.network.parentnodes.lastUpdateSent.Text:='Last update: '+inttostr((GetTickCount64-parentdata.lastupdatesent) div 1000)+' seconds ago';
+              infonodes.network.parentnodes.lastUpdateSent.Text:=rsPSLastUpdate+inttostr((GetTickCount64-parentdata.lastupdatesent) div 1000)+rsPSSecondsAgo;
             end;
 
 
@@ -2176,9 +2224,9 @@ begin
           begin
             //mark that it has no parent (yet/anymore)
             if parentdata.waitingforreconnect then
-              infonodes.network.parent.Text:='Parent: <disconnected> (Waiting for reconnect)'
+              infonodes.network.parent.Text:=rsPSParentDisconnectedWaitingForReconnect
             else
-              infonodes.network.parent.Text:='Parent: <none>';
+              infonodes.network.parent.Text:=rsPSParentNone;
 
             //if there are nodes, delete them
             if infonodes.network.parentnodes.lastUpdateSent<>nil then
@@ -2187,7 +2235,7 @@ begin
         end;
 
         if infonodes.network.connectedTo=nil then
-          infonodes.network.connectedTo:=tvInfo.Items.AddChild(infonodes.network.node,'Children:');
+          infonodes.network.connectedTo:=tvInfo.Items.AddChild(infonodes.network.node,rsPSChildren);
 
         for i:=0 to length(connectionlist)-1 do
         begin
@@ -2212,22 +2260,22 @@ begin
 
           s:=connectionlist[i].ip+':'+inttostr(connectionlist[i].port);
           if connectionlist[i].disconnected then
-            s:=s+' (Disconnected)'
+            s:=s+rsPSDisconnected
           else
           if connectionlist[i].queued then
-            s:=s+' (Queued: '+inttostr(connectionlist[i].queuepos)+'/'+inttostr(connectionlist[i].queuesize)+')'
+            s:=s+rsPSQueued+inttostr(connectionlist[i].queuepos)+'/'+inttostr(connectionlist[i].queuesize)+')'
           else
           begin
             if connectionlist[i].isidle=false then
-              s:=s+' (Active)'
+              s:=s+rsPSActive
             else
-              s:=s+' (Idle)';
+              s:=s+rsPSIdle;
 
             if connectionlist[i].uploadingscandata then
-              s:=s+format(' (Uploading scandata: %.1f%% (%dKB/%dKB : %d KB/sec)', [connectionlist[i].ScanDataSent/connectionlist[i].ScanDataTotalSize*100, connectionlist[i].ScanDataSent div 1024, connectionlist[i].ScanDataTotalSize div 1024, ceil(((connectionlist[i].ScanDataSent / 1024)/((GetTickCount64-connectionlist[i].ScanDataStartTime)/1000)) )]);
+              s:=s+format(rsPSUploadingScandata, [connectionlist[i].ScanDataSent/connectionlist[i].ScanDataTotalSize*100, connectionlist[i].ScanDataSent div 1024, connectionlist[i].ScanDataTotalSize div 1024, ceil(((connectionlist[i].ScanDataSent / 1024)/((GetTickCount64-connectionlist[i].ScanDataStartTime)/1000)) )]);
 
             if connectionlist[i].downloadingResuls then
-              s:=s+' (Downloading and handling results)';
+              s:=s+rsPSDownloadingAndHandlingResults;
           end;
 
           infonodes.network.connectedToNodes[i].node.Text:=s;
@@ -2237,13 +2285,13 @@ begin
             disconnectreason.visible:=connectionlist[i].disconnected;
             disconnectreason.Text:=connectionlist[i].lasterror;
 
-            trusted.text:='Trusted: '+BoolToStr(connectionlist[i].trustedconnection, 'True', 'False');
-            totalthreadcount.text:='Threadcount: '+IntToStr(connectionlist[i].potentialthreadcount)+' ('+IntToStr(connectionlist[i].actualthreadcount)+')';
-            resultsfound.text:='Results found: '+IntToStr(connectionlist[i].resultsfound);
-            pathqueuesize.text:='Queuesize: '+inttostr(connectionlist[i].pathquesize);
-            totalpathquesize.text:='Total Queuesize: '+inttostr(connectionlist[i].totalpathqueuesize);
-            totalpathsEvaluated.text:='Paths evaluated: '+inttostr(connectionlist[i].pathsevaluated);
-            lastupdate.text:='Last update: '+inttostr((GetTickCount64-connectionlist[i].lastUpdateReceived) div 1000);
+            trusted.text:=rsPSTrusted2+BoolToStr(connectionlist[i].trustedconnection, 'True', 'False');
+            totalthreadcount.text:=rsPSThreadcount+IntToStr(connectionlist[i].potentialthreadcount)+' ('+IntToStr(connectionlist[i].actualthreadcount)+')';
+            resultsfound.text:=rsPSResultsFound+IntToStr(connectionlist[i].resultsfound);
+            pathqueuesize.text:=rsPSQueuesize+inttostr(connectionlist[i].pathquesize);
+            totalpathquesize.text:=rsPSTotalQueuesize+inttostr(connectionlist[i].totalpathqueuesize);
+            totalpathsEvaluated.text:=rsPSPathsEvaluated+inttostr(connectionlist[i].pathsevaluated);
+            lastupdate.text:=rsPSLastUpdate+inttostr((GetTickCount64-connectionlist[i].lastUpdateReceived) div 1000);
             //pathspersecond.text:='Paths/second: '+inttostr(connectionlist[i].pathspersecond);
           end;
         end;
@@ -2258,7 +2306,7 @@ begin
    // showmessage('exception happened');
     on e:exception do
     begin
-      OutputDebugString('pscangui update timer error: '+e.message);
+      OutputDebugString(rsPSPscanguiUpdateTimerError+e.message);
     end;
   end;
 
@@ -2345,8 +2393,8 @@ function TRescanWorker.isMatchToValue(p:pointer): boolean;
 begin
   case valuetype of
     vtDword: result:=pdword(p)^=valuescandword;
-    vtSingle: result:=(psingle(p)^>=valuescansingle) and (psingle(p)^<valuescansinglemax);
-    vtDouble: result:=(pdouble(p)^>=valuescandouble) and (pdouble(p)^<valuescandoublemax);
+    vtSingle: result:=(psingle(p)^>=valuescansingle) and (psingle(p)^<=valuescansinglemax);
+    vtDouble: result:=(pdouble(p)^>=valuescandouble) and (pdouble(p)^<=valuescandoublemax);
   end;
 end;
 
@@ -2360,6 +2408,8 @@ destructor TRescanworker.destroy;
 begin
   if Pointerscanresults<>nil then
     Pointerscanresults.Free;
+
+  inherited destroy;
 end;
 
 procedure TRescanWorker.execute;
@@ -2390,282 +2440,282 @@ begin
 
   try
 
-  if useluafilter then
-  begin
-    //create a new lua thread
-    luacs.enter;
-    try
-      l:=lua_newthread(luavm); //pushes the thread on the luavm stack.
-      lref:=luaL_ref(luavm,LUA_REGISTRYINDEX); //add a reference so the garbage collector wont destroy the thread (pops the thread off the stack)
-    finally
-      luacs.leave;
-    end;
-
-
-    lua_getglobal(L, pchar(luafilter));
-    lfun:=lua_gettop(L);
-
-    //create a table for the offset
-    lua_createtable(L, Pointerscanresults.offsetCount+1,0);   //+1 for a nil
-    ltable:=lua_gettop(L);
-  end;
-
-
-  tempfile:=nil;
-  tempbuffer:=nil;
-  address:=0;
-  address2:=0;
-  pointersize:=processhandler.pointersize;
-
-
-
-  getmem(tempvalue,valuesize);
-
-  try
-    tempfile:=tfilestream.Create(self.filename, fmCreate);
-    tempbuffer:=TMemoryStream.Create;
-    tempbuffer.SetSize(16*1024*1024);
-
-    evaluated:=0;
-    currentEntry:=self.startentry;
-
-    if currentEntry>Pointerscanresults.count then exit;
-
-
-    while evaluated < self.EntriesToCheck do
+    if useluafilter then
     begin
-      p:=Pointerscanresults.getPointer(currentEntry);
-      if p<>nil then
-      begin
-        valid:=true;
-        if pointermap=nil then
-        begin
-          if p.modulenr=-1 then
-            address:=p.moduleoffset
-          else
-            address:=Pointerscanresults.getModuleBase(p.modulenr)+p.moduleoffset
-        end
-        else
-          address:=pointermap.getAddressFromModuleIndexPlusOffset(p.modulenr,p.moduleoffset);
-
-        baseaddress:=address;
-
-        if address>0 then
-        begin
-          //if the base must be in a range then check if the base address is in the given range
-          if (not mustbeinrange) or (inrangex(address, baseStart, baseEnd)) then
-          begin
-            //don't care or in range.
-
-            //check if start offet values are given
-            if length(startOffsetValues)>0 then
-            begin
-              //check the offsets
-              for i:=0 to length(startOffsetValues)-1 do
-                if p.offsets[p.offsetcount-1-i]<>startOffsetValues[i] then
-                begin
-                  valid:=false;
-                  break;
-                end;
-            end;
-
-            if valid and (length(endoffsetvalues)>0) then
-            begin
-              j:=0;
-              for i:=length(endoffsetvalues)-1 downto 0 do
-              begin
-                if p.offsets[j]<>endoffsetvalues[i] then
-                begin
-                  valid:=false;
-                  break;
-                end;
-                inc(j);
-              end;
-            end;
-
-            if valid then
-            begin
-              //evaluate the pointer to address
-              if pointermap=nil then
-              begin
-                for i:=p.offsetcount-1 downto 0 do
-                begin
-
-                  pi:=rescanhelper.FindPage(address shr 12);
-                  if (pi.data<>nil) then
-                  begin
-                    tempaddress:=0;
-                    j:=address and $fff; //offset into the page
-                    k:=min(pointersize, 4096-j); //bytes to read from this page
-
-
-                    if (k<pointersize) then
-                    begin
-                      //more bytes are needed
-                      copymemory(@tempaddress, @pi.data[j], k);
-
-                      pi:=rescanhelper.FindPage((address shr 12)+1);
-                      if pi.data<>nil then
-                        copymemory(pointer(ptruint(@address)+k), @pi.data[0], pointersize-k)
-                      else
-                      begin
-                        valid:=false;
-                        break;
-                      end;
-                    end
-                    else
-                      tempaddress:=pptruint(@pi.data[j])^;
-
-                    {$ifdef cpu64}
-                    if pointersize=4 then
-                      tempaddress:=tempaddress and $ffffffff;
-                    {$endif}
-
-                    address:=tempaddress+p.offsets[i];
-                  end
-                  else
-                  begin
-                    valid:=false;
-                    break;
-                  end;
-                end;
-              end
-              else
-              begin
-                //use pointermap
-
-
-                for i:=p.offsetcount-1 downto 0 do
-                begin
-                  address:=pointermap.getPointer(address);
-                  if address=0 then
-                  begin
-                    valid:=false;
-                    break;
-                  end;
-                  address:=address+p.offsets[i];
-                end;
-              end;
-            end;
-
-            if valid then
-            begin
-              if novaluecheck or forvalue then
-              begin
-                //evaluate the address (address must be accessible)
-                if rescanhelper.ispointer(address) then
-                begin
-
-                  if novaluecheck=false then //check if the value is correct
-                  begin
-
-                    value:=nil;
-                    pi:=rescanhelper.FindPage(address shr 12);
-                    if pi.data<>nil then
-                    begin
-                      i:=address and $fff;
-                      j:=min(valuesize, 4096-i);
-
-                      copymemory(tempvalue, @pi.data[i], j);
-
-                      if j<valuesize then
-                      begin
-                        pi:=rescanhelper.FindPage((address shr 12)+1);
-                        if pi.data<>nil then
-                          copymemory(pointer(ptruint(tempvalue)+j), @pi.data[0], valuesize-j)
-                        else
-                          valid:=false;
-                      end;
-                    end
-                    else
-                      valid:=false;
-
-                    value:=tempvalue;
-
-                    if (not valid) or (value=nil) or (not isMatchToValue(value)) then
-                      valid:=false; //invalid value
-                  end;
-                end else valid:=false; //unreadable address
-              end
-              else
-              begin
-                //check if the address matches
-                if address<>PointerAddressToFind then
-                  valid:=false;
-              end;
-            end;
-
-            if valid and useluafilter then
-            begin
-              //check the lua function
-              //first set the offsets
-              for i:=0 to p.offsetcount-1 do
-              begin
-                lua_pushinteger(L, p.offsets[i]);
-                lua_rawseti(L, ltable, i+1);
-              end;
-
-              //end the table with a nil marker
-              lua_pushnil(L);
-              lua_rawseti(L, ltable, p.offsetcount+1);
-
-              //setup the function call
-              lua_pushvalue(L, lfun);           //function
-              lua_pushinteger(L, baseaddress);  //base
-              lua_pushvalue(L, ltable);         //offsets
-              lua_pushinteger(L, address);      //address
-              lua_call(L, 3,1);                 //call and don't expect any errors
-              valid:=lua_toboolean(L, -1);
-              lua_pop(L, 1);
-            end;
-
-            if valid then
-            begin
-              //checks passed, it's valid
-              if pointerscanresults.compressedptr then
-                p:=pointerscanresults.LastRawPointer;
-
-              tempbuffer.Write(p^,Pointerscanresults.entrySize);
-
-              if tempbuffer.Position>16*1024*1024 then flushresults;
-            end;
-
-
-          end; //must be in range and it wasn't in the range
-        end;
-      end;
-
-      inc(evaluated);
-      inc(currentEntry);
-    end;
-
-    flushresults;
-  finally
-    freemem(tempvalue);
-    
-    if tempfile<>nil then
-      freeandnil(tempfile);
-
-    if tempbuffer<>nil then
-      freeandnil(tempbuffer);
-
-    if l<>nil then
-    begin
-      lua_settop(L, 0);
-
-      //remove the reference to the thread
+      //create a new lua thread
       luacs.enter;
       try
-        luaL_unref(LuaVM, LUA_REGISTRYINDEX, lref);
+        l:=lua_newthread(luavm); //pushes the thread on the luavm stack.
+        lref:=luaL_ref(luavm,LUA_REGISTRYINDEX); //add a reference so the garbage collector wont destroy the thread (pops the thread off the stack)
       finally
         luacs.leave;
       end;
 
+
+      lua_getglobal(L, pchar(luafilter));
+      lfun:=lua_gettop(L);
+
+      //create a table for the offset
+      lua_createtable(L, Pointerscanresults.offsetCount+1,0);   //+1 for a nil
+      ltable:=lua_gettop(L);
     end;
 
-    done:=true;
 
-  end;
+    tempfile:=nil;
+    tempbuffer:=nil;
+    address:=0;
+    address2:=0;
+    pointersize:=processhandler.pointersize;
+
+
+
+    getmem(tempvalue,valuesize);
+
+    try
+      tempfile:=tfilestream.Create(self.filename, fmCreate);
+      tempbuffer:=TMemoryStream.Create;
+      tempbuffer.SetSize(16*1024*1024);
+
+      evaluated:=0;
+      currentEntry:=self.startentry;
+
+      if currentEntry>Pointerscanresults.count then exit;
+
+
+      while evaluated < self.EntriesToCheck do
+      begin
+        p:=Pointerscanresults.getPointer(currentEntry);
+        if p<>nil then
+        begin
+          valid:=true;
+          if pointermap=nil then
+          begin
+            if p.modulenr=-1 then
+              address:=p.moduleoffset
+            else
+              address:=Pointerscanresults.getModuleBase(p.modulenr)+p.moduleoffset
+          end
+          else
+            address:=pointermap.getAddressFromModuleIndexPlusOffset(p.modulenr,p.moduleoffset);
+
+          baseaddress:=address;
+
+          if address>0 then
+          begin
+            //if the base must be in a range then check if the base address is in the given range
+            if (not mustbeinrange) or (inrangex(address, baseStart, baseEnd)) then
+            begin
+              //don't care or in range.
+
+              //check if start offet values are given
+              if length(startOffsetValues)>0 then
+              begin
+                //check the offsets
+                for i:=0 to length(startOffsetValues)-1 do
+                  if p.offsets[p.offsetcount-1-i]<>startOffsetValues[i] then
+                  begin
+                    valid:=false;
+                    break;
+                  end;
+              end;
+
+              if valid and (length(endoffsetvalues)>0) then
+              begin
+                j:=0;
+                for i:=length(endoffsetvalues)-1 downto 0 do
+                begin
+                  if p.offsets[j]<>endoffsetvalues[i] then
+                  begin
+                    valid:=false;
+                    break;
+                  end;
+                  inc(j);
+                end;
+              end;
+
+              if valid then
+              begin
+                //evaluate the pointer to address
+                if pointermap=nil then
+                begin
+                  for i:=p.offsetcount-1 downto 0 do
+                  begin
+
+                    pi:=rescanhelper.FindPage(address shr 12);
+                    if (pi.data<>nil) then
+                    begin
+                      tempaddress:=0;
+                      j:=address and $fff; //offset into the page
+                      k:=min(pointersize, 4096-j); //bytes to read from this page
+
+
+                      if (k<pointersize) then
+                      begin
+                        //more bytes are needed
+                        copymemory(@tempaddress, @pi.data[j], k);
+
+                        pi:=rescanhelper.FindPage((address shr 12)+1);
+                        if pi.data<>nil then
+                          copymemory(pointer(ptruint(@address)+k), @pi.data[0], pointersize-k)
+                        else
+                        begin
+                          valid:=false;
+                          break;
+                        end;
+                      end
+                      else
+                        tempaddress:=pptruint(@pi.data[j])^;
+
+                      {$ifdef cpu64}
+                      if pointersize=4 then
+                        tempaddress:=tempaddress and $ffffffff;
+                      {$endif}
+
+                      address:=tempaddress+p.offsets[i];
+                    end
+                    else
+                    begin
+                      valid:=false;
+                      break;
+                    end;
+                  end;
+                end
+                else
+                begin
+                  //use pointermap
+
+
+                  for i:=p.offsetcount-1 downto 0 do
+                  begin
+                    address:=pointermap.getPointer(address);
+                    if address=0 then
+                    begin
+                      valid:=false;
+                      break;
+                    end;
+                    address:=address+p.offsets[i];
+                  end;
+                end;
+              end;
+
+              if valid then
+              begin
+                if novaluecheck or forvalue then
+                begin
+                  //evaluate the address (address must be accessible)
+                  if rescanhelper.ispointer(address) then
+                  begin
+
+                    if novaluecheck=false then //check if the value is correct
+                    begin
+
+                      value:=nil;
+                      pi:=rescanhelper.FindPage(address shr 12);
+                      if pi.data<>nil then
+                      begin
+                        i:=address and $fff;
+                        j:=min(valuesize, 4096-i);
+
+                        copymemory(tempvalue, @pi.data[i], j);
+
+                        if j<valuesize then
+                        begin
+                          pi:=rescanhelper.FindPage((address shr 12)+1);
+                          if pi.data<>nil then
+                            copymemory(pointer(ptruint(tempvalue)+j), @pi.data[0], valuesize-j)
+                          else
+                            valid:=false;
+                        end;
+                      end
+                      else
+                        valid:=false;
+
+                      value:=tempvalue;
+
+                      if (not valid) or (value=nil) or (not isMatchToValue(value)) then
+                        valid:=false; //invalid value
+                    end;
+                  end else valid:=false; //unreadable address
+                end
+                else
+                begin
+                  //check if the address matches
+                  if address<>PointerAddressToFind then
+                    valid:=false;
+                end;
+              end;
+
+              if valid and useluafilter then
+              begin
+                //check the lua function
+                //first set the offsets
+                for i:=0 to p.offsetcount-1 do
+                begin
+                  lua_pushinteger(L, p.offsets[i]);
+                  lua_rawseti(L, ltable, i+1);
+                end;
+
+                //end the table with a nil marker
+                lua_pushnil(L);
+                lua_rawseti(L, ltable, p.offsetcount+1);
+
+                //setup the function call
+                lua_pushvalue(L, lfun);           //function
+                lua_pushinteger(L, baseaddress);  //base
+                lua_pushvalue(L, ltable);         //offsets
+                lua_pushinteger(L, address);      //address
+                lua_call(L, 3,1);                 //call and don't expect any errors
+                valid:=lua_toboolean(L, -1);
+                lua_pop(L, 1);
+              end;
+
+              if valid then
+              begin
+                //checks passed, it's valid
+                if pointerscanresults.compressedptr then
+                  p:=pointerscanresults.LastRawPointer;
+
+                tempbuffer.Write(p^,Pointerscanresults.entrySize);
+
+                if tempbuffer.Position>16*1024*1024 then flushresults;
+              end;
+
+
+            end; //must be in range and it wasn't in the range
+          end;
+        end;
+
+        inc(evaluated);
+        inc(currentEntry);
+      end;
+
+      flushresults;
+    finally
+      freemem(tempvalue);
+
+      if tempfile<>nil then
+        freeandnil(tempfile);
+
+      if tempbuffer<>nil then
+        freeandnil(tempbuffer);
+
+      if l<>nil then
+      begin
+        lua_settop(L, 0);
+
+        //remove the reference to the thread
+        luacs.enter;
+        try
+          luaL_unref(LuaVM, LUA_REGISTRYINDEX, lref);
+        finally
+          luacs.leave;
+        end;
+
+      end;
+
+      done:=true;
+
+    end;
 
   except
     on e: exception do
@@ -2944,7 +2994,7 @@ begin
   rescan.ownerform:=self;
   rescan.progressbar:=progressbar1;
 
-  lblProgressbar1.caption:='Rescanning';
+  lblProgressbar1.caption:=rsPSREscanning;
   pnlProgress.visible:=true;
 
 
@@ -2956,9 +3006,9 @@ begin
 
     with rescanpointerform do
     begin
-      if (rescanpointerform.cbRepeat.checked) or (showmodal=mrok) then
+      if ((not rescanpointerform.canceled) and rescanpointerform.cbRepeat.checked) or (showmodal=mrok) then
       begin
-        if (rescanpointerform.cbRepeat.checked) or savedialog1.Execute then
+        if ((savedialog1.filename<>'') and rescanpointerform.cbRepeat.checked) or savedialog1.Execute then
         begin
           rescan.novaluecheck:=cbNoValueCheck.checked;
 
@@ -3045,7 +3095,7 @@ begin
 
               //rescan the pointerlist
               except
-                raise exception.create('Find by address requires an address. "'+edtaddress.text+'" is not a valid address');
+                raise exception.create(rsPSFindByAddressPart1+edtaddress.text+rsPSFindByAddressPart2);
               end;
 
               rescan.address:=address;
@@ -3223,7 +3273,7 @@ begin
     else
     begin
       if not (staticscanner.useheapdata or staticscanner.findValueInsteadOfAddress) then
-        c:=MessageDlg('Do you wish to resume the current pointerscan at a later time?', mtInformation,[mbyes, mbno, mbCancel], 0)
+        c:=MessageDlg(rsPSDoYouWishToResumeTheCurrentPointerscanAtaLaterTime, mtInformation,[mbyes, mbno, mbCancel], 0)
       else
         c:=mrno; //you can't resume scans that do a valuescan or use heapdata
     end;

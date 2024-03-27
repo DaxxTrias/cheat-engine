@@ -203,6 +203,9 @@ resourcestring
   rsFillInTheNrOfBytesAfterTheLocationThePointerPoints = 'Fill in the nr. of bytes after the location the pointer points to';
   rsIsNotAValidOffset = '%s is not a valid offset';
   rsNotAllOffsetsHaveBeenFilledIn = 'Not all offsets have been filled in';
+  rsACAddOffset = 'Add Offset';
+  rsACRemoveOffset = 'Remove Offset';
+
 
 { TOffsetInfo }
 
@@ -223,8 +226,10 @@ begin
 
   if ssCtrl in shift then
     stepsize:=1
+  else if ssShift in shift then
+    stepsize:=ifthen(processhandler.pointersize=8, 4, 8)
   else
-    stepsize:=4;
+    stepsize:=ifthen(istop, 4, processhandler.pointersize);
 
   repeatstart:=GetTickCount;
   repeatdirection:=0; //tell the timer to decrease
@@ -243,8 +248,10 @@ begin
 
   if ssCtrl in shift then
     stepsize:=1
+  else if ssShift in shift then
+    stepsize:=ifthen(processhandler.pointersize=8, 4, 8)
   else
-    stepsize:=4;
+    stepsize:=ifthen(istop, 4, processhandler.pointersize);
 
   repeatstart:=GetTickCount;
   repeatdirection:=1; //tell the timer to increase
@@ -714,7 +721,7 @@ begin
   baseValue.top:=baseAddress.Top+(baseAddress.Height div 2)-(baseValue.height div 2);
 
   btnAddOffset:=Tbutton.Create(self);
-  btnAddOffset.caption:='Add Offset';
+  btnAddOffset.caption:=rsACAddOffset;
   btnAddOffset.Left:=owner.btnOk.Left-left;
   btnAddOffset.Width:=owner.btnOk.Width;
   btnAddOffset.Height:=owner.btnOk.Height;
@@ -722,7 +729,7 @@ begin
   btnAddOffset.parent:=self;
 
   btnRemoveOffset:=TButton.create(self);
-  btnRemoveOffset.caption:='Remove Offset';
+  btnRemoveOffset.caption:=rsACRemoveOffset;
   btnRemoveOffset.Left:=owner.btnCancel.left-left;
   btnRemoveOffset.Width:=btnAddOffset.Width;
   btnRemoveOffset.Height:=btnAddOffset.Height;

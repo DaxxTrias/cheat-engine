@@ -43,6 +43,7 @@ type
     traceWindow: TfrmTracer;
     traceQuitCondition: string;
     traceStepOver: boolean; //perhaps also trace branches ?
+    traceNoSystem: boolean;
     //------------------
 
     WaitingToContinue: boolean; //set to true when it's waiting for the user to continue
@@ -97,6 +98,8 @@ type
     context: PContext;  //PContext but it does belong to this thread. It's due to alignment issues
     armcontext: TArmContext;
 
+
+    procedure UpdateMemoryBrowserContext;
     procedure TracerQuit;
     procedure suspend;
     procedure resume;
@@ -179,15 +182,18 @@ begin
   end;
 end;
 
-procedure TDebugThreadHandler.VisualizeBreak;
+procedure TDebugThreadHandler.UpdateMemoryBrowserContext;
 begin
-  TDebuggerthread(debuggerthread).execlocation:=41;
   if processhandler.SystemArchitecture=archx86 then
     MemoryBrowser.lastdebugcontext:=context^
   else
     MemoryBrowser.lastdebugcontextarm:=armcontext;
+end;
 
-
+procedure TDebugThreadHandler.VisualizeBreak;
+begin
+  TDebuggerthread(debuggerthread).execlocation:=41;
+  UpdateMemoryBrowserContext;
 
   if (currentbp<>nil) and (assigned(currentbp.OnBreakpoint)) then
     WaitingToContinue:=currentbp.OnBreakpoint(currentbp, context)
@@ -580,9 +586,17 @@ var
   b: PBreakpoint;
   r: ptruint;
   x: PtrUInt;
+
+  ignored: boolean;
 begin
   TDebuggerthread(debuggerthread).execlocation:=37;
-  if tracewindow<>nil then
+
+  ignored:=IgnoredModuleListHandler.InIgnoredModuleRange(context.{$ifdef cpu64}rip{$else}eip{$endif});
+
+  if (not ignored) and traceNoSystem and symhandler.inSystemModule(context.{$ifdef cpu64}rip{$else}eip{$endif}) then
+    ignored:=true;
+
+  if (tracewindow<>nil) and (not ignored) then
   begin
     TDebuggerthread(debuggerthread).Synchronize(TDebuggerthread(debuggerthread), tracewindow.AddRecord);
     TDebuggerthread(debuggerthread).guiupdate:=true;
@@ -607,8 +621,9 @@ begin
       end;
     end;
 
-    if IgnoredModuleListHandler.InIgnoredModuleRange(context.{$ifdef cpu64}rip{$else}eip{$endif}) then
+    if ignored then
     begin
+      tracewindow.returnfromignore:=true;
       ReadProcessMemory(processhandle, pointer(context.{$ifdef cpu64}rsp{$else}esp{$endif}), @r, sizeof(processhandler.pointersize), x);
       b:=TDebuggerthread(debuggerthread).SetOnExecuteBreakpoint(r , false, ThreadId);
       b.OneTimeOnly:=true;
@@ -787,7 +802,7 @@ begin
 
     if InRangeX(address, bpp.address, bpp.address+bpp.size-1) then
     begin
-      if (not (CurrentDebuggerInterface is TNetworkDebuggerInterface)) and (debugreg in [0..4]) and (bpp.breakpointMethod=bpmDebugRegister) and (bpp.debugRegister<>debugreg) then
+      if (CurrentDebuggerInterface.canReportExactDebugRegisterTrigger) and (debugreg in [0..4]) and (bpp.breakpointMethod=bpmDebugRegister) and (bpp.debugRegister<>debugreg) then
         continue; //this is not the correct breakpoint. Skip it
 
 
@@ -902,6 +917,7 @@ begin
             tracecount:=bpp.TraceCount;
             traceWindow:=bpp.frmTracer;
             traceStepOver:=bpp.tracestepOver;
+            traceNoSystem:=bpp.traceNoSystem;
             if bpp.traceendcondition<>nil then
               traceQuitCondition:=bpp.traceendcondition
             else

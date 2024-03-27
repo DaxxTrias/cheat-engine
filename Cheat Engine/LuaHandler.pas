@@ -18,7 +18,7 @@ uses
   controls, LuaCaller, forms, ExtCtrls, StdCtrls, comctrls, ceguicomponents,
   generichotkey, luafile, xmplayer_server, ExtraTrainerComponents, customtimer,
   menus, XMLRead, XMLWrite, DOM,ShellApi, Clipbrd, typinfo, PEInfoFunctions,
-  LCLProc, strutils, registry, md5, commonTypeDefs;
+  LCLProc, strutils, registry, md5, commonTypeDefs, LResources, Translations;
 
 
 const MAXTABLERECURSIONLOOKUP=2;
@@ -43,8 +43,8 @@ function CheckIfConditionIsMetContext(context: PContext; script: string): boolea
 procedure LUA_DoScript(s: string);
 function LUA_functioncall(routinetocall: string; parameters: array of const): integer;
 procedure LUA_memrec_callback(memrec: pointer; routine: string);
-procedure LUA_SetCurrentContextState(context: PContext);
-procedure LUa_GetNewContextState(context: PContext);
+procedure LUA_SetCurrentContextState(context: PContext; extraregs: boolean=false);
+procedure LUa_GetNewContextState(context: PContext; extraregs: boolean=false);
 
 function LUA_onBreakpoint(context: PContext; functionAlreadyPushed: boolean=false): boolean;
 procedure LUA_onNotify(functionid: integer; sender: tobject);
@@ -91,9 +91,9 @@ uses mainunit, mainunit2, luaclass, frmluaengineunit, plugin, pluginexports,
   LuaDissectCode, LuaByteTable, LuaBinary, lua_server, HotkeyHandler, LuaPipeClient,
   LuaPipeServer, LuaTreeview, LuaTreeNodes, LuaTreeNode, LuaCalendar, LuaSymbolListHandler,
   LuaCommonDialog, LuaFindDialog, LuaSettings, LuaPageControl, LuaRipRelativeScanner,
-  SymbolListHandler, processhandlerunit, processlist, DebuggerInterface,
-  WindowsDebugger, VEHDebugger, KernelDebuggerInterface, DebuggerInterfaceAPIWrapper,
-  Globals;
+  LuaStructureFrm, LuaInternet, SymbolListHandler, processhandlerunit, processlist,
+  DebuggerInterface, WindowsDebugger, VEHDebugger, KernelDebuggerInterface,
+  DebuggerInterfaceAPIWrapper, Globals, math, speedhack2, CETranslator, binutils;
 
 resourcestring
   rsLUA_DoScriptWasNotCalledRomTheMainThread = 'LUA_DoScript was not called '
@@ -199,6 +199,10 @@ begin
 
         lua_pop(L, lua_gettop(L));
       end;
+    end
+    else
+    begin
+      MessageBoxA(0, pchar(Lua_ToString(l, -1)), 'Conditional breakpoint error', MB_OK);
     end;
   end;
 end;
@@ -583,7 +587,8 @@ begin
   end;
 end;
 
-procedure LUA_SetCurrentContextState(context: PContext);
+procedure LUA_SetCurrentContextState(context: PContext; extraregs: boolean=false);
+var i: integer;
 begin
   LuaCS.Enter;
   try
@@ -687,12 +692,42 @@ begin
     lua_setglobal(luavm, 'R15');
     {$endif}
 
+    if extraregs then //default off as it's a bit slow
+    begin
+      for i:=0 to 7 do
+      begin
+        {$ifdef cpu32}
+        CreateByteTableFromPointer(luavm, @context.FloatSave.RegisterArea[10*i], 10);
+        {$else}
+        CreateByteTableFromPointer(luavm, @context.FltSave.FloatRegisters[i], 10);
+        {$endif}
+        lua_setglobal(luavm, pchar('FP'+inttostr(i)));
+      end;
+
+      //xmm regs
+
+      for i:=0 to 15 do
+      begin
+        if (i>=8) and (not processhandler.is64Bit) then break;
+
+        {$ifdef cpu32}
+        CreateByteTableFromPointer(luavm, @context.ext.XMMRegisters.LegacyXMM[i], 16);
+        {$else}
+        CreateByteTableFromPointer(luavm, @context.FltSave.XmmRegisters[i], 16);
+        {$endif}
+        lua_setglobal(luavm, pchar('XMM'+inttostr(i)));
+      end;
+    end;
+
+
+
   finally
     LuaCS.Leave;
   end;
 end;
 
-procedure LUA_GetNewContextState(context: PContext);
+procedure LUA_GetNewContextState(context: PContext; extraregs: boolean=false);
+var i: integer;
 begin
   lua_getglobal(luavm, 'EFLAGS');
   context.EFLAGS:=lua_tointeger(luavm, -1);
@@ -809,7 +844,39 @@ begin
     context.R15:=lua_tointeger(luavm, -1);
     lua_pop(luavm,1);
   {$endif}
+  end;
 
+  if extraregs then
+  begin
+    for i:=0 to 7 do
+    begin
+      lua_getglobal(luavm, pchar('FP'+inttostr(i)));
+      if not lua_isnil(luavm, -1) then
+      begin
+        {$ifdef cpu32}
+        readBytesFromTable(luavm, -1, @context.FloatSave.RegisterArea[10*i], 10);
+        {$else}
+        readBytesFromTable(luavm, -1, @context.FltSave.FloatRegisters[i], 10);
+        {$endif}
+      end;
+      lua_pop(luavm,1);
+    end;
+
+    for i:=0 to 15 do
+    begin
+      if (i>=8) and (not processhandler.is64Bit) then break;
+
+      lua_getglobal(luavm, pchar('XMM'+inttostr(i)));
+      if not lua_isnil(luavm, -1) then
+      begin
+        {$ifdef cpu32}
+        readBytesFromTable(luavm, -1, @context.ext.XMMRegisters.LegacyXMM[i], 16);
+        {$else}
+        readBytesFromTable(luavm, -1, @context.FltSave.XmmRegisters[i], 16);
+        {$endif}
+      end;
+
+    end;
   end;
 end;
 
@@ -882,68 +949,92 @@ begin
 end;
 
 function LUA_functioncall(routinetocall: string; parameters: array of const): integer;
-var i: integer;
+var i,e: integer;
   c: string;
   p: integer;
   oldstack: integer;
+  l: Plua_State;
 begin
+ // OutputDebugString(inttohex(qword(GetCurrentThreadId),1)+':LUA_functioncall calling '+routinetocall);
+ { if GetCurrentThreadId<>MainThreadID then
+  begin
+    OutputDebugString('Not main thread');
+    l:=lua_newthread(luavm);
+  end
+  else  }
+    l:=luavm;
+
+
   result:=-1;
-  oldstack:=lua_gettop(luavm);
+  oldstack:=lua_gettop(l);
+
+ // OutputDebugString('LUA_functioncall: oldstack='+inttostr(oldstack));
 
  // if luacs.TryEnter then
   begin
     try
       //check if the routine exists
-      lua_getglobal(luavm, pchar(routinetocall));
+    //  OutputDebugString('LUA_functioncall: calling getglobal');
 
-      p:=lua_gettop(luavm);
+      lua_getglobal(l, pchar(routinetocall));
+
+     // OutputDebugString('LUA_functioncall: after getglobal');
+
+      p:=lua_gettop(l);
+     // OutputDebugString('LUA_functioncall: newstack='+inttostr(p));
+
       if p<>oldstack then
       begin
-        if lua_isfunction(luavm, -1) then
+        if lua_isfunction(l, -1) then
         begin
+          //OutputDebugString('LUA_functioncall: function exists');
+          //OutputDebugString('LUA_functioncall: length(parameters)='+inttostr(length(parameters)));
+
           //routine exists, fill in the parameters
           for i:=0 to length(parameters)-1 do
           begin
             case parameters[i].VType of
-              system.vtInteger : lua_pushinteger(LUAVM, parameters[i].VInteger);
-              system.vtBoolean: lua_pushboolean(LUAVM, parameters[i].VBoolean);
+              system.vtInteger : lua_pushinteger(L, parameters[i].VInteger);
+              system.vtBoolean: lua_pushboolean(L, parameters[i].VBoolean);
               system.vtChar:
               begin
                 c:=parameters[i].VChar;
-                lua_pushstring(LUAVM, c);
+                lua_pushstring(L, c);
               end;
-              system.vtExtended: lua_pushnumber(LUAVM, parameters[i].VExtended^);
-              system.vtString: lua_pushstring(LUAVM, pchar(parameters[i].VString));
-              system.vtPointer: lua_pushlightuserdata(LUAVM, parameters[i].VPointer);
-              system.vtPChar: lua_pushstring(LUAVM, parameters[i].VPChar);
-              system.vtObject: lua_pushlightuserdata(LUAVM, pointer(parameters[i].VObject));
-              system.vtClass: lua_pushlightuserdata(LUAVM, pointer(parameters[i].VClass));
+              system.vtExtended: lua_pushnumber(L, parameters[i].VExtended^);
+              system.vtString: lua_pushstring(L, pchar(parameters[i].VString));
+              system.vtPointer: lua_pushlightuserdata(L, parameters[i].VPointer);
+              system.vtPChar: lua_pushstring(L, parameters[i].VPChar);
+              system.vtObject: luaclass_newClass(L, parameters[i].VObject); //lua_pushlightuserdata(L, pointer(parameters[i].VObject));
+              system.vtClass: lua_pushlightuserdata(L, pointer(parameters[i].VClass));
               system.vtWideChar, vtPWideChar, vtVariant, vtInterface,
-                vtWideString: lua_pushstring(LUAVM, rsCheatengineIsBeingAFag);
-              system.vtAnsiString: lua_pushstring(LUAVM, pchar(parameters[i].VAnsiString));
-              system.vtCurrency: lua_pushnumber(LUAVM, parameters[i].VCurrency^);
+                vtWideString: lua_pushstring(L, rsCheatengineIsBeingAFag);
+              system.vtAnsiString: lua_pushstring(L, pchar(parameters[i].VAnsiString));
+              system.vtCurrency: lua_pushnumber(L, parameters[i].VCurrency^);
               system.vtInt64:
               begin
                 if (parameters[i].VInt64^<=$ffffffff) then
-                  lua_pushinteger(LUAVM, parameters[i].VInt64^)
+                  lua_pushinteger(L, parameters[i].VInt64^)
                 else
-                  lua_pushlightuserdata(LUAVM, pointer(parameters[i].VInt64^));
+                  lua_pushlightuserdata(L, pointer(parameters[i].VInt64^));
               end;
               system.vtQWord:
               begin
                 if (parameters[i].VQWord^<=$ffffffff) then
-                  lua_pushinteger(LUAVM, parameters[i].VQWord^)
+                  lua_pushinteger(L, parameters[i].VQWord^)
                 else
-                  lua_pushlightuserdata(LUAVM, pointer(parameters[i].VQWord^));
+                  lua_pushlightuserdata(L, pointer(parameters[i].VQWord^));
               end;
             end;
 
           end;
 
-          lua_pcall(luavm, length(parameters), 1, 0);
-          i:=lua_gettop(luavm);
+         // OutputDebugString('Lua_functioncall: Calling lua_pcall');
+          lua_pcall(L, length(parameters), 1, 0);
+         // OutputDebugString('Lua_functioncall: returned from lua_pcall');
+          i:=lua_gettop(L);
           if i>0 then //it has a parameter
-            result:=lua_tointeger(luavm, -1);
+            result:=lua_tointeger(L, -1);
         end;
 
 
@@ -951,7 +1042,8 @@ begin
 
 
     finally
-      lua_settop(luavm, oldstack);
+     // OutputDebugString('Lua_functioncall exit');
+      lua_settop(L, oldstack);
  //     luacs.leave;
     end;
 
@@ -1688,7 +1780,7 @@ begin
   result:=writeStringEx(L, processhandle);
 end;
 
-function readBytesEx(processhandle: dword; L: PLua_State): integer; cdecl;
+function readBytesEx(processhandle: THandle; L: PLua_State): integer; cdecl;
 var parameters: integer;
   addresstoread: ptruint;
   bytestoread: integer;
@@ -1751,7 +1843,7 @@ begin
 end;
 
 
-function writeBytesEx(processhandle: dword; L: PLua_State): integer;
+function writeBytesEx(processhandle: THandle; L: PLua_State): integer;
 var
   parameters, parameters2: integer;
   bytes: array of byte;
@@ -1847,6 +1939,39 @@ begin
   result:=readbytesEx(getcurrentprocess, L);
 end;
 
+function deAllocEx(processhandle: THandle; L: PLua_State): integer; cdecl;
+var parameters: integer;
+    address: ptruint;
+begin
+  result:=1;
+  parameters:=lua_gettop(L);
+  if parameters=0 then begin lua_pushboolean(L, false); exit; end;
+
+  if lua_isstring(L, -parameters) then
+  begin
+    if processhandle=GetCurrentProcess then
+      address:=selfsymhandler.getAddressFromNameL(lua_tostring(L,-parameters))
+    else
+      address:=symhandler.getAddressFromNameL(lua_tostring(L,-parameters));
+  end
+  else
+    address:=lua_tointeger(L,-parameters);
+
+  lua_pop(L, parameters);
+  lua_pushboolean(L, virtualfreeex(processhandle,pointer(address),0,MEM_RELEASE));
+
+end;
+
+function deAlloc_lua(L: PLua_State): integer; cdecl;
+begin
+  result:=deAllocEx(processhandle, L);
+end;
+
+function deAllocLocal_lua(L: PLua_State): integer; cdecl;
+begin
+  result:=deAllocEx(getcurrentprocess, L);
+end;
+
 function autoAssemble_lua(L: PLua_State): integer; cdecl;
 var
   parameters: integer;
@@ -1855,7 +1980,7 @@ var
   targetself: boolean;
   CEAllocArray: TCEAllocArray;
 begin
-  result:=0;
+  result:=1;
   parameters:=lua_gettop(L);
   if parameters=0 then
   begin
@@ -1883,7 +2008,6 @@ begin
     code.free;
   end;
 
-  result:=1;
 end;
 
 function getPixel(L: PLua_State): integer; cdecl;
@@ -2338,6 +2462,14 @@ begin
   result:=1;
 end;
 
+function debug_isBroken(L: PLua_state): integer; cdecl;
+var r: boolean;
+begin
+  r:=(debuggerthread<>nil) and (debuggerthread.CurrentThread<>nil) and (debuggerthread.CurrentThread.isHandled);
+  lua_pushboolean(L, r);
+  result:=1;
+end;
+
 function debug_setBreakpoint(L: Plua_State): integer; cdecl;
 var parameters: integer;
   address: ptruint;
@@ -2644,6 +2776,12 @@ begin
   end else lua_pop(L, parameters);
 end;
 
+function speedhack_getSpeed(L: PLua_State): integer; cdecl;
+begin
+  lua_pushnumber(L, speedhack.getSpeed);
+  result:=1;
+end;
+
 function speedhack_setSpeed(L: PLua_State): integer; cdecl;
 var
   parameters: integer;
@@ -2679,7 +2817,6 @@ begin
     result:=1;
     lua_pushboolean(L, r);
   end;
-  lua_pop(L, parameters);
 end;
 
 
@@ -3175,9 +3312,9 @@ function inheritsFromObject(L: PLua_state): integer; cdecl;
 var x: TObject;
 begin
   result:=0;
-  if lua_gettop(L)>1 then
+  if lua_gettop(L)>=1 then
   begin
-    x:=lua_toceuserdata(L, -1);
+    x:=lua_toceuserdata(L, 1);
     lua_pop(L, lua_gettop(l));
 
     if x<>nil then
@@ -3193,9 +3330,9 @@ function inheritsFromComponent(L: PLua_state): integer; cdecl;
 var x: TObject;
 begin
   result:=0;
-  if lua_gettop(L)>1 then
+  if lua_gettop(L)>=1 then
   begin
-    x:=lua_toceuserdata(L, -1);
+    x:=lua_toceuserdata(L, 1);
     lua_pop(L, lua_gettop(l));
 
     if x<>nil then
@@ -3209,17 +3346,19 @@ end;
 
 function inheritsFromControl(L: PLua_state): integer; cdecl;
 var x: TObject;
+  r: boolean;
 begin
   result:=0;
-  if lua_gettop(L)>1 then
+  if lua_gettop(L)>=1 then
   begin
-    x:=lua_toceuserdata(L, -1);
+    x:=lua_toceuserdata(L, 1);
     lua_pop(L, lua_gettop(l));
 
     if x<>nil then
     begin
       result:=1;
-      lua_pushboolean(l, (x is TControl));
+      r:=x is TControl;
+      lua_pushboolean(l, r);
     end;
 
   end;
@@ -3229,9 +3368,9 @@ function inheritsFromWinControl(L: PLua_state): integer; cdecl;
 var x: TObject;
 begin
   result:=0;
-  if lua_gettop(L)>1 then
+  if lua_gettop(L)>=1 then
   begin
-    x:=lua_toceuserdata(L, -1);
+    x:=lua_toceuserdata(L, 1);
     lua_pop(L, lua_gettop(l));
 
     if x<>nil then
@@ -3242,16 +3381,6 @@ begin
 
   end;
 end;
-
-
-
-
-
-
-
-
-
-
 
 
 function createToggleBox(L: Plua_State): integer; cdecl;
@@ -3357,7 +3486,26 @@ begin
   end;
 end;
 
+function createStringStream(L: Plua_State): integer; cdecl;
+var s: pchar;
+  sl: integer;
+  ss: TStringStream;
+begin
+  if lua_gettop(L)>0 then
+    s:=lua_tolstring(L, 1, @sl)
+  else
+    s:=nil;
 
+  ss:=TStringStream.create(s);
+  if s<>nil then
+  begin
+    ss.WriteBuffer(s^, sl);
+    ss.position:=0;
+  end;
+
+  luaclass_newClass(L, ss);
+  result:=1;
+end;
 
 
 function readRegionFromFile(L: Plua_State): integer; cdecl;
@@ -3704,6 +3852,82 @@ begin
     result:=0;
   end else lua_pop(L, parameters);
 end;
+
+function dbk_writesIgnoreWriteProtection(L: PLua_State): integer; cdecl;
+var state: boolean;
+begin
+  result:=0;
+  if lua_gettop(L)=1 then
+  begin
+    state:=lua_toboolean(L, 1);
+    lua_pushboolean(L, KernelWritesIgnoreWriteProtection(state));
+    result:=1;
+  end;
+
+end;
+
+function dbk_getPhysicalAddress(L: PLua_State): integer; cdecl;
+var
+  address: ptruint;
+  pa: int64;
+begin
+  result:=0;
+  if lua_gettop(L)=1 then
+  begin
+    address:=lua_tointeger(L,1);
+
+    if GetPhysicalAddress(processhandle, pointer(address), pa) then
+    begin
+      lua_pushinteger(L, pa);
+      result:=1;
+    end;
+  end;
+end;
+
+function dbk_getCR0(L: PLua_state): integer; cdecl;
+begin
+  lua_pushinteger(L, getcr0);
+  result:=1;
+end;
+
+function dbk_getCR3(L: PLua_state): integer; cdecl;
+var cr3: qword;
+begin
+  if GetCR3(processhandle, cr3) then
+    lua_pushinteger(L, cr3)
+  else
+    lua_pushnil(L);
+
+  result:=1;
+end;
+
+function dbk_getCR4(L: PLua_state): integer; cdecl;
+begin
+  lua_pushinteger(L, getcr4);
+  result:=1;
+end;
+
+function dbvm_getCR0(L: PLua_state): integer; cdecl;
+begin
+  lua_pushinteger(L, dbvm_getRealCR0);
+  result:=1;
+end;
+
+function dbvm_getCR3(L: PLua_state): integer; cdecl;
+begin
+  lua_pushinteger(L, dbvm_getRealCR3);
+  result:=1;
+end;
+
+function dbvm_getCR4(L: PLua_state): integer; cdecl;
+begin
+  lua_pushinteger(L, dbvm_getRealCR4);
+  result:=1;
+end;
+
+
+
+
 
 function dbk_readMSR(L: PLua_State): integer; cdecl;
 var
@@ -4316,7 +4540,7 @@ begin
     case apiid of
       0: newkernelhandler.OpenProcess:=pointer(address);
       1: newkernelhandler.ReadProcessMemory:=pointer(address);
-      2: newkernelhandler.WriteProcessMemory:=pointer(address);
+      2: newkernelhandler.WriteProcessMemoryActual:=pointer(address);
       3: newkernelhandler.VirtualQueryEx:=pointer(address);
     end;
 
@@ -4365,7 +4589,7 @@ begin
         if isDBVMCapable then
         begin
           LoadDBK32;
-          launchdbvm;
+          launchdbvm(-1);
         end;
       end;
     end;
@@ -4716,6 +4940,57 @@ begin
   end;
 end;
 
+function getWindowList_lua(L: PLua_state): integer; cdecl;
+var
+  parameters: integer;
+  s: tstrings;
+  i: integer;
+  pid: integer;
+begin
+  result:=0;
+  parameters:=lua_gettop(L);
+  if parameters>=1 then
+  begin
+    s:=lua_toceuserdata(L,1);
+    lua_pop(L, lua_gettop(l));
+    if (s<>nil) and (s is TStrings) then
+    begin
+      GetWindowList(s);
+      sanitizeProcessList(s);
+
+    end
+    else
+    begin
+      lua_pushstring(L,'getProcessList: the provided List object is not valid');
+      lua_error(L);
+    end;
+  end
+  else
+  begin
+    //table version
+    s:=tstringlist.create;
+    GetWindowList(s);
+    sanitizeProcessList(s);
+
+
+
+    lua_newtable(L);
+
+    for i:=0 to s.Count-1 do
+    begin
+      if TryStrToInt('0x'+copy(s[i],1,8), pid) then
+      begin
+        lua_pushinteger(L, pid);
+        lua_pushstring(L, copy(s[i], 10, length(s[i])));
+        lua_settable(L, 1);
+      end;
+    end;
+
+    s.free;
+
+    result:=1; //table
+  end;
+end;
 
 function getProcesslist_lua(L: PLua_state): integer; cdecl;
 var
@@ -4748,7 +5023,7 @@ begin
 
     for i:=0 to s.Count-1 do
     begin
-      if TryStrToInt(copy(s[i],1,8), pid) then
+      if TryStrToInt('0x'+copy(s[i],1,8), pid) then
       begin
         lua_pushinteger(L, pid);
         lua_pushstring(L, copy(s[i], 10, length(s[i])));
@@ -5558,10 +5833,631 @@ begin
   end;
 end;
 
+function lua_frexp(L:PLua_State): integer; cdecl;
+var
+  d: float;
+  m: float;
+  e: integer;
+begin
+  if lua_gettop(l)>=1 then
+  begin
+    d:=lua_tonumber(L, 1);
+    Frexp(d, m,e);
+
+    lua_pushnumber(l,m);
+    lua_pushnumber(l, e);
+    result:=2;
+  end
+  else
+  begin
+    lua_pushstring(L, 'Number required');
+    lua_error(L);
+  end;
+end;
+
+function lua_cosh(L:PLua_State): integer; cdecl;
+begin
+  if lua_gettop(l)>=1 then
+  begin
+    lua_pushnumber(L, cosh(lua_tonumber(L,1)));
+    result:=1;
+  end
+  else
+  begin
+    lua_pushstring(L, 'Number required');
+    lua_error(L);
+  end;
+end;
+
+
+function lua_sinh(L:PLua_State): integer; cdecl;
+begin
+  if lua_gettop(l)>=1 then
+  begin
+    lua_pushnumber(L, sinh(lua_tonumber(L,1)));
+    result:=1;
+  end
+  else
+  begin
+    lua_pushstring(L, 'Number required');
+    lua_error(L);
+  end;
+end;
+
+function lua_tanh(L:PLua_State): integer; cdecl;
+begin
+  if lua_gettop(l)>=1 then
+  begin
+    lua_pushnumber(L, tanh(lua_tonumber(L,1)));
+    result:=1;
+  end
+  else
+  begin
+    lua_pushstring(L, 'Number required');
+    lua_error(L);
+  end;
+end;
+
+function lua_getTranslationFolder(L: PLua_State): integer; cdecl;
+begin
+  lua_pushstring(L, translationfilepath);
+  result:=1;
+end;
+
+function lua_loadPOFile(L: PLua_State): integer; cdecl;
+var
+  POFile: TPOFile;
+  filename: string;
+  postrings: TStringlist;
+begin
+  if lua_gettop(L)>=1 then
+  begin
+    postrings:=Tstringlist.create;
+    try
+      filename:=Lua_ToString(L, 1);
+      postrings.LoadFromFile(filename);
+      if assigned(LRSTranslator) then
+      begin
+        if (LRSTranslator is TPOTranslator) then
+        begin
+          pofile:=TPOTranslator(LRSTranslator).POFile;
+          pofile.ReadPOText(postrings.text);
+        end;
+      end;
+      lua_pushboolean(L, true);
+    except
+      lua_pushboolean(L, false);
+    end;
+    postrings.free;
+    result:=1;
+  end
+  else
+    result:=0;
+end;
+
+function lua_translateid(L:PLua_state): integer; cdecl;
+var
+  POFile: TPOFile;
+  id, orig: string;
+  r: string;
+begin
+  if lua_gettop(L)>=1 then
+  begin
+    id:=Lua_ToString(L, 1);
+
+    if lua_gettop(L)>=2 then
+      orig:=Lua_ToString(L,2)
+    else
+      orig:='';
+
+    r:=orig;
+
+    if assigned(LRSTranslator) then
+    begin
+      if (LRSTranslator is TPOTranslator) then
+      begin
+        pofile:=TPOTranslator(LRSTranslator).POFile;
+
+        if assigned(pofile) then
+          r:=pofile.Translate(id, orig);
+      end;
+    end;
+
+    lua_pushstring(L, r);
+    result:=1;
+  end
+  else
+    result:=0;
+end;
+
+function lua_translate(L:PLua_state): integer; cdecl;
+var
+  s: string;
+  POFile: TPOFile;
+  r: string;
+
+  z: TStringList;
+begin
+  if lua_gettop(L)>=1 then
+  begin
+    r:=Lua_ToString(L, 1);
+
+    if assigned(LRSTranslator) then
+    begin
+      if (LRSTranslator is TPOTranslator) then
+      begin
+        pofile:=TPOTranslator(LRSTranslator).POFile;
+
+        if assigned(pofile) then
+          r:=pofile.Translate('',r);
+      end;
+    end;
+
+    lua_pushstring(L, r);
+    result:=1;
+  end
+  else
+    result:=1;
+end;
+
+function lua_registerBinUtil (L:PLua_state): integer; cdecl;
+var
+  name, description: string;
+  path: string;
+  prefix: string;
+  ASParam: string;
+  LDParam: string;
+  OBJDUMPParam: string;
+  DisassemblerCommentChar: string;
+
+
+  bu: TBinUtils;
+
+  miBu: TMenuItem;
+  OnDisassemble: integer;
+  arch: string;
+
+  i: integer;
+begin
+  result:=0;
+  if (lua_gettop(L)>0) and (lua_istable(L, 1)) then
+  begin
+    //get the data from the provided table
+    lua_pushstring(L, 'Name');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      name:='No name'
+    else
+      name:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+    lua_pushstring(L, 'Description');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      description:=''
+    else
+      description:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+    lua_pushstring(L, 'Path');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      path:=''
+    else
+      path:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+    lua_pushstring(L, 'Prefix');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      prefix:=''
+    else
+      prefix:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+    lua_pushstring(L, 'OnDisassemble');
+    lua_gettable(L, 1);
+
+    i:=lua_gettop(L);
+    if lua_isnil(L,-1) then
+    begin
+      onDisassemble:=0;
+      lua_pop(L,1);
+    end
+    else
+      OnDisassemble:=luaL_ref(L, LUA_REGISTRYINDEX);
+
+    lua_pushstring(L, 'Architecture');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      arch:=''
+    else
+      arch:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+    lua_pushstring(L, 'ASParam');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      ASParam:=''
+    else
+      ASParam:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+    lua_pushstring(L, 'LDParam');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      LDParam:=''
+    else
+      LDParam:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+    lua_pushstring(L, 'OBJDUMPParam');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      OBJDUMPParam:=''
+    else
+      OBJDUMPParam:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+    lua_pushstring(L, 'DisassemblerCommentChar');
+    lua_gettable(L, 1);
+
+    if lua_isnil(L,-1) then
+      DisassemblerCommentChar:=''
+    else
+      DisassemblerCommentChar:=Lua_ToString(L,-1);
+
+    lua_pop(L,1);
+
+
+
+
+    bu:=TBinUtils.create;
+
+    bu.Name:=name;
+    bu.description:=description;
+    bu.prefix:=prefix;
+    bu.path:=path;
+    bu.OnDisassemble:=ondisassemble;
+    bu.arch:=Arch;
+    bu.ASParam:=ASParam;
+    bu.LDParam:=LDParam;
+    bu.OBJDUMPParam:=OBJDUMPParam;
+    bu.DisassemblerCommentChar:=DisassemblerCommentChar;
+
+
+    binutilslist.add(bu);
+
+    miBu:=TMenuItem.Create(MemoryBrowser.miBinUtils);
+    if bu.description<>'' then
+      miBu.caption:=bu.name+' - '+bu.description
+    else
+      miBu.caption:=bu.name;
+
+    miBu.Tag:=binutilslist.count-1;
+    miBu.AutoCheck:=true;
+    miBu.RadioItem:=true;
+    miBu.OnClick:=MemoryBrowser.miBinutilsSelect.OnClick;
+
+    MemoryBrowser.miBinUtils.Add(miBu);
+
+    if binutilslist.count>0 then //make a menu visible so the user can choose at runtime
+    begin
+      MemoryBrowser.miBinUtils.visible:=true;
+      MemoryBrowser.miGNUAssembler.visible:=true;
+    end;
+  end;
+end;
+
+function setPointerSize(L:PLua_state): integer; cdecl;
+begin
+  if lua_gettop(L)>=1 then
+    processhandler.overridePointerSize(lua_tointeger(L, 1));
+
+  result:=0;
+end;
+
+
+function getDebugContext(L:PLua_state): integer; cdecl;
+var extraregs: boolean;
+begin
+  result:=1;
+  if lua_gettop(L)>=1 then
+    extraregs:=lua_toboolean(L,1)
+  else
+    extraregs:=false;
+
+  if (debuggerthread<>nil) and (debuggerthread.isWaitingToContinue) and (debuggerthread.CurrentThread<>nil) then
+  begin
+    LUA_SetCurrentContextState(debuggerthread.CurrentThread.context, extraregs);
+    lua_pushboolean(L, true);
+  end
+  else
+    lua_pushboolean(L, false);
+
+end;
+
+function setDebugContext(L:PLua_state): integer; cdecl;
+var extraregs: boolean;
+begin
+  result:=1;
+  if lua_gettop(L)>=1 then
+    extraregs:=lua_toboolean(L,1)
+  else
+    extraregs:=false;
+
+  if (debuggerthread<>nil) and (debuggerthread.isWaitingToContinue) and (debuggerthread.CurrentThread<>nil) then
+  begin
+    LUA_GetNewContextState(debuggerthread.CurrentThread.context, extraregs);
+    lua_pushboolean(L, true);
+  end
+  else
+    lua_pushboolean(L, false);
+end;
+
+function debug_updateGUI(L:PLua_state): integer; cdecl;
+begin
+  if (debuggerthread<>nil) and (debuggerthread.isWaitingToContinue) and (debuggerthread.CurrentThread<>nil) then
+  begin
+    debuggerthread.CurrentThread.UpdateMemoryBrowserContext;
+    MemoryBrowser.UpdateDebugContext(debuggerthread.CurrentThread.handle,debuggerthread.CurrentThread.ThreadID, false);
+  end;
+end;
+
+function executeCode(L:PLua_state): integer; cdecl; //executecode(address, parameter)
+var
+  s: tstringlist;
+  allocs: TCEAllocArray;
+  address: ptruint;
+  i: integer;
+  stubaddress: ptruint;
+  resultaddress: ptruint;
+
+  parameter: ptruint;
+  timeout: dword;
+
+  thread: thandle;
+
+  r: ptruint;
+  x: dword;
+  y: ptruint;
+
+  wr: DWORD;
+  dontfree: boolean;
+begin
+  //creates a thread in the target process.  calls stdcall function(parameter):pointer and wait for it's return
+  stubaddress:=0;
+  result:=0;
+  dontfree:=false;
+
+  if lua_gettop(L)>=1 then
+  begin
+    if lua_isnumber(L,1) then
+      address:=lua_tointeger(L, 1)
+    else
+      address:=symhandler.getAddressFromName(Lua_ToString(L,1));
+
+    if lua_gettop(L)>=2 then
+    begin
+      if lua_isnumber(L,2) then
+        address:=lua_tointeger(L, 2)
+      else
+        address:=selfsymhandler.getAddressFromName(Lua_ToString(L,2));
+    end
+    else
+      parameter:=0;
+
+    if lua_gettop(L)>=3 then
+      timeout:=lua_tointeger(L,3)
+    else
+      timeout:=INFINITE;
+  end
+  else
+    exit;
+
+  s:=tstringlist.create;
+  try
+    s.Add('alloc(stub, 2048)');
+
+    if processhandler.is64Bit then
+    begin
+      s.add('alloc(result,8)');
+      s.add('alloc(addressToCall, 8)');
+    end
+    else
+      s.add('alloc(result,4)');
+
+
+
+
+
+    s.add('stub:');
+    if processhandler.is64Bit then
+    begin
+      s.add('sub rsp,28');
+      s.add('call [addressToCall]');
+      s.add('mov [result],rax');
+      s.add('add rsp,28');
+      s.add('ret');
+    end
+    else
+    begin
+      s.add('push [esp+4]');  //push the parameter again
+      s.add('call '+inttohex(address,8));
+      s.add('mov [result],eax');
+      s.add('ret 4');
+    end;
+
+
+
+
+    if processhandler.is64Bit then
+    begin
+      s.add('addressToCall:');
+      s.add('dq '+inttohex(address,8));
+    end;
+
+    if autoassemble(s, false, true, false, false, allocs) then
+    begin
+
+      for i:=0 to length(allocs)-1 do
+      begin
+        if allocs[i].varname='stub' then
+          stubaddress:=allocs[i].address;
+
+        if allocs[i].varname='result' then
+          resultaddress:=allocs[i].address;
+      end;
+
+      if stubaddress<>0 then
+      begin
+        thread:=CreateRemoteThread(processhandle, nil, 0, pointer(stubaddress), pointer(parameter), 0, x);
+
+        if (thread<>0) then
+        begin
+          wr:=WaitForSingleObject(thread, timeout);
+          if wr=WAIT_OBJECT_0 then
+          begin
+            if ReadProcessMemory(processhandle, pointer(resultaddress), @r, sizeof(r), y) then
+            begin
+              lua_pushinteger(L, r);
+              result:=1;
+            end;
+          end
+          else
+          if wr=WAIT_TIMEOUT then
+            dontfree:=true;
+
+
+
+
+          closehandle(thread);
+        end;
+      end;
+    end;
+
+  finally
+    s.free;
+
+    if (dontfree=false) and (stubaddress<>0) then
+      VirtualFreeEx(processhandle, pointer(stubaddress), 0, MEM_RELEASE);
+  end;
+end;
+
+function executeCodeLocal(L:PLua_state): integer; cdecl;
+type
+  TFunction=function(parameter: pointer):pointer; stdcall;
+var
+  address, parameter: PtrUInt;
+  f: TFunction;
+begin
+  //executes the given address
+  result:=0;
+  if lua_gettop(L)>=1 then
+  begin
+    if lua_isstring(L,1) then
+      address:=selfsymhandler.getAddressFromName(Lua_ToString(L,1))
+    else
+      address:=lua_tointeger(L, 1);
+
+
+    if lua_gettop(L)>=2 then
+    begin
+      if lua_isstring(L,2) then
+        address:=selfsymhandler.getAddressFromName(Lua_ToString(L,2))
+      else
+        address:=lua_tointeger(L, 2)
+
+    end
+    else
+      parameter:=0;
+
+    f:=pointer(address);
+    lua_pushinteger(L, ptruint(f(pointer(parameter))));
+    result:=1;
+  end
+  else
+    exit;
+end;
+
+function md5file(L:PLua_state): integer; cdecl;
+var
+  filename: string;
+  f: TMemoryStream;
+begin
+  result:=0;
+  if lua_gettop(L)>=1 then
+  begin
+    filename:=Lua_ToString(L,1);
+
+    f:=TMemoryStream.create;
+    try
+      f.LoadFromFile(filename);
+      lua_pushstring(L, MD5Print(MD5Buffer(f.Memory^, f.Size)));
+      result:=1;
+    finally
+      f.free;
+    end;
+  end;
+end;
+
+function md5memory(L:PLua_state): integer; cdecl;
+var
+  startaddress: ptruint;
+  size: integer;
+
+  buf: PByteArray;
+  x: ptruint;
+begin
+  result:=0;
+  if lua_gettop(L)>=2 then
+  begin
+    if lua_isstring(L, 1) then
+      startaddress:=symhandler.getAddressFromName(Lua_ToString(L,1))
+    else
+      startaddress:=lua_tointeger(L, 1);
+
+    size:=lua_tointeger(L, 2);
+
+    if size>0 then
+    begin
+      getmem(buf, size);
+      if ReadProcessMemory(processhandle, pointer(startaddress), buf, size, x) then
+      begin
+        if x>0 then
+        begin
+          lua_pushstring(L, MD5Print(MD5Buffer(buf^, x)));
+          result:=1;
+        end;
+      end;
+      freemem(buf);
+    end;
+
+  end;
+
+end;
 
 procedure InitializeLua;
-var s: tstringlist;
+var
+  s: tstringlist;
   k32: THandle;
+  i: integer;
 begin
 
   LuaVM:=lua_open();
@@ -5607,6 +6503,8 @@ begin
     lua_register(LuaVM, 'readBytesLocal', readbyteslocal);
     lua_register(LuaVM, 'writeBytesLocal', writebyteslocal);
     lua_register(LuaVM, 'autoAssemble', autoAssemble_lua);
+    lua_register(LuaVM, 'deAlloc', deAlloc_lua);
+    lua_register(LuaVM, 'deAllocLocal', deAllocLocal_lua);
     lua_register(LuaVM, 'showMessage', showMessage_lua);
     lua_register(LuaVM, 'inputQuery', inputQuery_lua);
     lua_register(LuaVM, 'getPixel', getPixel);
@@ -5631,12 +6529,22 @@ begin
     lua_register(LuaVM, 'debug_isDebugging', debug_isDebugging);
     lua_register(LuaVM, 'debug_getCurrentDebuggerInterface', debug_getCurrentDebuggerInterface);
     lua_register(LuaVM, 'debug_canBreak', debug_canBreak);
+    lua_register(LuaVM, 'debug_isBroken', debug_isBroken);
     lua_register(LuaVM, 'debug_setBreakpoint', debug_setBreakpoint);
     lua_register(LuaVM, 'debug_removeBreakpoint', debug_removeBreakpoint);
     lua_register(LuaVM, 'debug_continueFromBreakpoint', debug_continueFromBreakpoint);
 
     lua_register(LuaVM, 'debug_addThreadToNoBreakList', debug_addThreadToNoBreakList);
     lua_register(LuaVM, 'debug_removeThreadFromNoBreakList', debug_removeThreadFromNoBreakList);
+
+    lua_register(LuaVM, 'debug_getContext', getDebugContext);
+    lua_register(LuaVM, 'debug_setContext', setDebugContext);
+    lua_register(LuaVM, 'debug_updateGUI', debug_updateGUI);
+
+    lua_register(LuaVM, 'getDebugContext', getDebugContext);
+    lua_register(LuaVM, 'setDebugContext', setDebugContext);
+
+
 
     lua_register(LuaVM, 'closeCE', closeCE);
     lua_register(LuaVM, 'hideAllCEWindows', hideAllCEWindows);
@@ -5652,6 +6560,7 @@ begin
 
     lua_register(LuaVM, 'messageDialog', messageDialog);
     lua_register(LuaVM, 'speedhack_setSpeed', speedhack_setSpeed);
+    lua_register(LuaVM, 'speedhack_getSpeed', speedhack_getSpeed);
     lua_register(LuaVM, 'injectDLL', injectDLL);
     lua_register(LuaVM, 'getAutoAttachList', getAutoAttachList);
 
@@ -5748,6 +6657,8 @@ begin
 
     lua_register(LuaVM, 'createMemoryStream', createMemoryStream);
     lua_register(LuaVM, 'createFileStream', createFileStream);
+    lua_register(LuaVM, 'createStringStream', createStringStream);
+
 
 
     Lua_register(LuaVM, 'getSettingsForm', getSettingsForm);
@@ -5814,6 +6725,20 @@ begin
     lua_register(LuaVM, 'dbk_executeKernelMemory', dbk_executeKernelMemory);
     lua_register(LuaVM, 'dbk_readMSR', dbk_readMSR);
     lua_register(LuaVM, 'dbk_writeMSR', dbk_writeMSR);
+    lua_register(LuaVM, 'dbk_getCR0', dbk_getCR0);
+    lua_register(LuaVM, 'dbk_getCR3', dbk_getCR3);
+    lua_register(LuaVM, 'dbk_getCR4', dbk_getCR4);
+    lua_register(LuaVM, 'dbvm_getCR0', dbvm_getCR0);
+    lua_register(LuaVM, 'dbvm_getCR3', dbvm_getCR3);
+    lua_register(LuaVM, 'dbvm_getCR4', dbvm_getCR4);
+
+
+
+    lua_register(LuaVM, 'dbk_getPhysicalAddress', dbk_getPhysicalAddress);
+    lua_register(LuaVM, 'dbk_writesIgnoreWriteProtection', dbk_writesIgnoreWriteProtection);
+
+
+
 
     lua_register(LuaVM, 'allocateSharedMemory', allocateSharedMemory);
     lua_register(LuaVM, 'deallocateSharedMemory', deallocateSharedMemory);
@@ -5881,6 +6806,10 @@ begin
     lua_register(LuaVM, 'ansiToUtf8', lua_AnsiToUtf8);
 
     lua_register(LuaVM, 'fullAccess', fullAccess);
+
+    lua_register(LuaVM, 'getWindowlist', getWindowList_lua);
+    lua_register(LuaVM, 'getWindowList', getWindowList_lua);
+
     lua_register(LuaVM, 'getProcesslist', getProcessList_lua);
     lua_register(LuaVM, 'getProcessList', getProcessList_lua);
     lua_register(LuaVM, 'getThreadlist', getThreadlist_lua);
@@ -5948,6 +6877,21 @@ begin
     lua_register(LuaVM, 'convertKeyComboToString', lua_ConvertKeyComboToString);
     lua_register(LuaVM, 'restoreSeDebugPrivilege', restoreSeDebugPrivilege);
 
+    lua_register(LuaVM, 'translate', lua_translate);
+    lua_register(LuaVM, 'translateID', lua_translateid);
+    lua_register(LuaVM, 'loadPOFile', lua_loadPOFile);
+    lua_register(LuaVM, 'getTranslationFolder', lua_getTranslationFolder);
+
+    lua_register(LuaVM, 'registerBinUtil', lua_registerBinUtil);
+    lua_register(LuaVM, 'setPointerSize', setPointerSize);
+
+
+    lua_register(LuaVM, 'executeCode', executeCode);
+    lua_register(LuaVM, 'executeCodeLocal', executeCodeLocal);
+
+    lua_register(LuaVM, 'md5file', md5file);
+    lua_register(LuaVM, 'md5memory', md5memory);
+
     initializeLuaCustomControl;
 
 
@@ -5980,6 +6924,9 @@ begin
 
     initializeLuaCalendar;
     initializeLuaRipRelativeScanner;
+
+    initializeLuaStructureFrm;
+    initializeLuaInternet;
 
 
 
@@ -6049,9 +6996,42 @@ begin
       s.add('dbvm_restore_interrupts=0x'+inttohex(ptruint(@vmxfunctions.dbvm_restore_interrupts),8));
       s.add('dbvm_changeselectors=0x'+inttohex(ptruint(@vmxfunctions.dbvm_changeselectors),8));
 
+      //5.2 backward compatibility:
+      s.add('math.log10=function(v) return math.log(v,10) end');
+      s.add('loadstring=load');
+      s.add('unpack=table.unpack');
+      s.add('package.loaders=package.searchers');
 
+      //5.3 backward compatibility:
+      s.add('math.pow=function(x,y) return x^y end');
+      s.add('math.atan2=math.atan');
+      s.add('math.ldexp=function(x,exp) return x * 2.0^exp end');
+
+      s.add('BinUtils={}');
 
       lua_doscript(s.text);
+
+      lua_getglobal(luavm, 'math');
+      i:=lua_gettop(luavm);
+
+      lua_pushstring(luavm, 'frexp');
+      lua_pushcfunction(luavm, lua_frexp);
+      lua_settable(luavm,i);
+
+      lua_pushstring(luavm, 'cosh');
+      lua_pushcfunction(luavm, lua_cosh);
+      lua_settable(luavm,i);
+
+      lua_pushstring(luavm, 'sinh');
+      lua_pushcfunction(luavm, lua_sinh);
+      lua_settable(luavm,i);
+
+      lua_pushstring(luavm, 'tanh');
+      lua_pushcfunction(luavm, lua_tanh);
+      lua_settable(luavm,i);
+
+
+      lua_settop(luavm,i-1);
 
     finally
       s.free;

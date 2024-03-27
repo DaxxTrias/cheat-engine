@@ -203,6 +203,7 @@ type
     cbCopyOnWrite: TCheckBox;
     cbExecutable: TCheckBox;
     cbFastScan: TCheckBox;
+    cbFloatSimple: TCheckBox;
     cbPauseWhileScanning: TCheckBox;
     cbWritable: TCheckBox;
     ColorDialog1: TColorDialog;
@@ -732,6 +733,8 @@ type
     procedure SetupInitialScanTabState(scanstate: PScanState; IsFirstEntry: boolean);
     procedure ScanTabListTabChange(Sender: TObject; oldselection: integer);
 
+    procedure UpdateFloatRelatedPositions;
+
     //custom type:
     procedure CreateCustomType(customtype: TCustomtype; script: string;
       changed: boolean; lua: boolean = False);
@@ -883,7 +886,7 @@ uses mainunit2, ProcessWindowUnit, MemoryBrowserFormUnit, TypePopup, HotKeys,
   frmSetCrosshairUnit, StructuresFrm2, frmMemoryViewExUnit,
   frmD3DHookSnapshotConfigUnit, frmSaveSnapshotsUnit, frmsnapshothandlerUnit,
   frmNetworkDataCompressionUnit, ProcessHandlerUnit, ProcessList, pointeraddresslist,
-  PointerscanresultReader, Parsers, Globals;
+  PointerscanresultReader, Parsers, Globals, GnuAssembler;
 
 resourcestring
   rsInvalidStartAddress = 'Invalid start address: %s';
@@ -1067,6 +1070,8 @@ resourcestring
   rsDecimal = 'Decimal';
   rsHexadecimal = 'Hexadecimal';
   rsIsNotAValidX = '%s is not a valid xml name';
+  rsMUGenerateGroupscanCommand = 'Generate groupscan command';
+
 
 var
   ncol: TColor;
@@ -2011,7 +2016,7 @@ begin
   begin
     cbpercentage := tcheckbox.Create(self);
     cbpercentage.AutoSize := True;
-    cbpercentage.Left := scantype.Left + scantype.Width + 5;
+    cbpercentage.Left := cbFloatSimple.left;
     cbpercentage.Top := scantype.Top + 2;
 
     cbpercentage.Parent := scantype.Parent;
@@ -2023,6 +2028,7 @@ begin
   else
     cbpercentage.Caption := rsAtLeastXx;
 
+  UpdateFloatRelatedPositions;
 end;
 
 procedure TMainForm.DestroyCbPercentage;
@@ -2032,6 +2038,8 @@ begin
     cbpercentage.Checked := False;
     FreeAndNil(cbpercentage);
   end;
+  UpdateFloatRelatedPositions;
+
 end;
 //------------------
 
@@ -2258,6 +2266,8 @@ begin
     begin
       cbHexadecimal.checked:=hexvis;
     end;
+
+    UpdateFloatRelatedPositions;
 
   finally
     scantype.OnChange := old;
@@ -3594,11 +3604,11 @@ end;
 
 procedure TMainForm.miBindDeactivationClick(Sender: TObject);
 begin
-  miBindActivation.Checked := not miBindActivation.Checked;
+  miBindDeactivation.Checked := not miBindDeactivation.Checked;
 
   if addresslist.selectedRecord <> nil then
   begin
-    if miBindActivation.Checked then
+    if miBindDeactivation.Checked then
       addresslist.selectedRecord.options := addresslist.selectedRecord.options + [moDeactivateChildrenAsWell]
     else
       addresslist.selectedRecord.options := addresslist.selectedRecord.options - [moDeactivateChildrenAsWell];
@@ -3818,7 +3828,7 @@ begin
       CustomTypeCallback := CreateCustomType;
       CustomType := ct;
       if ct.CustomTypeType = cttLuaScript then
-        luamode := True;
+        ScriptMode :=smLua;
 
       assemblescreen.Lines.Text := CustomType.script;
 
@@ -3838,7 +3848,7 @@ begin
   if customTypes.Count > 0 then
   begin
     n := n + ' ' + IntToStr(customtypes.Count + 1);
-    fbn := fbn + ' ' + IntToStr(customtypes.Count + 1);
+    fbn := fbn + IntToStr(customtypes.Count + 1);
   end;
 
   with TfrmAutoInject.Create(self) do
@@ -3847,7 +3857,7 @@ begin
     CustomTypeScript := True;
     CustomTypeCallback := CreateCustomType;
     CustomType := nil;
-    luamode := True;
+    ScriptMode:= smLua;
 
     with assemblescreen.Lines do
     begin
@@ -3898,6 +3908,7 @@ begin
       Add('alloc(TypeName,256)');
       Add('alloc(ByteSize,4)');
       Add('alloc(UsesFloat,1)');
+      Add('alloc(CallMethod,1)');
       Add('');
       Add('TypeName:');
       Add('db ''' + n + ''',0');
@@ -4263,7 +4274,9 @@ begin
     UpdateScanType;
 
 
+
     foundcount := foundlist.Initialize(getvartype, memscan.customtype);
+
 
     try
       PreviousResults:=TSavedScanHandler.create(memscan.getScanFolder, currentlySelectedSavedResultname);
@@ -4296,6 +4309,9 @@ begin
     end;
 
     foundlistDisplayOverride:=newstate.foundlistDisplayOverride;
+
+    UpdateFloatRelatedPositions;
+
     //    foundlist3.TopItem:=foundlist3.items[newstate.foundlist.itemindex];
   end;
   //else leave empty
@@ -4419,6 +4435,27 @@ begin
     freemem(oldscanstate);
 
   end;
+end;
+
+procedure TMainForm.UpdateFloatRelatedPositions;
+begin
+  if pnlFloat.visible then
+  begin
+    cbFloatSimple.Top:=pnlFloat.Top+pnlFloat.Height;
+    cbUnrandomizer.top:=cbFloatSimple.Top+cbFloatSimple.Height;
+    cbFloatSimple.visible:=true;
+  end
+  else
+  begin
+    cbFloatSimple.top:=pnlFloat.top;
+    cbUnrandomizer.top:=gbScanOptions.top;
+
+    cbFloatSimple.visible:=(getVarType in [vtSingle, vtDouble, vtAll]) and (GetScanType<>soUnknownValue);
+  end;
+
+  if cbpercentage<>nil then
+    cbFloatSimple.Top:=cbpercentage.top+cbpercentage.Height;
+
 end;
 
 procedure TMainForm.miFreezeNegativeClick(Sender: TObject);
@@ -4691,9 +4728,6 @@ end;
 procedure TMainForm.btnMemoryViewClick(Sender: TObject);
 begin
   memorybrowser.Show;
-
-  if memorybrowser.windowstate=wsMinimized then
-    memorybrowser.WindowState:=wsNormal;
 end;
 
 
@@ -4816,7 +4850,7 @@ begin
 
 
   frmLuaTableScript := TfrmAutoInject.Create(self);
-  frmLuaTableScript.luamode := True;
+  frmLuaTableScript.ScriptMode := smLua;
 
   frmLuaTableScript.Caption := rsLuaScriptCheatTable;
   frmLuaTableScript.New1.Visible := False;
@@ -5252,7 +5286,7 @@ end;
 procedure TMainForm.Calculatenewvaluepart21Click(Sender: TObject);
 var
   newaddress: ptrUint;
-  calculate: integer;
+  calculate: int64;
   i, j, err: integer;
   selectedi: integer;
 
@@ -5399,6 +5433,7 @@ begin
   mr:=addresslist.addAddressManually(lastAddedAddress);
   if mr<>nil then
     lastAddedAddress:=mr.interpretableaddress; //store the last used string
+
 end;
 
 procedure TMainForm.ScanTypeChange(Sender: TObject);
@@ -5779,7 +5814,7 @@ begin
   if groupconfigbutton=nil then
   begin
     groupconfigbutton:=Tbutton.create(self);
-    groupconfigbutton.caption:='Generate groupscan command';
+    groupconfigbutton.caption:=rsMUGenerateGroupscanCommand;
     groupconfigbutton.parent:=scantype.Parent;
     groupconfigbutton.Left:=scantype.left;
     groupconfigbutton.top:=scantype.top;
@@ -6904,8 +6939,14 @@ begin
   if (month = 7) and (day = 1) then
     ShowMessage(strhappybirthday);
   if (month = 1) and (day = 1) then
-    ShowMessage(strnewyear);
-  if (month = 1) and (day = 1) and (year >= 2015) then
+  begin
+    if reg.ValueExists('ShownHappyNewYear'+inttostr(year))=false then
+    begin
+      ShowMessage(strnewyear);
+      reg.WriteBool('ShownHappyNewYear'+inttostr(year), true);
+    end;
+  end;
+  if (month = 1) and (day = 1) and (year >= 2020) then
     ShowMessage(strFuture);
 
   if (month = 4) and (day = 1) then
@@ -6990,6 +7031,9 @@ begin
 
   panel6.clientheight:=cbPauseWhileScanning.top+cbPauseWhileScanning.height+2;
   gbScanOptions.ClientHeight:=panel6.top+panel6.height+2;
+
+  if reg<>nil then
+    freeandnil(reg);
 end;
 
 
@@ -7644,6 +7688,8 @@ begin
       frmpointerscannersettings := tfrmpointerscannersettings.Create(self);
 
     frmpointerscannersettings.cbAddress.Text := inttohex(address, 8);
+    frmpointerscannersettings.cbCompareToOtherPointermaps.Checked:=false;
+    frmpointerscannersettings.cbUseLoadedPointermap.checked:=false;
 
     if findpointeroffsets then
     begin
@@ -7983,23 +8029,26 @@ end;
 
 procedure TMainForm.miChangeValueClick(Sender: TObject);
 var
-  a: ptruint;
-  newvalue: string;
+  a:ptruint;
   extra: dword;
-  value: string;
+  value, newvalue: string;
   i: integer;
   vt: TVariableType;
   customtype: TCustomType;
 begin
   if foundlist3.Selected<>nil then
-  begin    a:=foundlist.GetAddress(foundlist3.Selected.Index, extra, Value);
+  begin
+    foundlist.GetAddress(foundlist3.Selected.Index, extra, Value);
 
     if InputQuery('Change value', 'Give the new value for the selected address(es)', value) then
     begin
+      newvalue:=value;
       for i:=0 to foundlist3.items.Count-1 do
       begin
         if foundlist3.Items[i].Selected then
         begin
+          a:=foundlist.GetAddress(foundlist3.Selected.Index, extra, Value);
+
           if foundlist.vartype=vtAll then  //all, extra contains the vartype
           begin
             if extra<$1000 then
@@ -8018,8 +8067,7 @@ begin
           if (vt=vtString) and (cbUnicode.checked) then
             vt:=vtUnicodeString;
 
-
-          ParseStringAndWriteToAddress(value, a, vt, foundlist.isHexadecimal, customtype);
+          ParseStringAndWriteToAddress(newvalue, a, vt, foundlist.isHexadecimal, customtype);
 
         end;
 
@@ -8095,10 +8143,67 @@ var
 
 
   sqos: SECURITY_QUALITY_OF_SERVICE;
+
+  gnua: TfrmAutoInject;
+  label p1,p2,p3;
+
 begin
 
+  try
+    asm
+     push $397
+     {$ifdef cpu32}
+     popfd
+     {$else}
+     popfq
+     {$endif}
+     p1:
+     cpuid
+     //nop
+     p2:
+     nop
+     p3:
+     nop
+    end;
 
-  MarkAllPagesAsNonAccessed(ProcessHandle);
+  except
+    on e:exception do
+    begin
+      if ExceptAddr()=@p1 then
+        showmessage('P1')
+      else
+      if ExceptAddr()=@p2 then
+        showmessage('P2 (correct)')
+      else
+      if ExceptAddr()=@p3 then
+        showmessage('P3')
+      else
+        showmessage(inttohex(ptruint(ExceptAddr()),8));
+    end
+  end;
+
+  {gnua:=TfrmAutoInject.Create(self);
+  gnua.ScriptMode:=smGnuAssembler;
+
+  gnua.show;   }
+
+     {
+  asm
+    mov eax,1
+    cpuid
+    mov z,rcx
+  end;
+
+
+  if (z shr 31) and 1=1 then showmessage('hypervisor present') else showmessage('no hypervisor detected');
+
+  showmessage(inttohex(z,8));
+       }
+ // getConnection.loadExtension(processhandle);
+
+//showmessage('still alive')
+
+//  MarkAllPagesAsNonAccessed(ProcessHandle);
 
 
 //  showmessage('sip='+inttohex(r,8));
@@ -8298,6 +8403,8 @@ begin
   if PreviousResults<>nil then
     freeandnil(PreviousResults);
 
+  if (memscan=nil) or (foundlist=nil) then raise exception.create('Unable to scan. Fix your scan settings and restart cheat engine');
+
   foundlist.Deinitialize; //unlock file handles
 
 
@@ -8357,6 +8464,8 @@ begin
     end
     else
       fastscanmethod := fsmNotAligned;
+
+    memscan.floatscanWithoutExponents:=cbFloatSimple.checked;
 
     memscan.firstscan(GetScanType2, getVarType2, roundingtype,
       utf8toansi(scanvalue.Text), utf8toansi(svalue2), scanStart, scanStop,
@@ -8561,6 +8670,8 @@ begin
     svalue2 := '';
 
   lastscantype := scantype.ItemIndex;
+
+  memscan.floatscanWithoutExponents:=cbFloatSimple.checked;
 
   memscan.nextscan(GetScanType2, roundingtype, utf8toansi(scanvalue.Text),
     utf8toansi(svalue2), cbHexadecimal.Checked, rbdec.Checked,

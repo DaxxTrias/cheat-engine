@@ -10,6 +10,8 @@ require("defines")
 List of CE specific functions and variables:
 
 TrainerOrigin : A variable that contains the path of the trainer that launched ............ (Only set when launched as a trainer)
+process : A variable that contains the main modulename of the currently opened process
+
 getCEVersion(): Returns a floating point value specifying the version of ............
 
 
@@ -91,10 +93,15 @@ destroyRef(integer) - Removes the reference
 
 reloadSettingsFromRegistry(): This will cause ............ to reload the settings from the registry and apply them
 
+getTranslationFolder(): Returns the path of the current translation files. Empty if there is no translation going on
+loadPOFile(path): Loads a .PO file used for translation
+translate(string): Returns a translation of the string. Returns the same string if it can't be found
+translateID(translationid: string, originalstring: string OPTIONAL): Returns a translation of the string id
 
 ansiToUtf8(string): Converts a string in Ansi encoding to UTF8
 utf8ToAnsi(string): Converts a string in UTF8 encoding to Ansi
 Note: GUI components mainly show in UTF8, some other functions use Ansi, try to find out which ones...
+
 
 enumModules(processid OPTIONAL):
   Returns a table containing information about each module in the current process, or the specified processid
@@ -102,6 +109,9 @@ enumModules(processid OPTIONAL):
     Name : String containing the modulename    Address: Integer representing the address the module is loaded
     Is64Bit: Boolean set to true if it's a 64-bit module
     PathToFile: String to the location this module is loaded
+
+md5memory(address, size): Returns a md5 sum calculated from the provided memory. 
+md5file(pathtofile): Returns a md5 sum calculated from the file. 
 
 
 getAddress(string, local OPTIONAL): returns the address of a symbol. Can be a modulename or an export. set Local to true if you wish to querry the symboltable of the ce process
@@ -188,8 +198,11 @@ messageDialog(text, type, buttons...) : pops up a messagebox with a specific ico
 sleep(milliseconds): pauses for the number of specified milliseconds (1000= 1 sec...)
 
 getProcesslist(Strings): Fills a Strings inherited object with the processlist of the system. Format: %x-pidname
-getThreadlist(List): fills a List object with the threadlist of the currently opened process. Format: %x
+getProcesslist(): Returns a table with the processlist  (pid - name )
+getWindowlist(Strings): Fills a Strings inherited object with the top-window list of the system. Format: %x-windowcaption
+getWindowlist(): Returns a table with the windowlist (pid - window caption )
 
+getThreadlist(List): fills a List object with the threadlist of the currently opened process. Format: %x
 
 function onOpenProcess(processid):
   If this function is defined it will be called whenever ............ opens a process.
@@ -201,6 +214,7 @@ getOpenedProcessID() : Returns the currently opened process. If none is open, re
 getProcessIDFromProcessName(name) : returns a processid
 openProcess(processid) : causes ............ to open the given processid
 openProcess(processname): causes ............ to find and open the given process
+setPointerSize(size): Sets the size ............ will deal with pointers in bytes. (Some 64-bit processes can only use 32-bit addresses)
 pause() : pauses the current opened process
 unpause(): resumes the current opened process
 
@@ -212,7 +226,7 @@ setMousePos(x,y): sets the mouse position
 isKeyPressed(key) : returns true if the specified key is currently pressed
 keyDown(key) : causes the key to go into down state
 keyUp(key) :causes the key to go up
-doKeyPress(key) : simmulates a key press
+doKeyPress(key) : simulates a key press
 
 shortCutToText(shortcut): Returns the textual representation of the given shortut value (integer) (6.4+)
 textToShortCut(shortcutstring): Returns an shortcut integer that the given string represents.  (6.4+)
@@ -221,7 +235,7 @@ convertKeyComboToString(key1,...): Returns a string representation of the given 
 convertKeyComboToString({key1,...}): ^
 
 
-outputDebugString(text): Outputs a message using the windows OutputDebugString message. You can use tools like dbgview to read this. Useful for testing situations where the gui freezes
+outputDebugString(text): Outputs a message using the windows OutputDebugString message. You can use tools like dbgview to read this. Useful for testing situations where the GUI freezes
 
 shellExecute(command, parameters OPTIONAL, folder OPTIONAL, showcommand OPTIONAL): Executes a given command
 
@@ -237,8 +251,12 @@ checkSynchronize(): Calls this from an infinite loop in the main thread when usi
 writeToClipboard(text):  Writes the given text to the clipboard
 readFromClipboard():  Reads the text from the clipboard
 
-speedhack_setSpeed(speed)
+speedhack_setSpeed(speed) : Enables the speedhack if needed and sets the specific speed
+speedhack_getSpeed(): Returns the last set speed
+
 injectDLL(filename): Injects a dll, and returns true on success
+executeCode(address, parameter OPTIONAL, timeout OPTIONAL) : address - Executes a stdcall function with 1 parameter at the given address in the target process  and wait for it to return. The return value is the result of the function that was called
+executeCodeLocal(addres, parameter OPTIONAL): address -  Executes a stdcall function with 1 parameter at the given address in the target process. The return value is the result of the function that was called
 
 loadPlugin(dllnameorpath): Loads the given plugin. Returns nil on failure. On success returns a value of 0 or greater
 
@@ -389,7 +407,8 @@ debugProcess(interface OPT): starts the debugger for the currently opened proces
 
 debug_isDebugging(): Returns true if the debugger has been started
 debug_getCurrentDebuggerInterface() : Returns the current debuggerinterface used (1=windows, 2=VEH 3=Kernel, nil=no debugging active)
-debug_canBreak(): Returns true if there is a possibility the target can stop in a breakpoint. 6.4+
+debug_canBreak(): Returns true if there is a possibility the target can stop on a breakpoint. 6.4+
+debug_isBroken(): Returns true if the debugger is currently halted on a thread
 debug_getBreakpointList(): Returns a lua table containing all the breakpoint addresses
 
 debug_addThreadToNoBreakList(threadid): This will cause breakpoints on the provided thread to be ignored
@@ -422,12 +441,36 @@ Changing registers:
 When the debugger is waiting to continue you can change the register variables. When you continue those register values will be set in the thread's context
 
 
+If the target is currently stopped on a breakpoint, but not done through an onBreakpoint function. The context won't be set.
+You can get and set the context back with these functions before execution continues"
+debug_getContext(BOOL extraregs) - Fills the global variables for the regular registers. If extraregs is true, it will also set FP0 to FP7 and XMM0 to XMM15
+debug_setContext(BOOL extraregs)
+debug_updateGUI() - Will refresh the userinterface to reflect the new context if the debugger was broken
+
+
+
 detachIfPossible() : Detaches the debugger from the target process (if it was attached)
 
 getComment(address) : Gets the userdefined comment at the specified address
 setComment(address, text) : Sets a userdefined comment at the specifried address. %s is used to display the autoguess value if there is one
 getHeader(address) : Gets the userdefined header at the specified address
 setHeader(address) : Sets the userdefined header at the specified address
+
+registerBinUtil(config) Registers a binutils toolset with CE (for assembling and disassembling in other cpu instruction sets)
+config is a table containing several fields that describe the tools, and lets you specify extra parameters
+
+Name : The displayed name in the binutils menu in memview
+Description: The description for this toolset
+Architecture: used by the objdump -m<architecture>  (required)
+ASParam : extra parameters to pass on to AS (optional)
+LDParam : extra parameters to pass on to LD
+OBJDUMPParam: extra parameters to pass on to OBJDUMP
+OnDisassemble: a lua function that gets called each time an address is disassembled. The return value will be passed on to OBJDUMP
+Path: filepath to the binutils set
+Prefix: prefix  (e.g: "arm-linux-androideabi-")
+DisassemblerCommentChar: Depending on which target you're disassembling, the comment character  can be different. (ARM=";"  x86='#' )
+
+
 
 
 
@@ -456,7 +499,7 @@ properties
   Component[int]: Component - Array containing the child components. Starts at 0. Readonly
   ComponentByName[string]: Component - Returns a component based on the name. Readonly
   Name: string - The name of the component
-  Tag: integer - Free to use storage space. (Usefull for id's)
+  Tag: integer - Free to use storage space. (Useful for id's)
   Owner: Component - Returns the owner of this object. Nil if it has none
 
 methods
@@ -499,7 +542,7 @@ methods:
   setWidth(integer)
   getHeight()
   setHeight()
-  setCaption(caption) : sets the text on a control. All the gui objects fall in this category
+  setCaption(caption) : sets the text on a control. All the GUI objects fall in this category
   getCaption() : Returns the text of the control
   setPosition(x,y): sets the x and y position of the object base don the top left position (relative to the client array of the owner object)
   getPosition(): returns the x and y position of the object (relative to the client array of the owner object)
@@ -561,6 +604,9 @@ methods
   getOnEnter()
   setOnExit(function) : Sets an onExit event. (Triggered on lost focus)
   getOnExit()
+  setLayeredAttributes(Key, Alpha, Flags) : Sets the layered state for the control if possible (Only Forms are supported in in windows 7 and earlier)
+      flags can be a combination of LWA_ALPHA and/or LWA_COLORKEY
+      See msdn SetLayeredWindowAttributes for more information
 
 
 MenuItem class(Inheritance: Component->Object)
@@ -572,6 +618,7 @@ properties
   Count : integer - Number of children attached to this menuitem
   Menu: Menu - The menu this item resides in
   Parent: MenuItem - The menuitem this item hangs under
+  MenuIndex: integer - The position this menu item is in it's parent
   Item[] : Array to access each child menuitem
   [] : Item[]
   OnClick: Function to call when the menu item is activated
@@ -1024,7 +1071,7 @@ properties
 methods
   add(): Returns a new ListColumn object
   getColumn(index): Returns a ListColum object;
-  setColumn(index, listcolumns): Sets a ListColum object (not recomended, use add instead)
+  setColumn(index, listcolumns): Sets a ListColum object (not recommended, use add instead)
 
 ListItem Class : (Inheritance: TObject)
 properties
@@ -1150,15 +1197,15 @@ createTimer(owner OPT, enabled OPT):
 properties
   Interval: integer - The number of milliseconds (1000=1 second) between executions
   Enabled: boolean
-  OnTimer: function - The function to call when the timer triggers
+  OnTimer: function(timer) - The function to call when the timer triggers
 
 methods
   getInterval()
   setInterval(interval) : Sets the speed on how often the timer should trigger. In milliseconds (1000=1 second)
   getOnTimer()
-  setOnTimer(function)
+  setOnTimer(function(timer))
   getEnabled()
-  setEnabled()boolean)
+  setEnabled(boolean)
 
 CustomControl class (CustomControl->WinControl->Control->Component->Object)
 properties
@@ -1198,7 +1245,7 @@ methods
   floodFill(x,y)
   ellipse(x1,y1,x2,y2)
   gradientFill(x1,y1,x2,y2, startcolor, stopcolor, direction) : Gradient fills a rectangle. Direction can be 0 or 1. 0=Vertical 1=Horizontal
-  copyRect(dest_x1,dest_y1,dest_x2,dest_y2, sourceCanvas, source_x1,source_y1,source_x2,source_y2) : Draws an image from one source to another. Usefull in cases of doublebuffering
+  copyRect(dest_x1,dest_y1,dest_x2,dest_y2, sourceCanvas, source_x1,source_y1,source_x2,source_y2) : Draws an image from one source to another. Useful in cases of doublebuffering
   draw(x,y, graphic) : Draw the image of a specific Graphic class
   getClipRect() : Returns a table containing the fields Left, Top, Right and Bottom, which define the invalidated region of the graphical object. Use this to only render what needs to be rendered in the onPaint event of objects
 
@@ -1337,7 +1384,7 @@ FileDialog Class: (Inheritance: CommonDialog->Component->Object)
 properties
 
   DefaultExt: string - When not using filters this will be the default extention used if no extension is given
-  Files: Strings - Stringlist containing all seleced files if multiple files are selected
+  Files: Strings - Stringlist containing all selected files if multiple files are selected
   FileName: string - The filename that was selected
   Filter: string - A filter formatted string
   FilterIndex: integer - The index of which filter to use
@@ -1399,7 +1446,7 @@ properties
 
 methods
   copyFrom(stream, count) - Copies count bytes from the given stream to this stream
-  read(count): bytetable - Returns a bytetable containing the bytes of the stream. This increases the posion
+  read(count): bytetable - Returns a bytetable containing the bytes of the stream. This increases the position
   write(bytetable, count OPTIONAL)- Writes the given bytetable to the stream
 
 
@@ -1417,6 +1464,12 @@ methods
 FileStream Class (Inheritance: HandleStream->Stream->Object)
 createFileStream(filename, mode)
 
+StringStream Class (Inheritance: Stream->Object)
+createStringStream(string)
+
+properties
+DataString: The internal string
+
 
 TableFile class (Inheritance: Object)
 findTableFile(filename): Returns the TableFile class object for the saved file
@@ -1430,7 +1483,7 @@ methods
   getData() : Gets a MemoryStream object
 
 
-xmplayer class.
+xmplayer class
 The xmplayer class has already been defined as xmplayer, no need to create it manually
 
 properties
@@ -1438,6 +1491,7 @@ properties
   Initialized: boolean - Indicator that the xmplayer is actually actively loaded in memory
 
 methods
+  setVolume(int)
   playXM(filename, OPTIONAL noloop)
   playXM(tablefile, OPTIONAL noloop)
   playXM(Stream, OPTIONAL noloop)
@@ -1497,7 +1551,7 @@ properties
   ID: Integer - Unique ID
   Index: Integer - The index ID for this record. 0 is top. (ReadOnly)
   Description: string- The description of the memory record
-  Address: string - Get/set the interpretable address string. Usefull for simple address settings.
+  Address: string - Get/set the interpretable address string. Useful for simple address settings.
   OffsetCount: integer - The number of offsets. Set to 0 for a normal address
   Offset[] : integer - Array to access each offset
   CurrentAddress: integer - The address the memoryrecord points to
@@ -1510,7 +1564,7 @@ properties
       Binary.Startbit: First bit to start reading from
       Binary.Size : Number of bits
 
-    If the type is vtByteArray then the following propertes are available
+    If the type is vtByteArray then the following properties are available
       Aob.Size : Number of bytes
 
   CustomTypeName: String - If the type is vtCustomType this will contain the name of the CustomType
@@ -1519,6 +1573,10 @@ properties
   Selected: boolean - Set to true if selected (ReadOnly)
   Active: boolean - Set to true to activate/freeze, false to deactivate/unfreeze
   Color: integer
+  ShowAsHex: boolean - Self explanatory
+  ShowAsSigned: boolean - Self explanatory
+  AllowIncrease: boolean - Allow value increasing, unfreeze will reset it to false
+  AllowDecrease: boolean - Allow value decreasing, unfreeze will reset it to false
 
   Count: Number of children
   Child[index] : Array to access the child records
@@ -1527,9 +1585,11 @@ properties
   HotkeyCount: integer - Number of hotkeys attached to this memory record
   Hotkey[] : Array to index the hotkeys
 
-  OnActivate: function()
-  OnDeactivate: function()
-  OnDestroy: function()
+  OnActivate: function(memoryrecord,before,currentstate):boolean - The function to call when the memoryrecord will change (or changed) Active to true. If before is true, not returning true will cause the activation to stop.
+  OnDeactivate: function(memoryrecord,before,currentstate):boolean - The function to call when the memoryrecord will change (or changed) Active to false. If before is true, not returning true will cause the deactivation to stop.
+  OnDestroy: function() - Called when the memoryrecord is destroyed.
+  DontSave: boolean - Don't save this memoryrecord and it's children
+
 methods
   getDescription()
   setDescription()
@@ -1550,6 +1610,22 @@ methods
   getHotkeyByID(integer): Returns the hotkey with the given id
 
 
+global events
+  function onMemRecPreExecute(memoryrecord, newstate BOOLEAN):
+    If above function is defined it will be called before action* has been performed.
+    Active property is about to change to newState.
+  
+  function onMemRecPostExecute(memoryrecord, newState BOOLEAN, succeeded BOOLEAN):
+    If above function is defined it will be called after action*.
+    Active property was supposed to change to newState.
+    If 'succeeded' is true it means that Active state has changed and is newState.
+    
+    newState and succeeded are read only.
+  
+    *action can be: running auto assembler script (ENABLE or DISABLE section), freezing and unfreezing.
+  
+
+
 Addresslist Class: (Inheritance: Panel->WinControl->Control->Component->Object)
 properties
   Count: Integer - The number of records in the table
@@ -1567,10 +1643,10 @@ methods
 
   getSelectedRecords():  Returns a table containing all the selected records
 
-  doDescriptionChange() : Will show the gui window to change the description of the selected entry
-  doAddressChange() : Will show the gui window to change the address of the selected entry
-  doTypeChange() : Will show the gui window to change the type of the selected entries
-  doValueChange() : Will show the gui window to change the value of the selected entries
+  doDescriptionChange() : Will show the GUI window to change the description of the selected entry
+  doAddressChange() : Will show the GUI window to change the address of the selected entry
+  doTypeChange() : Will show the GUI window to change the type of the selected entries
+  doValueChange() : Will show the GUI window to change the value of the selected entries
 
   getSelectedRecord() : Gets the main selected memoryrecord
   setSelectedRecord(memrec) : Sets the currently selected memoryrecord. This will unselect all other entries
@@ -1616,7 +1692,7 @@ methods
 
     roundingtype: Defined the way scans for exact value floating points are handled
       rtRounded : Normal rounded scans. If exact value = "3" then it includes 3.0 to 3.49999999. If exact value is "3.0" it includes 3.00 to 3.0499999999
-      rtTruncated: Truncated algoritm. If exact value = "3" then it includes 3.0 to 3.99999999. If exact value is "3.0" it includes 3.00 to 3.099999999
+      rtTruncated: Truncated algorithm. If exact value = "3" then it includes 3.0 to 3.99999999. If exact value is "3.0" it includes 3.00 to 3.099999999
       rtExtremerounded: Rounded Extreme. If exact value = "3" then it includes 2.0000001 to 3.99999999. If exact value is "3.0" it includes 2.900000001 to 3.099999999
 
     input1: If required by the scanoption this is a string of the given variable type
@@ -1763,11 +1839,46 @@ methods
 
   synchronize(function(thread, ...), ...) :
     Called from inside the thread. This wil cause the tread to get the main thread to execute the given function and wait for it to finish.
-    Usually for gui access
+    Usually for GUI access
     Returns the return value of the given function
 
   waitfor() :
     Waits for the given thread to finish (Not recommended to call this from inside the thread itself)
+
+
+
+StructureFrm class:
+createStructureForm(address)
+properties:
+Column[index]: structColumn - Fetches a structColumn object from the structure form
+Group[index]: structGroup - Fetches a structGroup object from the structure form
+
+methods:
+structChange() : Forces a refresh
+addColumn(): Adds a new column in the currently focuses group and returns it's structColumn object
+addGroup(): Adds a new group and returns the structGroup object
+
+structColumn class:
+properties:
+Address: integer - The current address
+AddressText: string - Gets/sets the visual address
+Focused: boolean - Gets/sets the focused state 
+
+methods:
+focus(): focuses the current column
+
+
+structGroup class:
+properties:
+name: string - gets the current name
+box: Groupbox - Gets the groupbox object
+columnCount: integer- Gets the number of columns in the group
+columns[index]: structColumn - Returns the specific structColumn object
+
+
+methods:
+addColumns(): Adds a new columns to the specific group and returns it's structColumn objecy
+
 
 
 
@@ -1860,6 +1971,7 @@ dbk_useKernelmodeProcessMemoryAccess() : Switches the internal pointer to the Re
 dbk_useKernelmodeQueryMemoryRegions() : Switches the internal pointer to the QueryVirtualMemory api to dbk_QueryVirtualMemory
 dbk_getPEProcess(processid) : Returns the pointer of the EProcess structure of the selected processid
 dbk_getPEThread(threadid) : Gets the pointer to the EThread  structure
+
 dbk_readMSR(msr): Reads the msr
 dbk_writeMSR(msr, msrvalue): Writes the msr
 dbk_executeKernelMemory(address, parameter) :
@@ -1871,6 +1983,14 @@ dbvm_initialize(offloados OPTIONAL) : Initializes the dbvm functions (dbk_initia
 dbvm_readMSR(msr): See dbk_readMSR
 dbvm_writeMSR(msr, value): See dbk_writeMSR
 
+
+dbk_getCR0(): Returns Control Register 0
+dbk_getCR3(): Returns Control Register 3 of the currently opened process
+dbk_getCR4(): Returns Control Register 4
+dbk_getPhysicalAddress(address): Returns the physical address of the given address
+dbk_writesIgnoreWriteProtection(state): Set to true if you do not wish to initiate copy-on-write behaviour
+
+dbvm_getCR4(): Returns the real Control Register 4 state
 
 
 onAPIPointerChange(function): Registers a callback when an api pointer is changed (can happen when the user clicks ok in settings, or when dbk_use*** is used. Does NOT happen when setAPIPointer is called)
@@ -2081,19 +2201,21 @@ methods:
 
   addReference(fromAddress, ToAddress, type, OPTIONAL isstring):
     Adds a reference. Type can be jtCall, jtUnconditional, jtConditional, jtMemory
-    In case of rtMemory setting isstring to true will add it to the referenced strings list
+    In case of jtMemory setting isstring to true will add it to the referenced strings list
 
   deleteReference(fromAddress, ToAddress)
 
 
   getReferences(address) : Returns a table containing the addresses that reference this address and the type
   getReferencedStrings(): Returns a table of addresses and their strings that have been referenced. Use getReferences to find out which addresses that are
+  getReferencedFunctions(): Returns a table of functions that have been referenced. Use getReferences to find out which callers that are
 
   saveToFile(filename)
   loadFromFile(filename)
 
 RIPRelativeScanner class: (Inheritance: Object)
-createRipRelativeScanner(modulename): Creates a RIP relative scanner. This will scan the provided module for RIP relative instructions which you can use for whatever you like
+createRipRelativeScanner(startaddress, stopaddress, includejumpsandcalls OPTIONAL):
+createRipRelativeScanner(modulename, includejumpsandcalls OPTIONAL): Creates a RIP relative scanner. This will scan the provided module for RIP relative instructions which you can use for whatever you like
 properties:
   Count: integer - The number of instructions found that have a RIP relative address
   Address[]: integer - An array to access the results. The address is the address of the RIP relative offset in the instruction
@@ -2179,7 +2301,7 @@ Settings class
   This class can be used to read out and set settings of ............ and of plugins, and store your own data
 
 global functions
-  getSettings(path Optional): Settings - Returns a settings object. If path is nil it will points to the ............ main settings (Registry) . If name is provides the settings currently accessed will be the one at the subkey provided
+  getSettings(path Optional): Settings - Returns a settings object. If path is nil it will points to the ............ main settings (Registry) . If name is provided the settings currently accessed will be the one at the subkey provided
   Note: Keep in mind that it returns a new object each call, even if he same name is used multiple times
 
 
@@ -2247,6 +2369,16 @@ TabSheet class (WinControl->Control->Component->Object)
 properties
   TabIndex: integer - the current index in the pagelist of the owning pagecontrol
 methods
+
+Internet class (Object)
+global functions
+  getInternet(string) - Returns an internet class object
+
+properties
+  Header : string - the additional header to be sent with the next getURL request
+methods
+  getURL(path) - returns a string containing the contents of the url. nil on failure
+
 
 
 --]]

@@ -21,7 +21,7 @@ object About: TAbout
     Top = 0
     Width = 321
     Align = alClient
-    Caption = 'CE 9.2'
+    Caption = 'CE 6.5'
     ClientHeight = 241
     ClientWidth = 317
     Font.Height = -11
@@ -139,7 +139,7 @@ object About: TAbout
       Top = 224
       Width = 1
       ParentColor = False
-      OnClick = lblDBVMClick
+      OnMouseDown = lblDBVMClick
     end
     object Label11: TLabel
       Left = 294
@@ -229,9 +229,9 @@ object About: TAbout
       ParentColor = False
     end
     object Label17: TLabel
-      Left = 11
+      Left = 10
       Height = 13
-      Top = 183
+      Top = 184
       Width = 40
       Caption = ''
       ParentColor = False
@@ -245,11 +245,19 @@ object About: TAbout
       ParentColor = False
     end
     object Label19: TLabel
-      Left = 195
+      Left = 193
       Height = 13
       Top = 184
       Width = 52
       Caption = ''
+      ParentColor = False
+    end
+    object Label20: TLabel
+      Left = 253
+      Height = 13
+      Top = 184
+      Width = 58
+      Caption = 'SER[G]ANT'
       ParentColor = False
     end
   end

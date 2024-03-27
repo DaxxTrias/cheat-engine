@@ -100,7 +100,7 @@ type
     function  isBreakpoint(address: uint_ptr; address2: uint_ptr=0; includeinactive: boolean=false): PBreakpoint;
     function  CodeFinderStop(codefinder: TFoundCodeDialog): boolean;
     function  setChangeRegBreakpoint(regmod: PRegisterModificationBP): PBreakpoint;
-    procedure setBreakAndTraceBreakpoint(frmTracer: TFrmTracer; address: ptrUint; BreakpointTrigger: TBreakpointTrigger; bpsize: integer; count: integer; condition:string=''; stepover: boolean=false);
+    procedure setBreakAndTraceBreakpoint(frmTracer: TFrmTracer; address: ptrUint; BreakpointTrigger: TBreakpointTrigger; bpsize: integer; count: integer; condition:string=''; stepover: boolean=false; nosystem: boolean=false);
     function  stopBreakAndTrace(frmTracer: TFrmTracer): boolean;
     function FindWhatCodeAccesses(address: uint_ptr; FoundCodeDialog:TFoundCodeDialog=nil): tfrmChangedAddresses;
     function  FindWhatCodeAccessesStop(frmchangedaddresses: Tfrmchangedaddresses): boolean;
@@ -259,7 +259,10 @@ begin
       begin
         fNeedsToSetEntryPointBreakpoint:=false; //just be sure
         if not DebugActiveProcess(processid) then
+        begin
+          OutputDebugString('DebugActiveProcess failed');
           exit;
+        end;
       end;
 
       currentprocesid := processid;
@@ -1620,7 +1623,7 @@ begin
 
 end;
 
-procedure TDebuggerthread.setBreakAndTraceBreakpoint(frmTracer: TFrmTracer; address: ptrUint; BreakpointTrigger: TBreakpointTrigger; bpsize: integer; count: integer; condition:string=''; stepover: boolean=false);
+procedure TDebuggerthread.setBreakAndTraceBreakpoint(frmTracer: TFrmTracer; address: ptrUint; BreakpointTrigger: TBreakpointTrigger; bpsize: integer; count: integer; condition:string=''; stepover: boolean=false; nosystem: boolean=false);
 var
   method: TBreakpointMethod;
   useddebugregister: integer;
@@ -1667,6 +1670,7 @@ begin
     begin
       bp.traceendcondition:=strnew(pchar(condition));
       bp.traceStepOver:=stepover;
+      bp.traceNosystem:=nosystem;
     end;
 
 
@@ -1678,6 +1682,7 @@ begin
       bpsecondary:=AddBreakpoint(bp, bplist[i].address, bplist[i].size, BreakpointTrigger, method, bo_BreakAndTrace, usedDebugregister,  nil, 0, nil,frmTracer,count);
       bpsecondary.traceendcondition:=strnew(pchar(condition));
       bpsecondary.traceStepOver:=stepover;
+      bpsecondary.traceNosystem:=nosystem;
     end;
 
 
@@ -2282,7 +2287,7 @@ begin
 
     while (gettickcount-starttime)<timeout do
     begin
-      OutputDebugString('loop WaitTillAttachedOrError');
+
       currentloopstarttime:=GetTickCount;
       while CheckSynchronize and ((GetTickCount-currentloopstarttime)<50) do
       begin

@@ -4,9 +4,18 @@ unit autoassembler;
 
 interface
 
+
+{$ifdef jni}
+uses unixporthelper, Assemblerunit, classes, symbolhandler, sysutils,
+     NewKernelHandler, ProcessHandlerUnit, commonTypeDefs;
+{$endif}
+
+{$ifdef windows}
 uses jwawindows, windows, Assemblerunit, classes, LCLIntf,symbolhandler,
      sysutils,dialogs,controls, CEFuncProc, NewKernelHandler ,plugin,
      ProcessHandlerUnit, lua, lualib, lauxlib, commonTypeDefs;
+{$endif}
+
 
 
 
@@ -30,8 +39,17 @@ procedure unregisterAutoAssemblerPrologue(id: integer);
 
 implementation
 
+{$ifdef jni}
+uses strutils, memscan, disassembler, networkInterface, networkInterfaceApi,
+     Parsers, Globals, memoryQuery;
+{$endif}
+
+
+{$ifdef windows}
 uses simpleaobscanner, StrUtils, LuaHandler, memscan, disassembler, networkInterface,
-     networkInterfaceApi, LuaCaller, SynHighlighterAA, Parsers, Globals;
+     networkInterfaceApi, LuaCaller, SynHighlighterAA, Parsers, Globals, memoryQuery;
+{$endif}
+
 
 resourcestring
   rsForwardJumpWithNoLabelDefined = 'Forward jump with no label defined';
@@ -59,6 +77,8 @@ resourcestring
   rsTheArrayOfByteCouldNotBeFound = 'The array of byte ''%s'' could not be found';
   rsWrongSyntaxAOBSCANName11223355 = 'Wrong syntax. AOBSCAN(name,11 22 33 ** 55)';
   rsWrongSyntaxAOBSCANMODULEName11223355 = 'Wrong syntax. AOBSCANMODULE(name, module, 11 22 33 ** 55)';
+  rsWrongSyntaxAOBSCANREGION = 'Wrong syntax. AOBSCANREGION(name, startaddress, stopaddress, 11 22 33 ** 55)';
+
 
   rsDefineAlreadyDefined = 'Define %s already defined';
   rsWrongSyntaxDEFINENameWhatever = 'Wrong syntax. DEFINE(name,whatever)';
@@ -88,6 +108,16 @@ resourcestring
   rsYouHavnTSpecifiedAEnableSection = 'You havn''t specified a enable section';
   rsYouHavnTSpecifiedADisableSection = 'You havn''t specified a disable section';
   rsWrongSyntaxSHAREDALLOCNameSize = 'Wrong syntax. SHAREDALLOC(name,size)';
+  rsAAErrorInTheStructureDefinitionOf = 'Error in the structure definition of %s at line %d';
+  rsAAIsAReservedWord = '%s is a reserved word';
+  rsAANoIdeaWhatXis = 'No idea what %s is';
+  rsAANoEndFound = 'No end found';
+  rsAATheArrayOfByteNamed = 'The array of byte named %s could not be found';
+  rsXCouldNotBeFound = '%s could not be found';
+  rsAAErrorWhileSacnningForAobs = 'Error while scanning for AOB''s : ';
+  rsAAError = 'Error: ';
+  rsAAModuleNotFound = 'module not found:';
+  rsAALuaErrorInTheScriptAtLine = 'Lua error in the script at line ';
 
 //type
 //  TregisteredAutoAssemblerCommands =  TFPGList<TRegisteredAutoAssemblerCommand>;
@@ -125,6 +155,7 @@ procedure RegisterAutoAssemblerCommand(command: string; callback: TAutoAssembler
 var i: integer;
     c:TRegisteredAutoAssemblerCommand;
 begin
+  {$ifndef jni}
   if registeredAutoAssemblerCommands=nil then
     registeredAutoAssemblerCommands:=TList.Create;
 
@@ -144,12 +175,14 @@ begin
   registeredAutoAssemblerCommands.Add(c);
 
   aa_AddExtraCommand(pchar(command));
+  {$endif}
 end;
 
 procedure UnregisterAutoAssemblerCommand(command: string);
 var i,j: integer;
     c:TRegisteredAutoAssemblerCommand;
 begin
+{$ifndef jni}
   command:=uppercase(command);
   i:=0;
   while i<registeredAutoAssemblerCommands.count do
@@ -167,6 +200,7 @@ begin
   end;
 
   aa_RemoveExtraCommand(pchar(command));
+{$endif jni}
 end;
 
 procedure tokenize(input: string; tokens: tstringlist);
@@ -296,7 +330,7 @@ var
   procedure structError(reason: string='');
   var error: string;
   begin
-    error:='Error in the structure definition of '+structname+' at line '+inttostr(lastlinenr+1);
+    error:=format(rsAAErrorInTheStructureDefinitionOf, [structname, lastlinenr+1]);
     if reason<>'' then
       error:=error+' :'+reason
     else
@@ -328,7 +362,7 @@ begin
       begin
         elementname:=copy(tokens[0], 1, Length(tokens[0])-1);
         if GetOpcodesIndex(elementname)<>-1 then
-          structError(elementname+' is a reserved word');
+          structError(format(rsAAIsAReservedWord, [elementname]));
 
         elements.AddObject(elementname, tobject(currentOffset));
 
@@ -415,7 +449,7 @@ begin
         end;
 
         else
-          structError('No idea what '+tokens[j]+' is'); //we already dealth with labels, so this is wrong
+          structError(format(rsAANoIdeaWhatXis, [tokens[j]])); //we already dealth with labels, so this is wrong
       end;
 
 
@@ -426,7 +460,7 @@ begin
   end;
 
   if endfound=false then
-    structerror('No end found');
+    structerror(rsAANoEndFound);
 
   //the elements have been filled in, delete the structure (between linenr and lastlinenr) and inject define(element,offset) and define(structname.element,offset)
   for i:=lastlinenr downto linenr do
@@ -464,7 +498,10 @@ begin
   begin
     currentline:=trim(code[i]);
     if (currentline<>'') and (currentline[length(currentline)]=':') then
-      labels.add(copy(currentline,1,length(currentline)-1));
+    begin
+      if (pos('+', currentline)=0) and (pos('.', currentline)=0) then
+        labels.add(copy(currentline,1,length(currentline)-1));
+    end;
   end;
 end;
 
@@ -480,7 +517,7 @@ begin
   for i:=0 to code.count-1 do
   begin
     currentline:=code[i];
-    
+
     for j:=1 to length(currentline) do
     begin
       if incomment then
@@ -500,7 +537,7 @@ begin
       else
       begin
         if currentline[j]='''' then instring:=not instring;
-        if currentline[j]=#9 then currentline[j]:=' '; //tabs are basicly comments 
+        if currentline[j]=#9 then currentline[j]:=' '; //tabs are basicly comments
 
         if not instring then
         begin
@@ -646,9 +683,9 @@ var i,j,k, m: integer;
       memscan: TMemScan;
     end;
 
-    a,b,c,d: integer;
+    a,b,c,d,e: integer;
     currentline: string;
-    s1,s2, s3: string;
+    s1,s2, s3,s4: string;
     testptr: ptruint;
 
     cpucount: integer;
@@ -660,6 +697,8 @@ var i,j,k, m: integer;
     errorstring: string;
 
     aob1, aob2: dword;
+
+    startaddress, stopaddress: ptruint;
 
   procedure finished(f: integer);
   //cleanup a memscan and fill in the results
@@ -687,12 +726,10 @@ var i,j,k, m: integer;
         if results[i]=0 then
         begin
           error:=true;
-          errorstring:='The array of byte named '+aobscanmodules[f].entries[i].name+' could not be found';
+          errorstring:=format(rsAATheArrayOfByteNamed, [aobscanmodules[f].entries[i].name]);
         end
         else
           code[aobscanmodules[f].entries[i].linenumber]:='DEFINE('+aobscanmodules[f].entries[i].name+', '+inttohex(results[i],8)+')';
-
-
       end;
     end
     else
@@ -702,7 +739,7 @@ var i,j,k, m: integer;
       for i:=0 to length(aobscanmodules[f].entries)-1 do
         aoblist:=aoblist+aobscanmodules[f].entries[i].name+' ';
 
-      errorstring:='Error while scanning for AOB''s : '+aoblist+#13#10#13#10+'Error: '+aobscanmodules[f].memscan.GetErrorString;
+      errorstring:=rsAAErrorWhileSacnningForAobs+aoblist+#13#10#13#10+rsAAError+aobscanmodules[f].memscan.GetErrorString;
 
 
     end;
@@ -805,7 +842,7 @@ begin
       if (a>0) and (b>0) and (c>0) then
       begin
         s1:=trim(copy(currentline,a+1,b-a-1));
-        s2:=uppercase(trim(copy(currentline,b+1,c-b-1)));
+        s2:=trim(copy(currentline,b+1,c-b-1));
         s3:=trim(copy(currentline,c+1,d-c-1));
 
         //s1=varname
@@ -817,7 +854,7 @@ begin
           //find the s2 module
           m:=-1;
           for j:=0 to length(aobscanmodules)-1 do
-            if aobscanmodules[j].name=s2 then
+            if aobscanmodules[j].name=uppercase(s2) then
             begin
               m:=j;
               break;
@@ -828,14 +865,26 @@ begin
             setlength(aobscanmodules, length(aobscanmodules)+1);
             m:=length(aobscanmodules)-1;
 
-            aobscanmodules[m].name:=s2;
+            aobscanmodules[m].name:=uppercase(s2);
             if symhandler.getmodulebyname(s2, mi) then
             begin
               aobscanmodules[m].minaddress:=mi.baseaddress;
               aobscanmodules[m].maxaddress:=mi.baseaddress+mi.basesize;
             end
             else
-              raise exception.create('module not found:'+s2);
+            begin
+              //modulename not found. Perhaps a symbol was used
+              try
+                testptr:=symhandler.getAddressFromName(s2);
+                if symhandler.getmodulebyaddress(testptr, mi) then
+                begin
+                  aobscanmodules[m].minaddress:=mi.baseaddress;
+                  aobscanmodules[m].maxaddress:=mi.baseaddress+mi.basesize;
+                end;
+              except
+                raise exception.create(rsAAModuleNotFound+s2);
+              end;
+            end;
 
             setlength(aobscanmodules[m].entries,0);
           end;
@@ -851,8 +900,60 @@ begin
 
       end else raise exception.Create(rsWrongSyntaxAOBSCANMODULEName11223355);
     end;
-  end;
 
+    if uppercase(copy(currentline,1,14))='AOBSCANREGION(' then //AOBSCANREGION(varname, startaddress, stopaddress, bytestring)
+    begin
+      a:=pos('(',currentline);
+      b:=pos(',',currentline);
+      c:=PosEx(',',currentline,b+1);
+      d:=PosEx(',',currentline,c+1);
+      e:=pos(')',currentline);
+
+      if (d<=a) or (b<=a) or (c<=a) or (d<=a) or (e<=a) then raise exception.create(rsWrongSyntaxAOBSCANREGION);
+
+      s1:=trim(copy(currentline,a+1,b-a-1));
+      s2:=trim(copy(currentline,b+1,c-b-1));
+      s3:=trim(copy(currentline,c+1,d-c-1));
+      s4:=trim(copy(currentline,d+1,e-d-1));
+
+      if (not syntaxcheckonly) then
+      begin
+        startaddress:=symhandler.getAddressFromName(s2);
+        stopaddress:=symhandler.getAddressFromName(s3);
+
+        //see if this region is already being scanned
+        m:=-1;
+        for j:=0 to length(aobscanmodules)-1 do
+        begin
+          //exact address only. No widening/appending of the groups is possible (Users may want to scan for 00 00 in a 16 byte region)
+          if (startaddress=aobscanmodules[j].minaddress) and (stopaddress=aobscanmodules[j].minaddress) then
+          begin
+            m:=j;
+            break;
+          end;
+        end;
+
+        if m=-1 then
+        begin
+          setlength(aobscanmodules, length(aobscanmodules)+1);
+          m:=length(aobscanmodules)-1;
+          aobscanmodules[m].name:='<REGION>';
+          aobscanmodules[m].minaddress:=startaddress;
+          aobscanmodules[m].maxaddress:=stopaddress;
+          setlength(aobscanmodules[m].entries,0);
+        end;
+
+        j:=length(aobscanmodules[m].entries);
+        setlength(aobscanmodules[m].entries, j+1);
+        aobscanmodules[m].entries[j].name:=s1;
+        aobscanmodules[m].entries[j].aobstring:=s4;
+        aobscanmodules[m].entries[j].linenumber:=i;
+      end
+      else
+        code[i]:='DEFINE('+s1+', 00000000)';
+
+    end;
+  end;
   //do simultaneous scans for the selected modules
   for i:=0 to length(aobscanmodules)-1 do
   begin
@@ -915,6 +1016,7 @@ var
   error: boolean;
 begin
   i:=0;
+
   while i<code.Count do
   begin
     //search for {$LUA}
@@ -943,7 +1045,7 @@ begin
             code[j]:='';
 
 
-
+{$ifndef NOLUA}
           LUACS.Enter;
           try
             stack:=lua_Gettop(luavm);
@@ -978,9 +1080,9 @@ begin
             if error then
             begin
               if lua_isstring(luavm, -1) then
-                raise exception.create('Lua error in the script at line '+inttostr(integer(code.Objects[i]))+':'+lua_tostring(luavm, -1))
+                raise exception.create(rsAALuaErrorInTheScriptAtLine+inttostr(integer(code.Objects[i]))+':'+lua_tostring(luavm, -1))
               else
-                raise exception.create('Lua error in the script at line '+inttostr(integer(code.Objects[i])));
+                raise exception.create(rsAALuaErrorInTheScriptAtLine+inttostr(integer(code.Objects[i])));
 
             end;
 
@@ -988,7 +1090,7 @@ begin
             lua_settop(Luavm, stack);
             LUACS.Leave;
           end;
-
+{$endif}
           break;
 
         end;
@@ -1007,6 +1109,9 @@ begin
       code[i]:='';
 
 end;
+
+
+var nextaaid: longint;
 
 function autoassemble2(code: tstrings;popupmessages: boolean;syntaxcheckonly:boolean; targetself: boolean ;var ceallocarray:TCEAllocArray; registeredsymbols: tstringlist=nil):boolean;
 {
@@ -1105,6 +1210,8 @@ var i,j,k,l,e: integer;
 
 
     connection: TCEConnection;
+
+    aaid: longint;
 begin
   setlength(readmems,0);
   setlength(allocs,0);
@@ -1114,6 +1221,8 @@ begin
   setlength(createthread,0);
 
   currentaddress:=0;
+
+
 
 
   if syntaxcheckonly and (registeredsymbols<>nil) then
@@ -1131,6 +1240,7 @@ begin
     end;
   end;
 
+  {$ifndef jni}
   if targetself then
   begin
     //get this function to use the symbolhandler that's pointing to CE itself and the self processid/handle
@@ -1142,6 +1252,7 @@ begin
     processhandler.processhandle:=processhandle;
   end
   else
+  {$endif}
   begin
     processid:=processhandlerunit.ProcessID;
     processhandle:=processhandlerunit.ProcessHandle;
@@ -1149,14 +1260,16 @@ begin
 
   symhandler.waitforsymbolsloaded(true);
 
-{$ifndef standalonetrainer}
+{$ifndef jni}
   if pluginhandler=nil then exit; //Error. ............ is not properly configured
 
-  pluginhandler.handleAutoAssemblerPlugin(@currentlinep, 0); //tell the plugins that an autoassembler script is about to get executed
+  aaid:=InterLockedIncrement(nextaaid);
+  pluginhandler.handleAutoAssemblerPlugin(@currentlinep, 0, aaid); //tell the plugins that an autoassembler script is about to get executed
 {$endif}
 
 
   potentiallabels:=tstringlist.create;
+  potentiallabels.CaseSensitive:=false;
 
 //2 pass scanner
   try
@@ -1290,7 +1403,9 @@ begin
 
           //plugins
           currentlinep:=@currentline[1];
-          pluginhandler.handleAutoAssemblerPlugin(@currentlinep, 1);
+          {$ifndef jni}
+          pluginhandler.handleAutoAssemblerPlugin(@currentlinep, 1,aaid);
+          {$endif}
           currentline:=currentlinep;
 
           //lua extensions
@@ -1423,11 +1538,24 @@ begin
           begin
             a:=pos('(',currentline);
             b:=pos(',',currentline);
-            c:=pos(')',currentline);
-            if (a>0) and (b>0) and (c>0) then
+            c:=PosEx(',',currentline,b+1);
+            d:=pos(')',currentline);
+
+            if (a>0) and (b>0) and (d>0) then
             begin
               s1:=trim(copy(currentline,a+1,b-a-1));
-              s2:=trim(copy(currentline,b+1,c-b-1));
+
+              if c>0 then
+              begin
+                s2:=trim(copy(currentline,b+1,c-b-1));
+                s3:=trim(copy(currentline,c+1,d-c-1));
+              end
+              else
+              begin
+                s2:=trim(copy(currentline,b+1,d-b-1));
+                s3:='';
+              end;
+
 
               try
                 x:=strtoint(s2);
@@ -1436,12 +1564,16 @@ begin
               end;
 
               //define it here already
-              symhandler.SetUserdefinedSymbolAllocSize(s1,x);              
+              if s3<>'' then
+                symhandler.SetUserdefinedSymbolAllocSize(s1,x, symhandler.getAddressFromName(s3))
+              else
+                symhandler.SetUserdefinedSymbolAllocSize(s1,x);
 
               setlength(globalallocs,length(globalallocs)+1);
               globalallocs[length(globalallocs)-1].address:=symhandler.GetUserdefinedSymbolByName(s1);
               globalallocs[length(globalallocs)-1].varname:=s1;
               globalallocs[length(globalallocs)-1].size:=x;
+
 
               setlength(assemblerlines,length(assemblerlines)-1);
               continue;
@@ -1516,7 +1648,7 @@ begin
             if (a>0) and (b>0) then
             begin
               s1:=trim(copy(currentline,a+1,b-a-1));
-            
+
               setlength(createthread,length(createthread)+1);
               createthread[length(createthread)-1]:=s1;
 
@@ -1525,6 +1657,7 @@ begin
             end else raise exception.Create(rsWrongSyntaxCreateThreadAddress);
           end;
 
+          {$ifndef jni}
           if uppercase(copy(currentline,1,12))='LOADLIBRARY(' then
           begin
             //load a library into memory , this one already executes BEFORE the 2nd pass to get addressnames correct
@@ -1562,6 +1695,7 @@ begin
             end else raise exception.Create(rsWrongSyntaxLoadLibraryFilename);
           end;
 
+
           if uppercase(copy(currentline,1,8))='LUACALL(' then
           begin
             //execute a given lua command
@@ -1580,6 +1714,7 @@ begin
               continue;
             end else raise exception.Create(rsWrongSyntaxLuaCall);
           end;
+          {$endif}
 
           if uppercase(copy(currentline,1,8))='READMEM(' then
           begin
@@ -1658,7 +1793,7 @@ begin
               try
                 testptr:=symhandler.getAddressFromName(s1);
               except
-                raise exception.Create(s1+' could not be found');
+                raise exception.Create(format(rsXCouldNotBeFound, [s1]));
               end;
 
               disassembler:=TDisassembler.create;
@@ -2023,7 +2158,10 @@ begin
 
 
             except
-              //add this as a label
+              //add this as a label if a potential label
+              if potentiallabels.IndexOf(copy(currentline,1,length(currentline)-1))=-1 then
+                raise exception.Create(rsThisAddressSpecifierIsNotValid);
+
               j:=length(labels);
               setlength(labels,j+1);
 
@@ -2265,7 +2403,9 @@ begin
       exit;
     end;
 
+    {$ifndef jni}
     if popupmessages and (messagedlg(rsThisCodeCanBeInjectedAreYouSure, mtConfirmation	, [mbyes, mbno], 0)<>mryes) then exit;
+    {$endif}
 
     //allocate the memory
 
@@ -2282,7 +2422,10 @@ begin
         if allocs[i].prefered<>0 then
         begin
           //if yes, is it the same as the previous entry? (or was the previous one that doesn't care?)
-          if (prefered<>allocs[i].prefered) and (prefered<>0) then
+          if prefered=0 then
+            prefered:=allocs[i].prefered;
+
+          if (prefered<>allocs[i].prefered) then
           begin
             //different prefered address
 
@@ -2312,11 +2455,15 @@ begin
               x:=0;
             end;
 
-
             //new prefered address
             j:=i;
             prefered:=allocs[i].prefered;
+
+
+
+
           end;
+
         end;
 
         //no prefered location specified, OR same prefered location
@@ -2374,7 +2521,9 @@ begin
 
     //-----------------------2nd pass------------------------
     //assemblerlines only contains label specifiers and assembler instructions
-    
+
+
+
     setlength(assembled,0);
     for i:=0 to length(assemblerlines)-1 do
     begin
@@ -2382,14 +2531,16 @@ begin
 
 
       //plugin
+      {$ifndef jni}
       if length(currentline)>0 then
       begin
         currentlinep:=@currentline[1];
-        pluginhandler.handleAutoAssemblerPlugin(@currentlinep, 2);
+        pluginhandler.handleAutoAssemblerPlugin(@currentlinep, 2,aaid);
         currentline:=currentlinep;
         //if handled currentline will have it's identifiers regarding the plugin's previously registered stuff replaced
         //note that this can be called in a multithreaded situation, so the plugin must hld storage containers on a threadid base and handle the locking itself
       end;
+      {$endif}
       //plugin
 
 
@@ -2649,7 +2800,9 @@ begin
 
     if not ok2 then
     begin
+      {$ifndef jni}
       if popupmessages then showmessage(rsNotAllInstructionsCouldBeInjected)
+      {$endif}
     end
     else
     begin
@@ -2666,11 +2819,12 @@ begin
 
           for i:=0 to length(ceallocarray)-1 do
           begin
-            if ceallocarray[i].address<baseaddress then
-              baseaddress:=ceallocarray[i].address;
+            virtualfreeex(processhandle,pointer(dealloc[i]),0,MEM_RELEASE);
+{            if ceallocarray[i].address<baseaddress then
+              baseaddress:=ceallocarray[i].address;}
           end;
 
-          virtualfreeex(processhandle,pointer(baseaddress),0,MEM_RELEASE);
+          //virtualfreeex(processhandle,pointer(baseaddress),0,MEM_RELEASE);
         end;
 
         setlength(ceallocarray,length(allocs));
@@ -2797,6 +2951,7 @@ begin
           end;
         end;
 
+      {$IFNDEF UNIX}
       if popupmessages then
       begin
         s1:='';
@@ -2816,6 +2971,7 @@ begin
 
         showmessage(rsTheCodeInjectionWasSuccessfull+s1);
       end;
+      {$ENDIF}
     end;
 
     result:=ok2;
@@ -2836,13 +2992,15 @@ begin
     if tokens<>nil then
       freeandnil(tokens);
 
-    pluginhandler.handleAutoAssemblerPlugin(@currentlinep, 3); //tell the plugins to free their data
+    {$IFNDEF UNIX}
+    pluginhandler.handleAutoAssemblerPlugin(@currentlinep, 3,aaid); //tell the plugins to free their data
 
     if targetself then
     begin
       processhandler.processhandle:=oldhandle;
       symhandler:=oldsymhandler;
     end;
+    {$ENDIF}
 
     if potentiallabels<>nil then
       freeandnil(potentiallabels);
@@ -3004,7 +3162,7 @@ begin
   getenableanddisablepos(code,enablepos,disablepos);
 
   result:=false;
-  
+
   if enablepos=-2 then
   begin
     if not popupmessages then exit;
@@ -3037,7 +3195,7 @@ begin
       begin
         if not popupmessages then exit;
         raise exception.Create(rsYouHavnTSpecifiedADisableSection);
-        
+
       end;
 
       if enable then
@@ -3075,6 +3233,7 @@ end;
 
 
 end.
+
 
 
 

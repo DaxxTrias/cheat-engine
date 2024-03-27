@@ -14,6 +14,14 @@ uses unixporthelper, sysutils, symbolhandler, ProcessHandlerUnit, NewKernelHandl
   CustomTypeHandler, commonTypeDefs;
 {$endif}
 
+resourcestring
+  rsBIByte = '(byte)';
+  rsBIWord = '(word)';
+  rsBIDword = '(dword)';
+  rsBIQword = '(qword)';
+  rsBIFloat = '(float)';
+  rsBIDouble = '(double)';
+
 type TAutoGuessEvent=function (address: ptruint; originalVariableType: TVariableType): TVariableType of object;
 
 type
@@ -390,12 +398,12 @@ var tr: Widestring;
     tempbuf: pbytearray;
 begin
   case vartype of
-    vtByte: result:='(byte)'+inttohex(buf[0],2) + '('+inttostr(buf[0])+')';
-    vtWord: result:='(word)'+inttohex(pword(buf)^,4) + '('+inttostr(pword(buf)^)+')';
-    vtDword: result:='(dword)'+inttohex(pdword(buf)^,8) + '('+inttostr(pdword(buf)^)+')';
-    vtQword: result:='(qword)'+inttohex(pqword(buf)^,16) + '('+inttostr(pqword(buf)^)+')';
-    vtSingle: result:='(float)'+format('%.2f',[psingle(buf)^]);
-    vtDouble: result:='(double)'+format('%.2f',[pdouble(buf)^]);
+    vtByte: result:=rsBIByte+inttohex(buf[0],2) + '('+inttostr(buf[0])+')';
+    vtWord: result:=rsBIWord+inttohex(pword(buf)^,4) + '('+inttostr(pword(buf)^)+')';
+    vtDword: result:=rsBIDword+inttohex(pdword(buf)^,8) + '('+inttostr(pdword(buf)^)+')';
+    vtQword: result:=rsBIQword+inttohex(pqword(buf)^,16) + '('+inttostr(pqword(buf)^)+')';
+    vtSingle: result:=rsBIFloat+format('%.2f',[psingle(buf)^]);
+    vtDouble: result:=rsBIDouble+format('%.2f',[pdouble(buf)^]);
     vtString:
     begin
       getmem(tempbuf,size+1);
@@ -648,16 +656,24 @@ begin
             //check if the value isn't bigger or smaller than 100000 or smaller than -100000
             if (pdouble(@buf[0])^<100000) and (pdouble(@buf[0])^>-100000) then
             begin
+
               if result=vtSingle then
               begin
                 if pdouble(@buf[0])^>psingle(@buf[0])^ then exit; //float has a smaller value
               end;
 
-              //if 4 bytes after this address is a float then override thise double to a single type
-              if FindTypeOfData(address+4, @buf[4], size-4)=vtSingle then
-                result:=vtSingle
-              else
-                result:=vtDouble;
+              result:=vtDouble;
+
+              if Pdword(@buf[0])^<>0 then
+              begin
+                x:=floattostr(PSingle(@buf[0])^);
+                if (pos('E',x)=0) then
+                begin
+                  //if 4 bytes after this address is a float then override thise double to a single type
+                  if FindTypeOfData(address+4, @buf[4], size-4)=vtSingle then
+                    result:=vtSingle;
+                end;
+              end;
 
               exit;
             end;

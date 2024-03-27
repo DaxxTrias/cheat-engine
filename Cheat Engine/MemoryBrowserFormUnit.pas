@@ -13,7 +13,7 @@ uses
   NewKernelHandler, ComCtrls, LResources, byteinterpreter, StrUtils, hexviewunit,
   debughelper, debuggertypedefinitions,frmMemviewPreferencesUnit, registry,
   scrollboxex, disassemblercomments, multilineinputqueryunit, frmMemoryViewExUnit,
-  LastDisassembleData, ProcessHandlerUnit, commonTypeDefs;
+  LastDisassembleData, ProcessHandlerUnit, commonTypeDefs, binutils;
 
 
 type
@@ -39,6 +39,32 @@ type
     DispLongs: TMenuItem;
     MenuItem21: TMenuItem;
     MenuItem22: TMenuItem;
+    MenuItem23: TMenuItem;
+    MenuItem24: TMenuItem;
+    MenuItem25: TMenuItem;
+    miGNUAssembler: TMenuItem;
+    miBinutilsSelect: TMenuItem;
+    miBinUtils: TMenuItem;
+    miSetBookmark0: TMenuItem;
+    miGotoBookmark0: TMenuItem;
+    miSetBookmark1: TMenuItem;
+    miSetBookmark2: TMenuItem;
+    miSetBookmark3: TMenuItem;
+    miSetBookmark4: TMenuItem;
+    miSetBookmark5: TMenuItem;
+    miSetBookmark6: TMenuItem;
+    miSetBookmark7: TMenuItem;
+    miSetBookmark8: TMenuItem;
+    miSetBookmark9: TMenuItem;
+    miGotoBookmark1: TMenuItem;
+    miGotoBookmark2: TMenuItem;
+    miGotoBookmark3: TMenuItem;
+    miGotoBookmark4: TMenuItem;
+    miGotoBookmark5: TMenuItem;
+    miGotoBookmark6: TMenuItem;
+    miGotoBookmark7: TMenuItem;
+    miGotoBookmark8: TMenuItem;
+    miGotoBookmark9: TMenuItem;
     miTextEncoding8: TMenuItem;
     miTextEncoding16: TMenuItem;
     miReferencedFunctions: TMenuItem;
@@ -235,6 +261,7 @@ type
     N18: TMenuItem;
     stacktrace2: TMenuItem;
     Executetillreturn1: TMenuItem;
+    procedure GotoBookmarkClick(Sender: TObject);
     procedure memorypopupPopup(Sender: TObject);
     procedure MenuItem10Click(Sender: TObject);
     procedure MenuItem11Click(Sender: TObject);
@@ -244,6 +271,10 @@ type
     procedure MenuItem18Click(Sender: TObject);
     procedure MenuItem20Click(Sender: TObject);
     procedure MenuItem22Click(Sender: TObject);
+    procedure MenuItem25Click(Sender: TObject);
+    procedure miGNUAssemblerClick(Sender: TObject);
+    procedure miBinutilsSelectClick(Sender: TObject);
+    procedure SetBookmarkClick(Sender: TObject);
     procedure miTextEncodingClick(Sender: TObject);
     procedure miReferencedFunctionsClick(Sender: TObject);
     procedure miShowIndisassemblerClick(Sender: TObject);
@@ -454,6 +485,15 @@ type
       easy: boolean;
     end;
 
+    bookmarks: array [0..9] of record
+      addressString: string;
+      lastAddress: ptruint;
+      setMi: TMenuItem;
+      gotoMi: TMenuItem;
+    end;
+
+    currentBinutils: Tbinutils;
+
     procedure SetStacktraceSize(size: integer);
     procedure setShowDebugPanels(state: boolean);
     procedure UpdateRWAddress(disasm: string);
@@ -504,7 +544,7 @@ type
     procedure reloadStacktrace;
     function GetReturnaddress: ptrUint;
 
-    procedure UpdateDebugContext(threadhandle: THandle; threadid: dword);
+    procedure UpdateDebugContext(threadhandle: THandle; threadid: dword; changeSelection: boolean=true);
     procedure miLockOnClick(Sender: TObject);
     procedure miLockMemviewClick(sender: TObject);
 
@@ -578,8 +618,11 @@ uses Valuechange,
   frmFilePatcherUnit,
   frmUltimapUnit,
   frmAssemblyScanUnit,
+  MemoryQuery,
   AccessedMemory,
-  Parsers;
+  Parsers,
+  GnuAssembler,
+  frmEditHistoryUnit;
 
 
 resourcestring
@@ -640,8 +683,12 @@ resourcestring
   rsReplaceWithCodeThatDoesNothing = 'Replace with code that does nothing';
   rsComment = 'Comment';
   rsCommentFor = 'Comment for %s';
+  rsHeaderFor = 'Header for %s';
   rsSShowsTheAutoguessValue = '(%s shows the autoguess value)';
-
+  rsMBBookmark = 'Bookmark %d';
+  rsMBBookmark2 = 'Bookmark %d: %s';
+  rsMBCreationOfTheRemoteThreadFailed = 'Creation of the remote thread failed';
+  rsMBThreadCreated = 'Thread Created';
 
 //property functions:
 function TMemoryBrowser.getShowValues: boolean;
@@ -852,7 +899,7 @@ begin
   s:=tstringlist.create;
   try
     s.text:=ansitoutf8(dassemblercomments.commentHeader[disassemblerview.SelectedAddress]);
-    if multilineinputquery(rsCommentFor, Format(rsCommentFor, [inttohex(disassemblerview.SelectedAddress, 8)])+' '+rsSShowsTheAutoguessValue, s) then
+    if multilineinputquery(rsHeaderFor, Format(rsCommentFor, [inttohex(disassemblerview.SelectedAddress, 8)])+' '+rsSShowsTheAutoguessValue, s) then
       dassemblercomments.commentHeader[disassemblerview.SelectedAddress]:=utf8toansi(s.text);
   finally
     s.free;
@@ -976,6 +1023,7 @@ begin
   end;
 end;
 
+
 procedure TMemoryBrowser.MenuItem10Click(Sender: TObject);
 begin
   if frmStringMap=nil then
@@ -1047,6 +1095,88 @@ begin
     frmAccessedMemory:=TfrmAccessedMemory.Create(application);
 
   frmAccessedMemory.Show;
+end;
+
+procedure TMemoryBrowser.MenuItem25Click(Sender: TObject);
+begin
+  if frmEditHistory=nil then
+    frmEditHistory:=tfrmEditHistory.create(application);
+
+  frmEditHistory.show;
+
+end;
+
+procedure TMemoryBrowser.miGNUAssemblerClick(Sender: TObject);
+var gnua: TfrmAutoInject;
+begin
+  gnua:=TfrmAutoInject.Create(self);
+  gnua.ScriptMode:=smGnuAssembler;
+  gnua.show;
+end;
+
+procedure TMemoryBrowser.miBinutilsSelectClick(Sender: TObject);
+var id: integer;
+begin
+  if (sender is TMenuItem) then
+  begin
+    id:=tmenuitem(sender).tag;
+    if (id<0) or (id>=binutilslist.count) then
+    begin
+      defaultBinutils:=nil;
+      miDisassemblerType.Enabled:=true;
+    end
+    else
+    begin
+      defaultBinutils:=TBinUtils(binutilslist[id]);
+      miDisassemblerType.Enabled:=false;
+    end;
+  end;
+end;
+
+procedure TMemoryBrowser.SetBookmarkClick(Sender: TObject);
+var
+  id: integer;
+begin
+  if (sender=nil) or (not (sender is TMenuItem)) then exit;
+  id:=TMenuItem(Sender).Tag;
+
+  if (id<0) or (id>9) then exit;
+
+  if disassemblerview.SelectedAddress=bookmarks[id].lastAddress then
+  begin
+    //delete
+    bookmarks[id].addressString:='';
+    bookmarks[id].lastAddress:=0;
+    bookmarks[id].setMi.caption:=format(rsMBBookmark, [id]);
+    bookmarks[id].gotoMi.caption:=bookmarks[id].setMi.caption;
+  end
+  else
+  begin
+    //update
+    bookmarks[id].addressString:=symhandler.getNameFromAddress(disassemblerview.SelectedAddress);
+    bookmarks[id].lastAddress:=disassemblerview.SelectedAddress;
+    bookmarks[id].setMi.Caption:=format(rsMBBookmark2, [id, bookmarks[id].addressString]);
+    bookmarks[id].gotoMi.Caption:=bookmarks[id].setMi.caption;
+  end;
+end;
+
+procedure TMemoryBrowser.GotoBookmarkClick(Sender: TObject);
+var
+  err: boolean;
+  id: integer;
+  newaddress: ptruint;
+begin
+  if (sender=nil) or (not (sender is TComponent)) then exit;
+  id:=TComponent(Sender).Tag;
+
+  if (id<0) or (id>9) then exit;
+  if bookmarks[id].addressString='' then exit;
+
+  newaddress:=symhandler.getAddressFromName(bookmarks[id].addressString, false, err);
+  if err then
+    newaddress:=bookmarks[id].lastAddress;
+
+  disassemblerview.SelectedAddress:=newaddress;
 end;
 
 procedure TMemoryBrowser.miTextEncodingClick(Sender: TObject);
@@ -1569,8 +1699,34 @@ end;
 procedure TMemoryBrowser.FormCreate(Sender: TObject);
 var x: array of integer;
   reg: tregistry;
+  f: TFont;
 begin
   MemoryBrowsers.Add(self);
+
+  bookmarks[0].setMi:=miSetBookmark0;
+  bookmarks[1].setMi:=miSetBookmark1;
+  bookmarks[2].setMi:=miSetBookmark2;
+  bookmarks[3].setMi:=miSetBookmark3;
+  bookmarks[4].setMi:=miSetBookmark4;
+  bookmarks[5].setMi:=miSetBookmark5;
+  bookmarks[6].setMi:=miSetBookmark6;
+  bookmarks[7].setMi:=miSetBookmark7;
+  bookmarks[8].setMi:=miSetBookmark8;
+  bookmarks[9].setMi:=miSetBookmark9;
+
+  bookmarks[0].gotoMi:=miGotoBookmark0;
+  bookmarks[1].gotoMi:=miGotoBookmark1;
+  bookmarks[2].gotoMi:=miGotoBookmark2;
+  bookmarks[3].gotoMi:=miGotoBookmark3;
+  bookmarks[4].gotoMi:=miGotoBookmark4;
+  bookmarks[5].gotoMi:=miGotoBookmark5;
+  bookmarks[6].gotoMi:=miGotoBookmark6;
+  bookmarks[7].gotoMi:=miGotoBookmark7;
+  bookmarks[8].gotoMi:=miGotoBookmark8;
+  bookmarks[9].gotoMi:=miGotoBookmark9;
+
+
+
 
   displaytype:=dtByte;
 
@@ -1614,11 +1770,15 @@ begin
 
     if reg.OpenKey('\Software\Cheat Engine\Hexview\',false) then
     begin
+      f:=hexview.hexfont;
+
       if reg.ValueExists('font.name') then
-        hexview.hexfont.name:=reg.ReadString('font.name');
+        f.name:=reg.ReadString('font.name');
 
       if reg.ValueExists('font.size') then
-        hexview.hexfont.size:=reg.ReadInteger('font.size');
+        f.size:=reg.ReadInteger('font.size');
+
+      hexview.hexfont:=f;
     end;
 
   finally
@@ -1925,6 +2085,9 @@ begin
         end;
       end;
 
+      if (key=ORD('Z')) and (ssCtrl in shift) then
+        undoLastWrite;
+
       if (ssalt in shift) or (ssctrl in shift) then exit; 
 
       assemblepopup(lowercase(chr(key)));
@@ -2043,6 +2206,8 @@ begin
     if frmFloatingPointPanel<>nil then
       frmFloatingPointPanel.Visible:=false;
 
+    if WindowState=wsMinimized then //for an unknown reason, the memoryview window can't be shown again if it was hidden minized
+      WindowState:=wsNormal;
   end;
 end;
 
@@ -2131,6 +2296,8 @@ var assemblercode,desc: string;
 
     localdisassembler: TDisassembler;
     bytelength: dword;
+
+    gnascript: tstringlist;
 begin
 
   //make sure it doesnt have a breakpoint
@@ -2165,6 +2332,21 @@ begin
   assemblercode:=InputboxTop(rsCheatEngineSingleLingeAssembler, Format(rsTypeYourAssemblerCodeHereAddress, [inttohex(disassemblerview.SelectedAddress, 8)]), assemblercode, x='', canceled, assemblerHistory);
   if not canceled then
   begin
+
+    if defaultBinutils<>nil then
+    begin
+      //use the gnuassembler for this
+      gnascript:=TStringList.create;
+      try
+        gnascript.add('.msection sline 0x'+inttohex(disassemblerview.SelectedAddress,8));
+        gnascript.Add(assemblercode);
+        gnuassemble(gnascript);
+      finally
+        gnascript.free;
+      end;
+
+      exit;
+    end;
 
     try
       if Assemble(assemblercode,disassemblerview.SelectedAddress,bytes) then
@@ -2604,7 +2786,7 @@ begin
     raise exception.Create(rsPleaseEnterAValidHexadecimalValue);
   end;
 
-  if CreateRemoteThread(processhandle,nil,0,pointer(startaddress),pointer(parameter),0,threadid)=0 then raise exception.Create('Creation of the remote thread failed') else showmessage('Thread Created');
+  if CreateRemoteThread(processhandle,nil,0,pointer(startaddress),pointer(parameter),0,threadid)=0 then raise exception.Create(rsMBCreationOfTheRemoteThreadFailed) else showmessage(rsMBThreadCreated);
 end;
 
 procedure TMemoryBrowser.MemoryRegions1Click(Sender: TObject);
@@ -3861,7 +4043,7 @@ begin
     result:=0;
 end;
 
-procedure TMemoryBrowser.UpdateDebugContext(threadhandle: THandle; threadid: dword);
+procedure TMemoryBrowser.UpdateDebugContext(threadhandle: THandle; threadid: dword; changeselection: boolean=true);
 var temp: string='';
     Regstart: string='';
     charcount: integer=8;
@@ -3871,6 +4053,7 @@ var temp: string='';
     i: integer=0;
 
 begin
+
   if processhandler.is64Bit or (processhandler.SystemArchitecture=archArm) then
   begin
     regstart:='R';
@@ -4041,16 +4224,25 @@ begin
   stacktrace1.Enabled:=true;
   Executetillreturn1.Enabled:=true;
 
-  caption:=Format(rsMemoryViewerCurrentlyDebuggingThread, [inttohex(threadid, 1)]);
+  if threadid<>0 then
+    caption:=Format(rsMemoryViewerCurrentlyDebuggingThread, [inttohex(threadid, 1)]);
 
-  if frmstacktrace<>nil then
+  if (frmstacktrace<>nil) then
+  begin
+    if (threadhandle=0) and (debuggerthread<>nil) and (debuggerthread.CurrentThread<>nil) then
+      threadhandle:=debuggerthread.CurrentThread.handle;
+
     frmstacktrace.stacktrace(threadhandle, lastdebugcontext);
+  end;
 
-  if processhandler.SystemArchitecture=archX86 then
-    disassemblerview.SelectedAddress:=lastdebugcontext.{$ifdef CPU64}rip{$else}eip{$endif}
-  else
-  if processhandler.SystemArchitecture=archArm then
-    disassemblerview.SelectedAddress:=lastdebugcontextarm.PC;
+  if changeselection then
+  begin
+    if processhandler.SystemArchitecture=archX86 then
+      disassemblerview.SelectedAddress:=lastdebugcontext.{$ifdef CPU64}rip{$else}eip{$endif}
+    else
+    if processhandler.SystemArchitecture=archArm then
+      disassemblerview.SelectedAddress:=lastdebugcontextarm.PC;
+  end;
 
 
 

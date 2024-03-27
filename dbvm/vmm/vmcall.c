@@ -759,9 +759,9 @@ int _handleVMCall(pcpuinfo currentcpuinfo, VMRegisters *vmregisters)
       }
 
       sendstringf("VMCALL_RESTORE_INTERRUPTS\n");
-      vmwrite(0x4824,currentcpuinfo->Previous_Interuptability_State);
+      vmwrite(vm_guest_interruptability_state,currentcpuinfo->Previous_Interuptability_State);
 
-      vmwrite(0x6820,(vmread(0x6820) & 0xFFFFFFFFFFFFFDFF) | (currentcpuinfo->Previous_CLI << 9)); //reset IF to what it was
+      vmwrite(vm_guest_rflags,(vmread(vm_guest_rflags) & 0xFFFFFFFFFFFFFDFF) | (currentcpuinfo->Previous_CLI << 9)); //reset IF to what it was
       vmregisters->rax = 0;
       break;
     }
@@ -833,13 +833,13 @@ int _handleVMCall(pcpuinfo currentcpuinfo, VMRegisters *vmregisters)
     case VMCALL_GETCR0:
     {
 
-      vmregisters->rax = isAMD?currentcpuinfo->vmcb->CR0:vmread(0x6800);
+      vmregisters->rax = isAMD?currentcpuinfo->vmcb->CR0:vmread(vm_guest_cr0);
       break;
     }
 
     case VMCALL_GETCR3:
     {
-      vmregisters->rax = isAMD?currentcpuinfo->vmcb->CR3:vmread(0x6802);
+      vmregisters->rax = isAMD?currentcpuinfo->vmcb->CR3:vmread(vm_guest_cr3);
       break;
     }
 

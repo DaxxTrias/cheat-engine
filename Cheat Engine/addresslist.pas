@@ -159,7 +159,8 @@ type
 
 implementation
 
-uses dialogs, formAddressChangeUnit, TypePopup, PasteTableentryFRM, mainunit, ProcessHandlerUnit;
+uses dialogs, formAddressChangeUnit, TypePopup, PasteTableentryFRM, mainunit,
+  ProcessHandlerUnit, frmEditHistoryUnit;
 
 resourcestring
   rsDoYouWantToDeleteTheSelectedAddress = 'Do you want to delete the selected '
@@ -177,6 +178,9 @@ resourcestring
   rsType = 'Type';
   rsValue = 'Value';
   rsScript = '<script>';
+  rsALAddAddress = 'Add address';
+  rsALNoDescription = 'No description';
+  rsALAutoAssembleScritp = 'Auto Assemble script';
 
 procedure TTreeviewWithScroll.MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 var n: TTreenode;
@@ -386,10 +390,19 @@ end;
 
 procedure TAddresslist.ApplyFreeze;
 {Freeze all the records that are active}
-var i: integer;
+var
+  i: integer;
+  oldlogWrites: boolean;
 begin
-  for i:=0 to count-1 do
-    memrecitems[i].ApplyFreeze;
+  oldlogWrites:=logwrites;
+  //oldlogWrites:=false;
+
+  try
+    for i:=0 to count-1 do
+      memrecitems[i].ApplyFreeze;
+  finally
+    logWrites:=oldlogWrites;
+  end;
 end;
 
 procedure TAddresslist.saveTableXMLToNode(CheatEntries: TDOMNode; selectedOnly: boolean=false);
@@ -635,7 +648,7 @@ begin
   memrec:=TMemoryrecord.Create(self);
   memrec.id:=GetUniqueMemrecId;
   memrec.isGroupHeader:=false;
-  memrec.Description:='Auto Assemble script';
+  memrec.Description:=rsALAutoAssembleScritp;
   memrec.AutoAssemblerData.script:=tstringlist.create;
   memrec.AutoAssemblerData.script.text:=script;
 
@@ -689,7 +702,7 @@ begin
 
 
   Treeview.BeginUpdate;
-  mr:=addaddress('No description',initialaddress,[],0, vartype);
+  mr:=addaddress(rsALNoDescription,initialaddress,[],0, vartype);
   mr.visible:=false;
   Treeview.EndUpdate;
 
@@ -697,7 +710,7 @@ begin
   //changevalue, if cancel, delete
   with TFormaddresschange.Create(self) do
   begin
-    caption:='Add address';
+    caption:=rsALAddAddress;
     memoryrecord:=mr;
     if showmodal<>mrok then
     begin
@@ -714,6 +727,8 @@ begin
   end;
 
   //treeview.EndUpdate;
+
+  mainform.editedsincelastsave:=true;
 
   result:=mr;
 end;
@@ -1804,7 +1819,11 @@ begin
             else
               sender.Canvas.TextRect(rect(header.Sections[3].left, textrect.Top, header.Sections[3].right, textrect.bottom),header.sections[3].left, linetop, VariableTypeToString(memrec.VarType)+':'+inttostr(memrec.Extra.bitData.Bit)+'->'+inttostr(memrec.Extra.bitData.Bit+memrec.Extra.bitData.bitlength-1));
           end
-          else sender.Canvas.TextRect(rect(header.Sections[3].left, textrect.Top, header.Sections[3].right, textrect.bottom),header.sections[3].left, linetop, VariableTypeToString(memrec.VarType));
+          else
+          begin
+
+            sender.Canvas.TextRect(rect(header.Sections[3].left, textrect.Top, header.Sections[3].right, textrect.bottom),header.sections[3].left, linetop, VariableTypeToTranslatedString(memrec.VarType));
+          end
         end;
 
 
@@ -1980,4 +1999,3 @@ begin
 end;
 
 end.
-

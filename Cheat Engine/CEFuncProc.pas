@@ -37,6 +37,7 @@ commontypedefs;
 
 
 //function NewVarTypeToOldVarType(i: TVariableType):integer;
+function VariableTypeToTranslatedString(variableType: TVariableType): string;
 function OldVarTypeToNewVarType(i: integer):TVariableType;
 function VariableTypeToString(variableType: TVariableType): string;
 function StringToVariableType(s: string): TVariableType;
@@ -55,7 +56,8 @@ function GetUserNameFromPID(ProcessId: DWORD): string;
 //procedure GetProcessList(ProcessList: TStrings; NoPID: boolean=false; noProcessInfo: boolean=false);  overload;
 procedure GetThreadList(threadlist: TStrings);
 //procedure cleanProcessList(processlist: TStrings);
-procedure GetWindowList(ProcessList: TListBox; showInvisible: boolean=true);
+procedure GetWindowList(ProcessList: TStrings; showInvisible: boolean=true); overload;
+procedure GetWindowList(ProcessListBox: TListBox; showInvisible: boolean=true); overload;
 procedure GetModuleList(ModuleList: TStrings; withSystemModules: boolean);
 procedure cleanModuleList(ModuleList: TStrings);
 
@@ -125,8 +127,7 @@ function AccessRightsToAllocationProtect(ar: TAccessRights): Dword;
 
 function freetypetostring(freetype: dword):string;
 
-function isAddress(address: ptrUint):boolean;
-function isExecutableAddress(address: ptrUint):boolean;
+
 function MinX(a, b: ptrUint): ptrUint;inline; overload; //fpc2.4.1 has no support for unsigned
 function MaxX(a, b: ptrUint): ptrUint;inline; overload;
 
@@ -134,7 +135,7 @@ function MaxX(a, b: ptrUint): ptrUint;inline; overload;
 function InRangeX(const AValue, AMin, AMax: ptrUint): Boolean;inline;
 function InRangeQ(const AValue, AMin, AMax: qword): Boolean;inline;
 
-function FindFreeBlockForRegion(base: ptrUint; size: dword): pointer;
+
 
 function getProcessnameFromProcessID(pid: dword): string;
 function getProcessPathFromProcessID(pid: dword): string;
@@ -322,7 +323,8 @@ implementation
 
 uses disassembler,CEDebugger,debughelper, symbolhandler,frmProcessWatcherUnit,
      kerneldebugger, formsettingsunit, MemoryBrowserFormUnit, savedscanhandler,
-     networkInterface, networkInterfaceApi, processlist, Parsers, Globals;
+     networkInterface, networkInterfaceApi, vartypestrings, processlist, Parsers,
+     Globals;
 
 
 resourcestring
@@ -376,7 +378,8 @@ resourcestring
   rsICanTGetTheProcessListYouArePropablyUsingWindowsNT = 'I can''t get the process list. You are propably using windows NT. Use the window list instead!';
   rsNoKernel32DllLoaded = 'No kernel32.dll loaded';
   rsSeparator = 'Separator';
-
+  rsCEFPDllInjectionFailedSymbolLookupError = 'Dll injection failed: symbol lookup error';
+  rsCEFPICantGetTheProcessListYouArePropablyUseinWindowsNtEtc = 'I can''t get the process list. You are propably using windows NT. Use the window list instead!';
 
 function ProcessID: dword;
 begin
@@ -550,6 +553,8 @@ begin
         VK_OEM_6 : newstr:=']';
         VK_OEM_7 : newstr:='''';
 
+
+
         48..57      : newstr:=chr(x[i]);
         65..90      : newstr:=chr(x[i]);
         else  newstr:='#'+inttostr(x[i]);
@@ -700,7 +705,7 @@ begin
       except
 {$ifdef cpu64}
         if not processhandler.is64Bit then
-          raise exception.create('Dll injection failed: symbol lookup error');
+          raise exception.create(rsCEFPDllInjectionFailedSymbolLookupError);
 {$endif}
         GetProcAddressPtr:=GetProcAddress(h,'GetProcAddress');
       end;
@@ -713,7 +718,7 @@ begin
         //failed getting the address of LoadLibraryA, use old method
         {$ifdef cpu64}
           if not processhandler.is64Bit then
-            raise exception.create('Dll injection failed: symbol lookup error');
+            raise exception.create(rsCEFPDllInjectionFailedSymbolLookupError);
         {$endif}
         LoadLibraryPtr:=GetProcAddress(h,'LoadLibraryA');
       end;
@@ -953,21 +958,30 @@ begin
           dec(counter);
         end;
 
-        closehandle(threadhandle);
+        try
 
-        if (counter=0) then
-          raise exception.Create(rsTheInjectionThreadTookLongerThan10SecondsToExecute);
 
-        if getexitcodethread(threadhandle,res) then
-        begin
-          case res of
-            1: ;//success
-            2: raise exception.Create(rsFailedInjectingTheDLL);
-            3: raise exception.Create(rsFailedExecutingTheFunctionOfTheDll);
-            else raise exception.Create(rsUnknownErrorDuringInjection);
-          end;
-        end; //else unsure, did it work or not , or is it crashing?
+          if (counter=0) then
+            raise exception.Create(rsTheInjectionThreadTookLongerThan10SecondsToExecute);
 
+          if getexitcodethread(threadhandle,res) then
+          begin
+            case res of
+              1: ;//success
+              2: raise exception.Create(utf8toansi(rsFailedInjectingTheDLL));
+              3: raise exception.Create(utf8toansi(rsFailedExecutingTheFunctionOfTheDll));
+              else raise exception.Create(utf8toansi(rsUnknownErrorDuringInjection));
+            end;
+          end
+          else
+          begin
+            OutputDebugString('failure to get the exitcode of the thread.'+inttostr(GetLastError));
+          end; //else unsure, did it work or not , or is it crashing?
+
+
+        finally
+          closehandle(threadhandle);
+        end;
       end;
     finally
       FreeLibrary(h);
@@ -1822,7 +1836,7 @@ begin
 
       check:=Process32Next(SnapHandle,ProcessEntry);
     end;
-  end else raise exception.Create('I can''t get the process list. You are propably using windows NT. Use the window list instead!');
+  end else raise exception.Create(rsCEFPICantGetTheProcessListYouArePropablyUseinWindowsNtEtc);
 end;   }
 
 
@@ -2102,7 +2116,7 @@ begin
   end else raise exception.Create(rsICanTGetTheProcessListYouArePropablyUsingWindowsNT);
 end;    }
 
-procedure GetWindowList(ProcessList: TListBox; showInvisible: boolean=true);
+procedure GetWindowList(ProcessList: TStrings; showInvisible: boolean=true);
 var previouswinhandle, winhandle: Hwnd;
     winprocess: Dword;
     temp: Pchar;
@@ -2114,6 +2128,98 @@ var previouswinhandle, winhandle: Hwnd;
     ProcessListInfo: PProcessListInfo;
     tempdword: dword;
 begin
+  getmem(temp,101);
+  try
+    x:=tstringlist.Create;
+
+    for i:=0 to processlist.count-1 do
+      if processlist.Objects[i]<>nil then
+      begin
+        ProcessListInfo:=PProcessListInfo(processlist.Objects[i]);
+        if ProcessListInfo.processIcon>0 then
+          DestroyIcon(ProcessListInfo.processIcon);
+
+        freemem(ProcessListInfo);
+      end;
+    processlist.clear;
+
+    winhandle:=getwindow(getforegroundwindow,GW_HWNDFIRST);
+
+    i:=0;
+    while (winhandle<>0) and (i<10000) do
+    begin
+
+
+      if showInvisible or IsWindowVisible(winhandle) then
+      begin
+        GetWindowThreadProcessId(winhandle,addr(winprocess));
+        temp[0]:=#0;
+        getwindowtext(winhandle,temp,100);
+        temp[100]:=#0;
+        wintitle:=temp;
+
+
+        if ((not ProcessesCurrentUserOnly) or (GetUserNameFromPID(winprocess)=username)) and (length(wintitle)>0) then
+        begin
+          getmem(ProcessListInfo,sizeof(TProcessListInfo));
+          ProcessListInfo.processID:=winprocess;
+          ProcessListInfo.processIcon:=0;
+
+          if formsettings.cbProcessIcons.checked then
+          begin
+            tempdword:=0;
+            if SendMessageTimeout(winhandle,WM_GETICON,ICON_SMALL,0,SMTO_ABORTIFHUNG, 100, tempdword )<>0 then
+            begin
+              ProcessListInfo.processIcon:=tempdword;
+              if ProcessListInfo.processIcon=0 then
+              begin
+                if SendMessageTimeout(winhandle,WM_GETICON,ICON_SMALL2,0,SMTO_ABORTIFHUNG, 100, tempdword	)<>0 then
+                  ProcessListInfo.processIcon:=tempdword;
+
+                if ProcessListInfo.processIcon=0 then
+                  if SendMessageTimeout(winhandle,WM_GETICON,ICON_BIG,0,SMTO_ABORTIFHUNG, 100, tempdword	)<>0 then
+                    ProcessListInfo.processIcon:=tempdword;
+              end;
+            end else
+            begin
+              inc(i,100); //at worst case scenario this causes the list to wait 10 seconds
+            end;
+          end;
+
+
+          x.AddObject(IntTohex(winprocess,8)+'-'+AnsiToUtf8(wintitle),TObject(ProcessListInfo));
+        end;
+      end;
+
+      previouswinhandle:=winhandle;
+      winhandle:=getwindow(winhandle,GW_HWNDNEXT);
+
+      if winhandle=previouswinhandle then break;
+
+      inc(i);
+    end;
+
+    x.Sort;
+    processlist.Assign(x);
+  finally
+    freemem(temp);
+  end;
+end;
+
+procedure GetWindowList(ProcessListBox: TListBox; showInvisible: boolean=true);
+var previouswinhandle, winhandle: Hwnd;
+    winprocess: Dword;
+    temp: Pchar;
+    wintitle: string;
+
+    x: tstringlist;
+    i,j:integer;
+
+    ProcessListInfo: PProcessListInfo;
+    tempdword: dword;
+begin
+  GetWindowList(ProcessListBox.Items, showInvisible);
+ {
   getmem(temp,101);
   try
     x:=tstringlist.Create;
@@ -2189,7 +2295,7 @@ begin
     processlist.Items.Assign(x);
   finally
     freemem(temp);
-  end;
+  end; }
 end;
 
 function GetCEdir:string;
@@ -2212,7 +2318,7 @@ begin
 
 
   if DirectoryExists(tablesdir)=false then
-    CreateDir(tablesdir);
+    tablesdir:='';
 
 end;
 
@@ -2680,6 +2786,26 @@ begin
   end;
 end;
 
+function VariableTypeToTranslatedString(variableType: TVariableType): string;
+begin
+  case variabletype of
+    vtAll: result:=rs_vtAll;
+    vtBinary: result:=rs_vtBinary;
+    vtByteArray: Result:=rs_vtByteArray;
+    vtByte: result:=rs_vtByte;
+    vtWord: Result:=rs_vtWord;
+    vtDword: Result:=rs_vtDword;
+    vtQword: Result:=rs_vtQword;
+    vtSingle: Result:=rs_vtSingle;
+    vtDouble: Result:=rs_vtDouble;
+    vtString: Result:=rs_vtString;
+    vtUnicodeString: Result:=rs_vtUnicodeString;
+    vtPointer: result:=rs_vtPointer;
+    vtAutoAssembler: Result:=rs_vtAutoAssembler;
+    vtCustom: Result:=rs_vtCustom;
+  end;
+end;
+
 function VariableTypeToString(variableType: TVariableType): string;
 begin
   case variabletype of
@@ -2828,21 +2954,6 @@ begin
 end;
 
 
-function isAddress(address: ptrUint):boolean;
-var mbi: TMemoryBasicInformation;
-begin
-  result:=false;
-  if VirtualQueryEx(processhandle, pointer(address), mbi, sizeof(mbi))>0 then
-    result:=(mbi.State=MEM_COMMIT);// and (mbi.AllocationProtect<>PAGE_NOACCESS);
-end;
-
-function isExecutableAddress(address: ptrUint):boolean;
-var mbi: TMemoryBasicInformation;
-begin
-  result:=false;
-  if VirtualQueryEx(processhandle, pointer(address), mbi, sizeof(mbi))>0 then
-    result:=(mbi.State=MEM_COMMIT) and (((mbi.Protect and PAGE_EXECUTE)=PAGE_EXECUTE) or ((mbi.Protect and PAGE_EXECUTE_READ)=PAGE_EXECUTE_READ) or ((mbi.Protect and PAGE_EXECUTE_READWRITE)=PAGE_EXECUTE_READWRITE) or ((mbi.Protect and PAGE_EXECUTE_WRITECOPY)=PAGE_EXECUTE_WRITECOPY) );
-end;
 
 
 function MinX(a, b: ptrUint): ptrUint;inline;
@@ -2873,129 +2984,7 @@ begin
   Result:=(AValue>=AMin) and (AValue<=AMax);
 end;
 
-function FindFreeBlockForRegion(base: ptrUint; size: dword): pointer;
-{
-Query the memory arround base to find an empty block that is at least 'size' big
-}
-var
-  mbi: MEMORY_BASIC_INFORMATION;
-  x: ptrUint;
-  offset: ptrUint;
 
-  b,oldb: ptrUint;
-
-  minAddress,maxAddress: ptrUint;
-
-  c: TCEConnection;
-begin
-
-  //todo: Do some network specific stuff
-
-  result:=nil;
- // if not processhandler.is64Bit then exit; //don't bother
-
-  //64-bit
-
-  if base=0 then exit;
-
-  minAddress:=base-$70000000; //let's add in some extra overhead to skip the last fffffff
-  maxAddress:=base+$70000000;
-
-  if processhandler.is64Bit then
-  begin
-    if getConnection<>nil then
-    begin
-      minAddress:=$8000;
-      maxAddress:=$7fffffffffffffff;
-    end
-    else
-    begin
-      if (minAddress>ptrUint(systeminfo.lpMaximumApplicationAddress)) or (minAddress<ptrUint(systeminfo.lpMinimumApplicationAddress)) then
-        minAddress:=ptrUint(systeminfo.lpMinimumApplicationAddress);
-
-      if (maxAddress<ptrUint(systeminfo.lpMinimumApplicationAddress)) or (maxAddress>ptrUint(systeminfo.lpMaximumApplicationAddress)) then
-        maxAddress:=ptrUint(systeminfo.lpMaximumApplicationAddress);
-    end;
-  end
-  else
-  begin
-    minaddress:=$10000;
-    maxaddress:=$fffffffff;
-  end;
-
-
-  if processhandler.isNetwork then
-    systeminfo.dwAllocationGranularity:=4096;
-
-  b:=minAddress;
-
-
-  ZeroMemory(@mbi,sizeof(mbi));
-  while VirtualQueryEx(processhandle,pointer(b),mbi,sizeof(mbi))=sizeof(mbi) do
-  begin
-    if mbi.BaseAddress>pointer(maxAddress) then exit; //no memory found, just return 0 and let windows decide
-
-    if (mbi.State=MEM_FREE) and ((mbi.RegionSize)>size) then
-    begin
-      if (ptrUint(mbi.baseaddress) mod systeminfo.dwAllocationGranularity)>0 then
-      begin
-        //the whole size can not be used
-        x:=ptrUint(mbi.baseaddress);
-        offset:=systeminfo.dwAllocationGranularity - (x mod systeminfo.dwAllocationGranularity);
-
-        //check if there's enough left
-        if (mbi.regionsize-offset)>=size then
-        begin
-          //yes
-          x:=x+offset;
-
-          if x<base then
-          begin
-            x:=x+(mbi.regionsize-offset)-size;
-            if x>base then x:=base;
-
-            //now decrease x till it's alligned properly
-            x:=x-(x mod systeminfo.dwAllocationGranularity);
-          end;
-
-          //if the difference is closer then use that
-          if abs(ptrInt(x-base))<abs(ptrInt(ptrUint(result)-base)) then
-            result:=pointer(x);
-        end;
-        //nope
-
-      end
-      else
-      begin
-        x:=ptrUint(mbi.BaseAddress);
-        if x<base then //try to get it the closest possible (so to the end of the region-size and aligned by dwAllocationGranularity)
-        begin
-          x:=(x+mbi.RegionSize)-size;
-          if x>base then x:=base;
-
-          //now decrease x till it's alligned properly
-          x:=x-(x mod systeminfo.dwAllocationGranularity);
-        end;
-
-
-        if abs(ptrInt(x-base))<abs(ptrInt(ptrUint(result)-base)) then
-          result:=pointer(x);
-      end;
-
-    end;
-
-    if (mbi.regionsize mod systeminfo.dwAllocationGranularity)>0 then
-      mbi.RegionSize:=mbi.regionsize+(systeminfo.dwAllocationGranularity-(mbi.regionsize mod systeminfo.dwAllocationGranularity));
-
-
-    oldb:=b;
-    b:=ptrUint(mbi.BaseAddress)+mbi.RegionSize;
-
-    if b>maxAddress then exit;
-    if oldb>b then exit; //overflow
-  end;
-
-end;
 
 function getProcessPathFromProcessID(pid: dword): string;
 var ths: thandle;

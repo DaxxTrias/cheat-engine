@@ -4,8 +4,15 @@ unit disassembler;
 
 interface
 
+{$ifdef jni}
+uses unixporthelper, sysutils, byteinterpreter, symbolhandler, NewKernelHandler,
+ ProcessHandlerUnit, LastDisassembleData, DisassemblerArm, commonTypeDefs;
+{$endif}
+
+{$ifdef windows}
 uses windows, imagehlp,sysutils,LCLIntf,byteinterpreter, symbolhandler,CEFuncProc,
   NewKernelHandler, ProcessHandlerUnit, LastDisassembleData, disassemblerarm, commonTypeDefs;
+{$endif}
 
 //translation: There is no fucking way I change the descriptions to resource strings
 //if you're bored, go do this
@@ -95,7 +102,7 @@ type
     is64BitOverrideState: boolean;
 
     LastDisassembleData: TLastDisassembleData;
-
+    MarkIPRelativeInstructions: boolean;
 
 
 //    showvalues: boolean;
@@ -157,7 +164,14 @@ var visibleDisassembler: TDisassembler; //this disassembler is used to render th
 
 implementation
 
-uses Assemblerunit,CEDebugger, debughelper, StrUtils, debuggertypedefinitions, Parsers;
+{$ifdef jni}
+uses Assemblerunit, StrUtils, Parsers, memoryQuery;
+{$endif}
+
+{$ifdef windows}
+uses Assemblerunit,CEDebugger, debughelper, StrUtils, debuggertypedefinitions, Parsers, memoryQuery, binutils;
+{$endif}
+
 
 function registerGlobalDisassembleOverride(m: TDisassembleEvent): integer;
 var i: integer;
@@ -983,8 +997,6 @@ begin
     LastDisassembleData.Seperators[LastDisassembleData.SeperatorCount]:=last;
     inc(LastDisassembleData.SeperatorCount);
   end;
-
-  if last>15 then messagebox(0,pchar(result),nil,0);
 end;
 
 
@@ -1163,7 +1175,7 @@ begin
       3: LastDisassembleData.sibScaler:=8;
     end;
 
-    if ss>0 then
+    if (ss>0) and (index<>4) then
       indexstring:=indexstring+'*'+colorhex+inttostr(LastDisassembleData.sibScaler)+endcolor;
 
     if indexstring<>'' then
@@ -1259,6 +1271,7 @@ begin
 
 end;
 
+{$ifndef jni}
 procedure repairbreakbyte(address: ptruint; var b: byte);
 {changes the given byte to the original byte if it is in fact a int3 breakpoint}
 //pre: debuggerthread is valid
@@ -1273,6 +1286,7 @@ begin
   end;
   debuggerthread.unlockbplist;
 end;
+{$endif}
 
 function disassemble(var offset: ptrUint; var description: string): string; overload;
 begin
@@ -1306,6 +1320,41 @@ var memory: TMemory;
     prefixsize: integer;
     mi: TModuleInfo;
 begin
+  if defaultBinutils<>nil then
+  begin
+    //use this
+    LastDisassembleData.address:=offset;
+    LastDisassembleData.SeperatorCount:=0;
+    defaultBinutils.disassemble(LastDisassembleData);
+
+    result:=inttohex(LastDisassembleData.address,8);
+    result:=result+' - ';
+    for i:=0 to length(LastDisassembleData.bytes)-1 do
+      result:=result+inttohex(LastDisassembleData.Bytes[i],2)+' ';
+
+    result:=result+' - ';
+    result:=result+LastDisassembleData.opcode;
+    result:=result+' ';
+    result:=result+LastDisassembleData.parameters;
+
+    if length(LastDisassembleData.bytes)>0 then
+      inc(offset,length(LastDisassembleData.bytes))
+    else
+    begin
+      if processhandler.SystemArchitecture=archArm then
+      begin
+        if (offset or 1)=1 then
+          inc(offset,2)
+        else
+          inc(offset,4);
+      end
+      else
+        inc(offset,1);
+    end;
+
+    exit;
+  end;
+
   if is64bitOverride then
     is64bit:=is64BitOverrideState
   else
@@ -1415,10 +1464,12 @@ begin
   begin
     //I HATE THESE...   (I propably will not add them all, but I'll see how far I get)
 
+    {$ifndef jni}
     if debuggerthread<>nil then
       for i:=0 to actualread-1 do
         if memory[i]=$cc then
           memory[i]:=debuggerthread.getrealbyte(offset+i);
+    {$endif}
 
 
     while isprefix do
@@ -1545,8 +1596,10 @@ begin
       end *) ;
     end;
 
+    {$ifdef windows}
     if (memory[0]=$cc) and (debuggerthread<>nil) then //if it's a int3 breakpoint and there is a debugger attached check if it's a bp
       repairbreakbyte(startoffset, memory[0]);
+    {$endif}
 
 
     prefixsize:=length(LastDisassembleData.bytes);
@@ -3798,6 +3851,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -3819,6 +3877,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -3842,6 +3905,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -3864,6 +3932,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -3886,6 +3959,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -3908,6 +3986,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -3930,6 +4013,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
@@ -3952,6 +4040,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -3973,6 +4066,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -3994,6 +4092,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -4015,6 +4118,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -4036,6 +4144,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -4057,6 +4170,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -4078,6 +4196,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -4099,6 +4222,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -4120,6 +4248,11 @@ begin
                         lastdisassembledata.isjump:=true;
                         lastdisassembledata.isconditionaljump:=true;
                         inc(offset,1+4);
+                        if MarkIPRelativeInstructions then
+                        begin
+                          LastDisassembleData.riprelative:=2;
+                          riprelative:=true;
+                        end;
 
                         lastdisassembledata.parametervaluetype:=dvtaddress;
                         if is64bit then
@@ -10120,13 +10253,18 @@ begin
               lastdisassembledata.isjump:=true;
               lastdisassembledata.iscall:=true;
 
+              if MarkIPRelativeInstructions then
+              begin
+                LastDisassembleData.riprelative:=1;
+                riprelative:=true;
+              end;
               inc(offset,4);
               lastdisassembledata.parametervaluetype:=dvtaddress;
 
               if is64bit then
-                  lastdisassembledata.parametervalue:=qword(offset+pinteger(@memory[1])^)
-                else
-                  lastdisassembledata.parametervalue:=dword(offset+pinteger(@memory[1])^);
+                lastdisassembledata.parametervalue:=qword(offset+pinteger(@memory[1])^)
+              else
+                lastdisassembledata.parametervalue:=dword(offset+pinteger(@memory[1])^);
 
               lastdisassembledata.parameters:=inttohexs(lastdisassembledata.parametervalue,8);
 
@@ -10151,6 +10289,13 @@ begin
               else
               begin
                 lastdisassembledata.opcode:='jmp';
+
+                if MarkIPRelativeInstructions then
+                begin
+                  LastDisassembleData.riprelative:=1;
+                  riprelative:=true;
+                end;
+
                 inc(offset,4);
                 lastdisassembledata.parametervaluetype:=dvtaddress;
 
@@ -10801,7 +10946,7 @@ returns if the opcode has an accessible address specifier or not, and the addres
 var
   s: string;
   i,j: integer;
-  x: dword;
+  br: ptruint;
 
   haserror: boolean;
 begin
@@ -10825,7 +10970,9 @@ begin
     if has4ByteHexString(d,s) then
     begin
       address:=StrToQWordEx(s); //s already has the $ in front
+
       result:=isAddress(address);
+
     end;
   end else
   begin
@@ -11015,7 +11162,7 @@ begin
         vtString:
         begin
           buffer[x]:=0;
-          result:=pchar(@buffer[0]);
+          result:='"'+pchar(@buffer[0])+'"';
         end;
 
 
@@ -11025,7 +11172,7 @@ begin
           if x>0 then
             buffer[x-1]:=0;
 
-          result:=pwidechar(@buffer[0]);
+          result:='"'+pwidechar(@buffer[0])+'"';
         end;
 
         vtPointer:

@@ -13,7 +13,7 @@ uses jwawindows, windows, sysutils, classes, types, registry, multicpuexecution,
 
 
 
-const currentversion=2000016;
+const currentversion=2000017;
 
 const FILE_ANY_ACCESS=0;
 const FILE_SPECIAL_ACCESS=FILE_ANY_ACCESS;
@@ -112,6 +112,10 @@ const IOCTL_CE_STARTACCESMONITOR      = (IOCTL_UNKNOWN_BASE shl 16) or ($0848 sh
 
 const IOCTL_CE_ENUMACCESSEDMEMORY     = (IOCTL_UNKNOWN_BASE shl 16) or ($0849 shl 2) or (METHOD_BUFFERED ) or (FILE_RW_ACCESS shl 14);
 const IOCTL_CE_GETACCESSEDMEMORYLIST  = (IOCTL_UNKNOWN_BASE shl 16) or ($084a shl 2) or (METHOD_BUFFERED ) or (FILE_RW_ACCESS shl 14);
+
+const IOCTL_CE_WRITESIGNOREWP         = (IOCTL_UNKNOWN_BASE shl 16) or ($084b shl 2) or (METHOD_BUFFERED ) or (FILE_RW_ACCESS shl 14);
+
+
 
 
 type TDeviceIoControl=function(hDevice: THandle; dwIoControlCode: DWORD; lpInBuffer: Pointer; nInBufferSize: DWORD; lpOutBuffer: Pointer; nOutBufferSize: DWORD; var lpBytesReturned: DWORD; lpOverlapped: POverlapped): BOOL; stdcall;
@@ -279,7 +283,7 @@ function ultimap_continue(previousdataresult: PUltimapDataEvent): boolean;
 procedure ultimap_flush;
 
 
-procedure LaunchDBVM; stdcall;
+procedure LaunchDBVM(cpuid: integer); stdcall;
 
 function GetGDT(limit: pword):dword; stdcall;
 
@@ -294,7 +298,7 @@ procedure writeMSR(msr: dword; value: qword);
 
 function MarkAllPagesAsNonAccessed(hProcess: THandle):boolean;
 function EnumAndGetAccessedPages(hProcess: THandle; var r: TPRangeDynArray):integer;
-
+function KernelWritesIgnoreWriteProtection(state: boolean): boolean;
 
 
 type TIsWow64Process=function (processhandle: THandle; var isWow: BOOL): BOOL; stdcall;
@@ -308,7 +312,7 @@ var kernel32dll: thandle;
 
 implementation
 
-uses vmxfunctions, DBK64SecondaryLoader, NewKernelHandler, frmDriverLoadedUnit, CEFuncProc;
+uses vmxfunctions, DBK64SecondaryLoader, NewKernelHandler, frmDriverLoadedUnit, CEFuncProc, Parsers;
 
 var dataloc: string;
     applicationPath: string;
@@ -1229,7 +1233,7 @@ begin
 
   //not found so ....
 
-  if (BaseAddress>=qword($8000000000000000)) and (dbvmversion>=5) then //if dbvm is running and it's a kernel accesses use dbvm
+  if (BaseAddress>=qword($8000000000000000)) and (vmx_enabled and (dbvm_version>=$ce000005)) then //if dbvm is running and it's a kernel accesses use dbvm
     result:=dbvm_copyMemory(pointer(BaseAddress), lpBuffer, nSize)
   else
     result:=windows.writeProcessMemory(hProcess,pointer(ptrUint(BaseAddress)),lpBuffer,nSize,NumberOfByteswritten);
@@ -1278,6 +1282,10 @@ begin
     else
       result:=0;
   end else result:=windows.OpenProcess(dwDesiredAccess,bInheritHandle,dwProcessID);
+
+{$ifdef badopen}
+  result:=0;
+{$endif}
 
   if result=0 then //you can still access memory using the low level stuff, just not normal stuff
   begin
@@ -1381,6 +1389,24 @@ begin
     end;
 end;
 
+function KernelWritesIgnoreWriteProtection(state: boolean): boolean;
+var
+  br,cc: dword;
+  _state: byte;
+begin
+  result:=false;
+  if hdevice<>INVALID_HANDLE_VALUE then
+  begin
+    cc:=IOCTL_CE_WRITESIGNOREWP;
+
+    if state then
+      _state:=1
+    else
+      _state:=0;
+
+    result:=deviceiocontrol(hdevice,cc,@_state,1,nil,0,br,nil);
+  end;
+end;
 
 
 
@@ -1391,7 +1417,7 @@ var
   ranges: PPRangeArray;
   i: integer;
 begin
-
+  result:=0;
 
   if hdevice<>INVALID_HANDLE_VALUE then
   begin
@@ -1658,7 +1684,7 @@ begin
       result:=output;
   end
   else
-  if dbvmversion>=5 then
+  if dbvm_version>=5 then
   begin
     //try allocating using dbvm
     result:=uint64(dbvm_kernelalloc(size));
@@ -1695,7 +1721,7 @@ begin
   end
   else
   begin
-    if dbvmversion>=5 then
+    if dbvm_version>=5 then
       result:=uint64(dbvm_getProcAddress(st));
   end;
 
@@ -1849,6 +1875,8 @@ end;
 function ultimap_disable: BOOLEAN; stdcall;
 var cc: dword;
 begin
+  result:=false;
+
   if (hdevice<>INVALID_HANDLE_VALUE) then
   begin
     cc:=IOCTL_CE_ULTIMAP_DISABLE;
@@ -1863,9 +1891,15 @@ var
 begin
   result:=QWORD($ffffffffffffffff);
 
-  if dbvmversion>=6 then
-    result:=dbvm_readMSR(msr) //will raise a GPF if it doesn't exist
-  else
+  if dbvm_version>=6 then
+  begin
+    try
+      result:=dbvm_readMSR(msr); //will raise a GPF if it doesn't exist
+      exit;
+    except
+    end;
+  end;
+
   if (hdevice<>INVALID_HANDLE_VALUE) then
   begin
     cc:=IOCTL_CE_READMSR;
@@ -1887,7 +1921,7 @@ var
     msrvalue: uint64;
   end;
 begin
-  if dbvmversion>=6 then
+  if dbvm_version>=6 then
     dbvm_writeMSR(msr, value)
   else
   if (hdevice<>INVALID_HANDLE_VALUE) then
@@ -1903,51 +1937,124 @@ begin
 end;
 
 
+function AllCoresHaveDBVMLoaded: boolean;
+var
+  i: integer;
+  proc, sys: DWORD_PTR;
+begin
+  result:=true;
+  GetProcessAffinityMask(GetCurrentProcess, proc, sys);
+
+  for i:=0 to {$ifdef cpu32}31{$else}63{$endif} do
+  begin
+
+    if getbit(i, sys)=1 then
+    begin
+      SetProcessAffinityMask(GetCurrentProcess, 1 shl i);
+      sleep(10);
+
+      if dbvm_version=0 then
+        result:=false;
+    end;
+  end;
+
+
+  SetProcessAffinityMask(GetCurrentProcess, proc);
+end;
+
 function internal_LaunchDBVM(parameters: pointer): BOOL; stdcall;
 var
   cc: dword;
   Input: record
     dbvmimgpath: qword;
+    cpuid: dword;
   end;
 
   temp: widestring;
+
+  proc, sys: DWORD_PTR;
+
+  cpuid: integer;
+  fc: dword;
 begin
+
   if (hdevice<>INVALID_HANDLE_VALUE) then
   begin
     Outputdebugstring('LaunchDBVM');
-    cc:=IOCTL_CE_LAUNCHDBVM;
 
 
-    temp:='\??\'+widestring(applicationpath)+'vmdisk.img';
+    if parameters<>nil then
+    begin
+      OutputDebugString('Param is valid');
 
+      cpuid:=pinteger(parameters)^;
+      input.cpuid:=cpuid;
+      Outputdebugstring('For cpu '+inttostr(cpuid));
 
-    input.dbvmimgpath:=qword(ptrUint(@temp[1]));
-    result:=deviceiocontrol(hdevice,cc,@input,sizeof(Input),nil,0,cc,nil);
-  end else result:=false;
-end;
+      GetProcessAffinityMask(GetCurrentProcess, proc, sys);
+      SetProcessAffinityMask(GetCurrentProcess, 1 shl cpuid);
+      sleep(10);
+    end
+    else
+    begin
+      input.cpuid:=$ffffffff;
+      OutputDebugString('Param is invalid');
+    end;
 
-procedure LaunchDBVM; stdcall;
-var fc: dword;
-begin
-  if not vmx_enabled then
-  begin
     if not isAMD then
     begin
+      OutputDebugString('A');
       fc:=readMSR($3a); //get IA32_FEATURE_CONTROL
 
+      OutputDebugString('B');
       if (fc and 1)=1 then
       begin
         //the feature control msr is locked
         if (fc and (1 shl 2))=0 then
           raise exception.create('Could not launch DBVM: The Intel-VT feature has been disabled in your BIOS');
       end;
+      OutputDebugString('C');
     end;
 
-    internal_LaunchDBVM(nil);
+    cc:=IOCTL_CE_LAUNCHDBVM;
+    temp:='\??\'+widestring(applicationpath)+'vmdisk.img';
+
+    input.dbvmimgpath:=qword(ptrUint(@temp[1]));
+
+    OutputDebugString('Calling deviceiocontrol');
+    result:=deviceiocontrol(hdevice,cc,@input,sizeof(Input),nil,0,cc,nil);
+
+
+    configure_vmx(vmx_password1, vmx_password2);
+
+    if parameters<>nil then
+      SetProcessAffinityMask(GetCurrentProcess, proc);
+
+  end else result:=false;
+end;
+
+
+procedure LaunchDBVM(cpuid: integer); stdcall;
+begin
+  OutputDebugString('LaunchDBVM('+inttostr(cpuid)+') Before check');
+
+  if (not vmx_enabled) or (cpuid<>-1) then
+  begin
+    OutputDebugString('LaunchDBVM('+inttostr(cpuid)+')');
+
+    OutputDebugString('calling internal_LaunchDBVM');
+
+    internal_LaunchDBVM(@cpuid);
+
 
 //    foreachcpu(internal_LaunchDBVM,nil);
 
-    configure_vmx(vmx_password1, vmx_password2);
+
+  end;
+
+  if (cpuid=-1) or (AllCoresHaveDBVMLoaded) then
+  begin
+    OutputDebugString('All cpu cores loaded. Activate kernelmode dbvm support');
     configure_vmx_kernel;
   end;
 end;
