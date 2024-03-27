@@ -19,6 +19,7 @@ activateProtection(): Prevents basic memory scanners from opening the ..........
 fullAccess(address,size): Changes the protection of a block of memory to writable and executable
 
 loadTable(filename, merge OPTIONAL): Loads a .ct or .cetrainer. If merge is provided and set to true it will not clear the old table
+loadTable(stream ,merge OPTIONAL, ignoreluascriptdialog BOOLEAN): Loads a table from a stream object
 saveTable(filename, protect OPTIONAL): Saves the current table. If protect is provided and set to true and the filename has the .CETRAINER extension, it will protect it from reading normally
 
 note: addresses can be strings, they will get interpreted by ce's symbolhandler
@@ -91,6 +92,9 @@ createRef(...): integer - Returns an integer reference that you can use with get
 getRef(integer): ... - Returns whatever the reference points out
 destroyRef(integer) - Removes the reference
 
+encodeFunction(function): string - Converts a given function into an encoded string that you can pass on to decodeFunction
+decodeFunction(string): function - Converts an encoded string back into a function.  Note that the string must be made on the same architecture as it is currently running. 32-bit can onyl load 32-bit, 64-bit can only load 64-bit.  So either have two scripts ready, or limit to only one architecture. (Like .EXE trainers)
+
 reloadSettingsFromRegistry(): This will cause ............ to reload the settings from the registry and apply them
 
 getTranslationFolder(): Returns the path of the current translation files. Empty if there is no translation going on
@@ -112,6 +116,10 @@ enumModules(processid OPTIONAL):
 
 md5memory(address, size): Returns a md5 sum calculated from the provided memory. 
 md5file(pathtofile): Returns a md5 sum calculated from the file. 
+getFileVersion(pathtofile): returns the 64-bit file version, and a table that has split up the file version into major, minor, release and build
+
+getFileList(Path:string, searchMask:string OPTIONAL, SearchSubDirs: boolean, DirAttrib: integer): Returns an indexed table with filenames
+getDirectoryList(Path:string, SearchSubDirs: boolean): Returns an indexed table with directory names
 
 
 getAddress(string, local OPTIONAL): returns the address of a symbol. Can be a modulename or an export. set Local to true if you wish to querry the symboltable of the ce process
@@ -126,6 +134,18 @@ errorOnLookupFailure(state): If set to true (default) address lookups in stringf
 
 generateAPIHookScript(address, addresstojumpto, addresstogetnewcalladdress OPT) : Generates an auto assembler script which will hook the given address when executed
 autoAssemble(text, targetself OPTIONAL) : runs the auto assembler with the given text. Returns true on success (if targetself is set it will assemble into ............ itself)
+
+registerExeTrainerFeature(FeatureName:String, function():table): adds a new feature to the exe trainer generator window, and calls your function when the user builds an .exe trainer.  The function should return a table with table entries: PathToFile and RelativePath.
+  example output:
+    [1]: 
+      PathToFile=c:\cefolder\autorun\mycode.lua
+      RelativePath="autorun\"
+
+    [2]: 
+      PathToFile=c:\cefolder\autorun\dlls\mycode.lua
+      RelativePath="autorun\mylib.dll"
+                  
+
 
 registerAutoAssemblerCommand(command, function(parameters, syntaxcheckonly)): Registers an auto assembler command to call the specified function. The command will be replaced by the string this function returns when executed. The function can be called twice. Once for syntax check and symbol lookup(1), and the second time for actual execution by the assembler(2) if it has not been removed in phase1.
   Note: The callback function can return multiple values
@@ -191,8 +211,14 @@ registerAutoAssemblerPrologue(function(script, syntaxcheck), postAOB:boolean=fal
 
 unregisterAutoAssemblerPrologue(ID)
 
-registerAutoAssemblerTemplate(name, function(script: TStrings): id - Registers an template for the auto assembler. The script parameter is a TStrings object that has a direct connection to the current script. (All script parsing is up to you...).  Returns an ID
+registerAutoAssemblerTemplate(name, function(script: TStrings; sender: TFrmAutoInject): id - Registers an template for the auto assembler. The script parameter is a TStrings object that has a direct connection to the current script. (All script parsing is up to you...).  Returns an ID
 unregisterAutoAssemblerTemplate(ID)
+
+
+generateCodeInjectionScript(script: Tstrings, address: string): Adds a default codeinjection script to the given script
+generateAOBInjectionScript(script: Tstrings, symbolname: string, address: string): Adds an AOB injection script to the given script
+generateFullInjectionScript(script: Tstrings, address: string): Adds a Full Injection script to the given script
+
 
 
 showMessage(text) : shows a messagebox with the given text
@@ -206,7 +232,6 @@ getWindowlist(Strings): Fills a Strings inherited object with the top-window lis
 getWindowlist(): Returns a table with the windowlist (pid - window caption )
 
 getThreadlist(List): fills a List object with the threadlist of the currently opened process. Format: %x
-
 
 
 function onOpenProcess(processid):
@@ -224,6 +249,8 @@ pause() : pauses the current opened process
 unpause(): resumes the current opened process
 
 
+getCPUCount(): Returns the number of CPU's
+
 getPixel(x,y) : returns the rgb value of the pixel at the specific screen coordinate
 getMousePos: returns the x,y coordinates of the mouse
 setMousePos(x,y): sets the mouse position
@@ -232,6 +259,8 @@ isKeyPressed(key) : returns true if the specified key is currently pressed
 keyDown(key) : causes the key to go into down state
 keyUp(key) :causes the key to go up
 doKeyPress(key) : simulates a key press
+
+mouse_event(flags, x OPTIONAL, y OPTIONAL, data OPTIONAL, extra OPTIONAL) - The mouse_event windows API.  Check MSDN for information on how to use
 
 shortCutToText(shortcut): Returns the textual representation of the given shortut value (integer) (6.4+)
 textToShortCut(shortcutstring): Returns an shortcut integer that the given string represents.  (6.4+)
@@ -251,6 +280,7 @@ integerToUserData(int):  Converts a given integer to a userdata variable
 userDataToInteger(UserDataVar):  Converts a given userdata variable to an integer
 
 synchronize(function(...), ...): Calls the given function from the main thread. Returns the return value of the given function
+queue(function(...),...): calls the given function from the main thread. Does not wait for the result
 checkSynchronize(): Calls this from an infinite loop in the main thread when using threading and synchronize calls. This will execute any queued synchronize calls
 
 writeToClipboard(text):  Writes the given text to the clipboard
@@ -267,6 +297,8 @@ executeCodeLocal(addres, parameter OPTIONAL): address -  Executes a stdcall func
 
 loadPlugin(dllnameorpath): Loads the given plugin. Returns nil on failure. On success returns a value of 0 or greater
 
+loadFontFromStream(memorystream) : Loads a font from a memory stream and returns an id (handle) to the font for use with unloadLoadedFont
+unloadLoadedFont(id)
 
 
 registerCustomTypeLua(typename, bytecount, bytestovaluefunction, valuetobytesfunction, isFloat)
@@ -317,9 +349,10 @@ getWindowCaption(windowhandle) : string - Returns the caption of the window
 getWindowClassName(windowhandle): string - Returns the classname of the window
 getWindowProcessID(windowhandle): processid - Returns the processid of the process this window belongs to
 getForegroundWindow() - windowhandle : Returns the windowhandle of the topmost window
+
 sendMessage(hwnd, msg, wparam, lparam): result - Sends a message to a window. Those that wish to use it, should know how to use it (and fill in the msg id's yourself)
-
-
+hookWndProc(hwnd, function(hwnd, msg, wparam, lparam), ASYNC: BOOL) - Hooks a window's wndproc procedure. The given function will receive all functions.  Return 0 to say you handled it. 1 to let the default windows handler deal with it. Or anything else, to let the original handler deal with it.  Besides the return value, you can also return hWnd, Msg, lParam and wParam, modified, or nil for the original value.  Set ASYNC to true if you don't want to run this in the CE GUI. (faster, but you can't touch gui objects)
+unhookWndProc(hwnd) - call this when done with the hook.  Not calling this will result in the process window behaving badly when you exit CE
 
 
 cheatEngineIs64Bit(): Returns true if CE is 64-bit, false if 32-bit
@@ -339,6 +372,10 @@ beep() : Plays the fabulous beep/ping sound!
 playSound(stream, waittilldone OPTIONAL): Plays the given memorystream containing a .WAV formatted memory object. If waittilldone is true the script will stop executing till the sound has stopped
 playSound(tablefile, waittilldone OPTIONAL) : Takes the memorystream from the tablefile and plays it.
   There are two tablefiles predeclared inside ............ "Activate" and "Deactivate" . You are free to use or override them
+
+speak(text, waittilldone OPTIONAL): Speaks a given text.  If waitTillDone is true the thread it's in will be frozen till it is done
+speak(text, flags): Speaks a given text using the given flags. https://msdn.microsoft.com/en-us/library/speechplatform_speakflags.aspx
+speakEnglish(text, waittilldone OPTIONAL) - will try the English voice by wrapping the given text into an XML statement specifying the english voice. Will not say anything if no Egnlish language is present. Do not use SPF_IS_NOT_XML flag and SPF_PARSE_SSML won't work in this situation
 
 getUserRegistryEnvironmentVariable(name): string - Returns the environment variable stored in the user registry environment
 setUserRegistryEnvironmentVariable(name, string) - Sets the environment variable stored in the user registry environment
@@ -396,6 +433,8 @@ getXBox360ControllerState(ControllerID OPTIONAL) : table - Fetches the state of 
 
 
 setXBox360ControllerVibration(ControllerID, leftMotor, rightMotor) - Sets the speed of the left and right vibrating motor inside the controller. Range (0 to 65535 where 0 is off)
+
+connectToCEServer(hostname,port) - Connects to the given host and port. On success, most commands subsequent will be handled by the server. Like processlist, memory reading, etc...
 
 
 
@@ -532,6 +571,7 @@ inheritsFromControl(object): Returns true if the given object inherits from the 
 inheritsFromWinControl(object): Returns true if the given object inherits from the WinControl class
 
 createClass(classname): Creates an object of the specified class (Assuming it's a registered class and has a default constructor)
+createComponentClass(classname, owner): Creates an object of the specified component inherited class 
 
 
 Class definitions
@@ -618,6 +658,8 @@ methods:
   setOnClick(functionnameorstring) : Sets the onclick routine
   getOnClick(): Gets the onclick function
   doClick():  Executes the current function under onClick
+  bringToFront(): Changes the z-order of the control so it'd at the top
+  sendToBack(): Changes the z-order of the control so it'd at the back
 
 GraphicsObject : (GraphicsObject->Object)
 
@@ -751,9 +793,13 @@ methods
 Application Class: (Inheritance: CustomApplication->Component->Object)
 properties
   Title: The title of ............ in the bar
+  Icon: The icon of ............ inn the bar
 
 methods
   bringToFront(): Shows the ............ app
+  processMessages()
+  terminate()
+  minimize()
 
 
 Form Class: (Inheritance: ScrollingWinControl->CustomControl->WinControl->Control->Component->Object)
@@ -1058,6 +1104,7 @@ methods
   setMin(integer)- sets the min property
   getPosition() - returns the current position
   setPosition(integer) - sets the current position
+  setPosition2(integer) - sets the current position; without slow progress animation on Win7 and later
 
 
 
@@ -1198,6 +1245,8 @@ methods
   getItemIndex(): integer -  Returns the currently selected index in the Items object
   setItemIndex(index: integer)- Sets the current itemindex
   getCanvas() : Canvas - Returns the canvas object used to render the listview
+  beginUpdate() - Tells the listview to stop updating while you're busy
+  endUpdate() - Applies all updates between beginUpdate and endUpdate
 
 
 TreeNode class : (Inheritance: TObject)
@@ -1250,6 +1299,8 @@ properties
   Selected: TreeNode - The currently selected treenode
 
 methods
+  beginUpdate()
+  endUpdate()
   getItems()
   getSelected()
   setSelected()
@@ -1390,6 +1441,8 @@ createPNG(width, height) - Returns a PortableNetworkGraphic object
 JpegImage Class: (Inheritence: CustomBitmap->RasterImage->Graphic->Object)
 createJpeg(width, height) - Returns a Jpeg object
 
+Icon Class: (Inheritence: CustomBitmap->RasterImage->Graphic->Object)
+createIcon(width, height) - Returns an Icon object
 
 
 Picture Class : (Inheritance: Object) : Container for the Graphic class
@@ -1400,18 +1453,13 @@ properties
   PNG
   Bitmap
   Jpeg
+  Icon
 
 methods
   loadFromFile(filename)
   saveToFile(filename)
   loadFromStream(stream, originalextension OPTIONAL) : Loads a picture from a stream. Note that the stream position must be set to the start of the picture
   assign(sourcepicture)
-  getGraphic() : Gets the Graphic object of this picture
-  getPNG(): Returns a PortableNetworkGraphic Class object (Can be used from scratch)
-  getBitmap(): Returns a Bitmap Class object (Can be used from scratch)
-  getJpeg(): Returns a JpegImage Class object (Picture must be initialized with a jpeg file first)
-
-
 
 
 GenericHotkey Class : (Inheritance:  Object)
@@ -1602,12 +1650,23 @@ methods
 
 MemoryRecordHotkey Class: (Inheritance: object)
 The memoryrecord hotkey class is mainly readonly with the exception of the event properties to be used to automatically create trainers
-Use the genreric hotkey class if you wish to create your own hotkeys
+Use the generic hotkey class if you wish to create your own hotkeys
 
 properties
   Owner: MemoryRecord - The memoryrecord this hotkey belongs to (ReadOnly)
+  Keys: Table - Table containing the keys(combination) for this hotkey
+  action: integer - The action that should happen when this hotkey triggers
+      mrhToggleActivation(0): Toggles between active/deactive
+      mrhToggleActivationAllowIncrease(1): Toggles between active/deactive. Allows increase when active
+      mrhToggleActivationAllowDecrease(2): Toggles between active/deactive. Allows decrease when active
+      mrhActivate(3): Sets the state to active
+      mrhDeactivate(4):  Sets the state to deactive
+      mrhSetValue(5):  Sets a specific value to the value properyy (see value)
+      mrhIncreaseValue(6):  Increases the current value with the value property (see value)
+      mrhDecreaseValue(7):  Decreases the current value with the value property (see value)
+  value: string - Value used depending on what kind of hotkey is used
   ID: integer - Unique id of this hotkey (ReadOnly)
-  Description: string - The description of this hotkey (ReadOnly)
+  Description: string - The description of this hotkey  
   HotkeyString: string - The hotkey formatted as a string (ReadOnly)
   ActivateSound: string - Tablefile name of a WAV file inside the table which will get played on activate events
   DeactivateSound: string - Tablefile name of a .WAV file inside the table which will get played on deactivate events
@@ -1629,6 +1688,8 @@ properties
   Address: string - Get/set the interpretable address string. Useful for simple address settings.
   OffsetCount: integer - The number of offsets. Set to 0 for a normal address
   Offset[] : integer - Array to access each offset
+  OffsetText[] : string - Array to access each offset using the interpretable text style
+
   CurrentAddress: integer - The address the memoryrecord points to
   Type: ValueType - The variable type of this record. See vtByte to vtCustom
     If the type is vtString then the following properties are available:
@@ -1687,6 +1748,7 @@ methods
   getHotkey(index): Returns the hotkey from the hotkey array
   getHotkeyByID(integer): Returns the hotkey with the given id
 
+  createHotkey({keys}, action, value OPTIONAL): Returns a hotkey object 
 
 global events
   function onMemRecPreExecute(memoryrecord, newstate BOOLEAN):
@@ -1908,7 +1970,7 @@ createNativeThread(function(Thread,...), ...) :
   function declaration: function (Thread, ...)
 
 createNativeThreadSuspended(function(Thread,...), ...) :
-  Same as createNativeThread nut it won't run until resume is called on it
+  Same as createNativeThread but it won't run until resume is called on it
 
 
 properties
@@ -1937,6 +1999,54 @@ methods
 
   terminate() :
     Tells the thread it should terminate. The Terminated property will become true
+
+
+CriticalSection class: (Inheritance: Object)
+createCriticalSection(): Returns a critical section object
+
+properties
+-
+
+methods
+  enter()
+  leave()
+  tryEnter(): Returns true if entered, false if not
+
+
+Event class: (Inheritance: Object)
+createEvent(ManualReset, InitialState): Returns an event object
+
+properties
+-
+
+methods
+  resetEvent()
+  setEvent()
+  waitFor(timeout): Waits for the event to be set. Returns wrSignaled(0), wrTimeout(1), wrAbandoned(2) or wrError(3);  
+
+
+Semaphore class: (Inheritance: Object)
+createSemaphore(count): Returns an semaphore object
+properties
+-
+
+methods
+  acquire()
+  release()
+
+
+MultiReadExclusiveWriteSynchronizer class: (Inheritance: Object)
+createMultiReadExclusiveWriteSynchronizer(): Returns a createMultiReadExclusiveWriteSynchronizer
+
+properties
+-
+
+methods
+  beginWrite()
+  endWrite()
+  beginRead()
+  endRead()
+
 
 
 
@@ -2088,7 +2198,7 @@ dbvm_getCR4(): Returns the real Control Register 4 state
 allocateKernelMemory(size) : Allocates a block of nonpaged memory and returns the address
 freeKernelMemory(address) : Frees the given memory region
 
-mapMemory(address, size,  frompid OPTIONAL, topid OPTIONAL): maps a specific address to the usermode context from the given PID to the given PID. If the PID is 0 or not specified, the cheat engine process is selected. This functions returns 2 results. Address and MDL. The MDL you will need for unmapMemory()
+mapMemory(address, size,  frompid OPTIONAL, topid OPTIONAL): maps a specific address to the usermode context from the given PID to the given PID. If the PID is 0 or not specified, the ............ process is selected. This functions returns 2 results. Address and MDL. The MDL you will need for unmapMemory()
 unmapMemory(address, mdl)                                                         
 
 
@@ -2385,7 +2495,7 @@ openLuaServer(Name):
   Opens a pipe with the given name. The LuaClient dll needs this name to connect to ce
 
 
-  LuaClient.dll functions:
+  LuaClient.dll functions:  (STDCALL calling machanic)
     BOOL CELUA_Initialize(char *name) : Initializes
     UINT_PTR CELUA_ExecuteFunction(char *luacode, UINT_PTR parameter)
       This function executes a lua function with parameters (parameter) and with the luacode as body Parameter will be treated as an integer
@@ -2396,6 +2506,16 @@ openLuaServer(Name):
 
 
     the return value of this function is the return value of the lua function (integer)
+
+    UINT_PTR CELUA_ExecuteFunctionAsync(char *luacode, UINT_PTR parameter)
+      See CELUA_ExecuteFunction but runs in the server thread instead of passing it to the main GUI and then wait for it's return
+
+    integer CELUA_GetFunctionReferenceFromName(char *functionname): Returns a reference ID you can pass on to CELUA_ExecuteFunctionByReference
+    UINT_PTR CELUA_ExecuteFunctionByReference(int refid, int paramcount, PVOID *parameters, BOOL async):
+      This functions executes the function specified by reference id. If async is true, the code will run in a seperate thread instead of the main thread
+      paramcount is the number of parameters to pass on to the function
+      parameters is a pointer to a list of integers.  32-bit in 32-bit targets, 64-bit in 64-bit targets
+
 
 
 Settings class
@@ -2479,7 +2599,6 @@ properties
   Header : string - the additional header to be sent with the next getURL request
 methods
   getURL(path) - returns a string containing the contents of the url. nil on failure
-
-
+  postURL(path, urlencodeddata) - posts the given data to the path and returns the results
 
 --]]

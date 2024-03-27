@@ -8,7 +8,7 @@ unit xinput;
 
 interface
 
-uses windows,classes;
+uses windows,classes, Controls;
 
   {**************************************************************************
   *                                                                          *
@@ -197,17 +197,86 @@ uses windows,classes;
     PXINPUT_KEYSTROKE = ^_XINPUT_KEYSTROKE;
 
 function InitXinput: boolean;
+procedure XInputMessages(state: boolean);
 
 var
   XInputGetState: function(dwUserIndex: dword; out pState: XINPUT_STATE): DWORD; stdcall;
   XInputSetState: function(dwUserIndex: dword; pVibration: PXINPUT_VIBRATION): DWORD; stdcall;
   XInputGetCapabilities: function(dwUserIndex: dword; dwFlags: dword; pCapabilities: PXINPUT_CAPABILITIES): DWORD; stdcall;
+  XInputGetKeystroke: function(dwUserIndex: dword; reserved: dword; pKeyStroke: PXINPUT_KEYSTROKE): DWORD; stdcall;
+
 
 implementation
+
+uses forms;
+
+type TXBoxKeyDownThread=class(TThread)
+private
+public
+  procedure execute; override;
+end;
 
 var
   xih: thandle;
 
+  xt: TXBoxKeyDownThread;
+
+procedure TXBoxKeyDownThread.execute;
+var
+  ks: XINPUT_KEYSTROKE;
+  i: dword;
+
+  c: TWinControl;
+  h: THandle;
+  s: XINPUT_STATE;
+begin
+  if not assigned(XInputGetKeystroke) then exit;
+
+  while not terminated do
+  begin
+    if XInputGetState(0,s)=0 then
+    begin
+      i:=XInputGetKeystroke(0,0,@ks);
+      if i=ERROR_SUCCESS then
+      begin
+        c:=screen.ActiveControl;
+        if c<>nil then
+        begin
+          h:=screen.ActiveControl.Handle;
+
+          if (ks.Flags or XINPUT_KEYSTROKE_KEYDOWN)=XINPUT_KEYSTROKE_KEYDOWN then
+            SendMessage(h, WM_KEYDOWN, ks.VirtualKey, 0);
+
+          if (ks.Flags or XINPUT_KEYSTROKE_KEYUP)=XINPUT_KEYSTROKE_KEYUP then
+            SendMessage(h, WM_KEYUP, ks.VirtualKey, 0);
+        end;
+      end;
+
+      sleep(50);
+    end
+    else
+      sleep(2500);
+  end;
+end;
+
+procedure XInputMessages(state: boolean);
+begin
+  InitXinput;
+  if state then
+  begin
+    if assigned(XInputGetKeystroke) and (xt=nil) then
+      xt:=TXBoxKeyDownThread.create(false);
+  end
+  else
+  begin
+    if xt<>nil then
+    begin
+      xt.Terminate;
+      xt.Free;
+      xt:=nil;
+    end;
+  end;
+end;
 
 function loadxinputmodule: THandle;
 begin
@@ -240,6 +309,7 @@ begin
     XInputGetState:=GetProcAddress(xih, 'XInputGetState');
     XInputSetState:=GetProcAddress(xih, 'XInputSetState');
     XInputGetCapabilities:=GetProcAddress(xih, 'XInputGetCapabilities');
+    XInputGetKeystroke:=GetProcAddress(xih, 'XInputGetKeystroke');
   end;
 
   result:=xih<>0;

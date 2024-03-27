@@ -9,10 +9,11 @@ uses
   windows, Classes, LCLProc, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, math,
   StdCtrls, ComCtrls, Menus, lmessages, scrolltreeview, byteinterpreter, symbolhandler, cefuncproc,
   newkernelhandler, frmSelectionlistunit, frmStructuresConfigUnit, registry, Valuechange, DOM,
-  XMLRead, XMLWrite, Clipbrd, CustomTypeHandler, strutils, dotnetpipe, DotNetTypes, commonTypeDefs;
+  XMLRead, XMLWrite, Clipbrd, CustomTypeHandler, strutils, dotnetpipe, DotNetTypes, commonTypeDefs,
+  contnrs;
 
 
-
+const structureversion=2;
 
   { TfrmStructures2 }
 type
@@ -249,6 +250,8 @@ type
 
     fcompareValue: string;
 
+    backlist: Tstack;
+
     procedure ChangeGroupClick(sender: tobject);
     procedure DeleteClick(sender: TObject);
     procedure ToggleLockClick(sender: TObject);
@@ -297,6 +300,9 @@ type
     function isXInColumn(x: integer): boolean;
     procedure SetProperEditboxPosition;
 
+    procedure pushAddress;
+    procedure popAddress;
+    function canPopAddress: boolean;
   published
     property EditWidth: integer read getEditwidth;
     property EditLeft: integer read getEditleft;
@@ -312,6 +318,8 @@ type
     MenuItem5: TMenuItem;
     MenuItem6: TMenuItem;
     MenuItem7: TMenuItem;
+    miBack: TMenuItem;
+    N5: TMenuItem;
     miExpandAll: TMenuItem;
     miExpandAllDefined: TMenuItem;
     miClear: TMenuItem;
@@ -363,13 +371,13 @@ type
     miNewWindow: TMenuItem;
     Open1: TMenuItem;
     OpenDialog1: TOpenDialog;
-    pnlGroups: TPanel;
     pmStructureView: TPopupMenu;
     miRecalculateAddress: TMenuItem;
     Renamestructure1: TMenuItem;
     Save1: TMenuItem;
     SaveDialog1: TSaveDialog;
     saveValues: TSaveDialog;
+    pnlGroups: TScrollBox;
     Structures1: TMenuItem;
     tmFixGui: TTimer;
     updatetimer: TTimer;
@@ -381,6 +389,7 @@ type
     procedure MenuItem3Click(Sender: TObject);
     procedure MenuItem5Click(Sender: TObject);
     procedure MenuItem6Click(Sender: TObject);
+    procedure miBackClick(Sender: TObject);
     procedure miExpandAllClick(Sender: TObject);
     procedure miExpandAllDefinedClick(Sender: TObject);
     procedure miClearClick(Sender: TObject);
@@ -456,8 +465,6 @@ type
     fMatchColorHighlighted: tcolor; //The color to use when all elements in the group match
     fAllMatchColorSameHighlighted: TColor; //The color to use when all groups have matching elements AND the same value
     fAllMatchColorDiffHighlighted: TColor; //The color to use when all groups have matching alements but different values between groups
-
-
 
     procedure UpdateCurrentStructOptions;
     procedure setupColors;
@@ -646,7 +653,12 @@ resourcestring
   rsSF2Hex = ' (Hex)';
   rsSF2Signed = ' (Signed)';
   rsSF2To = ' to ';
-
+  rsP = 'P->';
+  rsUnsignedInteger = 'Unsigned Integer';
+  rsSignedInteger = 'Signed Integer';
+  rsHexadecimal = 'Hexadecimal';
+  rsDefinePointer = 'Define pointer';
+  rsUpgradePointer = 'Upgrade child structure to full structure';
 
 var
   StructureDissectOverrides: array of TStructureDissectOverride;
@@ -728,9 +740,9 @@ end;
 function DisplaymethodToString(d:TdisplayMethod): string;
 begin
   case d of
-    dtUnsignedInteger: result:='Unsigned Integer';
-    dtSignedInteger: result:='Signed Integer';
-    dtHexadecimal: result:='Hexadecimal';
+    dtUnsignedInteger: result:=rsUnsignedInteger;
+    dtSignedInteger: result:=rsSignedInteger;
+    dtHexadecimal: result:=rsHexadecimal;
   end;
 end;
 
@@ -758,6 +770,9 @@ begin
   if self.Name<>'' then
     elementnode.SetAttribute('Description', utf8toansi(self.Name));
 
+  if ExpandChangesAddress then
+    elementnode.SetAttribute('ExpandChangesAddress', '1');
+
   elementnode.SetAttribute('Vartype', VariableTypeToString(self.VarType));
   if self.CustomType<>nil then
     elementnode.SetAttribute('Customtype', self.CustomType.name);
@@ -769,6 +784,7 @@ begin
     elementnode.SetAttribute('ChildStructStart', IntToStr(self.ChildStructStart));
 
   elementnode.SetAttribute('BackgroundColor', IntToHex(backgroundcolor, 6));
+
 
   if (self.isPointer) and (self.ChildStruct<>nil) then
   begin
@@ -908,7 +924,7 @@ begin
   if vartype=vtPointer then
   begin
     ashex:=true;
-    result:='P->';
+    result:=rsP;
 
     if processhandler.is64Bit then
       vt:=vtQword
@@ -946,7 +962,7 @@ begin
     hex:=true;
 
     //strip optional P-> part
-    if copy(value, 1,3)='P->' then
+    if copy(value, 1,3)=rsP then
       value:=copy(value,4, length(value)-3);
   end
   else
@@ -1064,6 +1080,8 @@ var ChildStructStartS: string;
   childname: string;
 
   s: string;
+
+  e: TDOMAttr;
 begin
   fparent:=parent;
   fbackgroundcolor:=clWindow;
@@ -1076,6 +1094,8 @@ begin
   s:=element.GetAttribute('BackgroundColor');
   if s<>'' then
     self.fbackgroundcolor:=HexStrToInt(s);
+
+  self.fExpandChangesAddress:=element.GetAttribute('ExpandChangesAddress')='1';
 
 
   ChildStructStartS:=element.GetAttribute('ChildStructStart');
@@ -1115,7 +1135,9 @@ end;
 function TDissectedStruct.getElementCount: integer;
 begin
   if structelementlist<>nil then
-    result:=structelementlist.Count;
+    result:=structelementlist.Count
+  else
+    result:=0;
 end;
 
 function TDissectedStruct.getElement(index: integer): TStructelement;
@@ -2043,6 +2065,22 @@ end;
 
 { TStructColumn }
 
+procedure TStructColumn.pushAddress;
+begin
+  backlist.Push(pointer(faddress));
+end;
+
+procedure TStructColumn.popAddress;
+begin
+  if canPopAddress then
+    Address:=ptruint(backlist.Pop);
+end;
+
+function TStructColumn.canPopAddress: boolean;
+begin
+  result:=backlist.Count>0;
+end;
+
 procedure TStructColumn.setNewParent(group: TStructGroup);
 begin
   parent.fcolumns.Remove(self);
@@ -2156,7 +2194,7 @@ begin
 end;
 
 procedure TStructColumn.setFocused(state: boolean);
-var i: integer;
+var i,x: integer;
 begin
   if fFocused=state then exit;
 
@@ -2168,12 +2206,30 @@ begin
   begin
     for i:=0 to parent.parent.columncount-1 do
       if parent.parent.columns[i]<>self then
+      begin
         parent.parent.columns[i].focused:=false;
+      end
+      else
+      begin
+        if state and parent.parent.pnlGroups.HorzScrollBar.IsScrollBarVisible then
+        begin
+
+          x:=parent.parent.columns[i].EditLeft+parent.parent.columns[i].parent.GroupBox.left;
+          //if not visible, then make it visible
+          if not InRange(x+parent.parent.columns[i].EditWidth div 2, parent.parent.pnlGroups.HorzScrollBar.Position,  parent.parent.pnlGroups.ClientWidth) then
+          begin
+            parent.parent.pnlGroups.HorzScrollBar.Position:=x-5;
+          end;
+
+        end;
+      end;
   end;
 
   //make focus visible
   focusedShape.visible:=state;
   fFocused:=state;
+
+
 end;
 
 procedure TStructColumn.clearSavedState;
@@ -2523,6 +2579,8 @@ begin
 
   parent.setPositions;
   Address:=MemoryBrowser.hexview.address;
+
+  backlist:=TStack.Create;
 end;
 
 destructor TStructColumn.destroy;
@@ -2549,6 +2607,9 @@ begin
       parent.Free;
   end;
 
+
+  if backlist<>nil then
+    freeandnil(backlist);
 end;
 
 { Tstructgroup }
@@ -2651,6 +2712,7 @@ begin
   GroupBox.Caption:=groupname;
   GroupBox.height:=parent.pnlGroups.ClientHeight;
   groupbox.parent:=parent.pnlGroups;
+  //groupbox.AutoSize:=true;
 
   groupbox.popupmenu:=grouppopup;
 end;
@@ -2745,6 +2807,8 @@ begin
 
 
   setupColors; //load colors and default struct options
+
+
 end;
 
 procedure TfrmStructures2.FormClose(Sender: TObject;
@@ -2758,11 +2822,18 @@ end;
 
 procedure TfrmStructures2.FormShow(Sender: TObject);
 begin
+  HeaderControl1.Height:=canvas.TextHeight('XgjQh'+HeaderControl1.Sections[0].Text)+4;
   if (initialaddress<>0) and (columnCount=0) then  //add the initial address, else it looks so sad...
   begin
     addColumn;
     columns[0].setAddress(initialaddress);
+    columns[0].setFocused(true);
+    columns[0].edtAddress.SetFocus;
   end;
+
+  tvStructureView.Font.Height:=GetFontData(font.handle).Height;
+  if tvStructureView.Font.Height>-15 then
+    tvStructureView.Font.Height:=-15;
 end;
 
 
@@ -3193,7 +3264,8 @@ procedure TfrmStructures2.tvStructureViewExpanding(Sender: TObject;
   Node: TTreeNode; var AllowExpansion: Boolean);
 var n: TStructelement;
   error: boolean;
-  address: ptruint;
+
+  address, address2: ptruint;
   c: TStructColumn;
   x: ptruint;
   savedstate: PtrUInt;
@@ -3213,12 +3285,16 @@ begin
     if not error then
     begin
       //dereference the pointer and fill it in if possible
-      if ReadProcessMemory(processhandle, pointer(address), @address, processhandler.pointersize, x) then
+      address2:=0;
+      if ReadProcessMemory(processhandle, pointer(address), @address2, processhandler.pointersize, x) then
       begin
-        c:=getFocusedColumn;
-
-        c.Address:=address-n.ChildStructStart;
-        mainStruct:=n.ChildStruct;
+        if ReadProcessMemory(processhandle, pointer(address2), @address2, 1, x) then
+        begin
+          c:=getFocusedColumn;
+          c.pushAddress;
+          c.Address:=address2-n.ChildStructStart;
+          mainStruct:=n.ChildStruct;
+        end;
       end;
     end;
 
@@ -3931,6 +4007,9 @@ begin
         end;
       end;
 
+      for i:=0 to DissectedStructs.count-1 do
+        TDissectedStruct(DissectedStructs[i]).fillDelayLoadedChildstructs;
+
 
     end;
 
@@ -3966,12 +4045,22 @@ procedure TfrmStructures2.pmStructureViewPopup(Sender: TObject);
 var childstruct: TDissectedStruct;
   ownerstruct: TDissectedStruct;
   structelement: TStructelement;
+  c: TStructColumn;
 begin
   ownerstruct:=getStructFromNode(tvStructureView.selected);
   childstruct:=getChildStructFromNode(tvStructureView.selected);
   structelement:=getStructElementFromNode(tvStructureView.Selected);
 
-  miFullUpgrade.visible:=(childstruct<>nil) and (not childstruct.isInGlobalStructList);
+  miFullUpgrade.visible:=((childstruct=nil) and (structelement<>nil) and (structelement.isPointer)) or ((childstruct<>nil) and (not childstruct.isInGlobalStructList));
+  if miFullUpgrade.visible then
+  begin
+    if (childstruct=nil) then
+      miFullUpgrade.caption:=rsDefinePointer
+    else
+      miFullUpgrade.caption:=rsUpgradePointer;
+
+  end;
+
   miAddElement.visible:=(ownerstruct<>nil) or (childstruct<>nil);
   miAddChildElement.visible:=(childstruct<>nil);
   miDeleteElement.visible:=tvStructureView.Selected<>nil;
@@ -3996,6 +4085,9 @@ begin
   mipaste.Visible:=structelement<>nil;
   n4.visible:=n3.visible and (miCopy.visible or mipaste.visible);
 
+  c:=getFocusedColumn;
+  n5.Visible:=(c<>nil) and c.canPopAddress;
+  miBack.visible:=n5.Visible;
 end;
 
 procedure TfrmStructures2.miNewWindowClick(Sender: TObject);
@@ -4079,6 +4171,8 @@ end;
 function TfrmStructures2.getFocusedColumn: TStructColumn;
 var i: integer;
 begin
+  if columncount=0 then exit(nil); //rare/impossible
+
   for i:=0 to columnCount-1 do
     if columns[i].Focused then
     begin
@@ -4149,9 +4243,9 @@ var elementlist: Tlist;
   originalindex: integer;
 begin
   //save the old selection pos
-  if tvStructureView.Selected<>nil then
+ { if tvStructureView.Selected<>nil then
     originalindex:=tvStructureView.Selected.AbsoluteIndex
-  else
+  else    }
     originalindex:=-1;
 
 
@@ -4161,6 +4255,11 @@ begin
   try
     for i:=0 to tvStructureView.SelectionCount-1 do
     begin
+      if originalindex=-1 then
+        originalindex:=tvStructureView.Selections[i].AbsoluteIndex;
+
+      originalindex:=min(tvStructureView.Selections[i].AbsoluteIndex, originalindex);
+
       e:=getStructElementFromNode(tvStructureView.Selections[i]);
       if (e<>nil) and ((struct=nil) or (e.parent=struct))  then //the element can be null if it's the origin
       begin
@@ -4193,7 +4292,9 @@ begin
 
   //restore the selection pos
   if originalindex>=0 then
+  begin
     tvStructureView.Items.SelectOnlyThis(tvStructureView.Items[min(tvStructureView.items.count-1, originalindex)]);
+  end;
 
 end;
 
@@ -4405,6 +4506,13 @@ end;
 procedure TfrmStructures2.MenuItem6Click(Sender: TObject);
 begin
   finddialog1.Execute;
+end;
+
+procedure TfrmStructures2.miBackClick(Sender: TObject);
+var c: TStructColumn;
+begin
+  c:=getFocusedColumn;
+  if c<>nil then c.popAddress;
 end;
 
 
@@ -4939,11 +5047,49 @@ end;
 
 
 procedure TfrmStructures2.miFullUpgradeClick(Sender: TObject);
-var struct: TDissectedStruct;
+var
+  struct: TDissectedStruct;
+  f: TfrmStructures2;
+  a,p: ptruint;
+
+  node: TTreenode;
+  e: boolean;
+  x: ptruint;
+
+  se: TStructelement;
 begin
   struct:=getChildStructFromNode(tvStructureView.Selected);
   if struct<>nil then
-    struct.addToGlobalStructList;
+    struct.addToGlobalStructList
+  else
+  begin
+    //create a new structure from this entry
+    node:=tvStructureView.Selected;
+    if node=nil then exit;
+
+    a:=getAddressFromNode(node, getFocusedColumn, e);
+    if not e then
+    begin
+      p:=0;
+      x:=0;
+      ReadProcessMemory(processhandle, pointer(a), @p, ProcessHandler.pointersize, x);
+      if x=ProcessHandler.pointersize then
+      begin
+        if p=0 then exit;
+
+        f:=tfrmstructures2.create(application);
+        f.initialaddress:=p;
+        f.show;
+        struct:=f.DefineNewStructure(4096);
+
+        se:=getStructElementFromNode(node);
+        if se<>nil then
+          se.ChildStruct:=struct;
+
+      end;
+    end;
+  end;
+
 end;
 
 procedure TfrmStructures2.miSelectStructureClick(Sender: tobject);
@@ -5308,12 +5454,6 @@ begin
     group[i].GroupBox.ClientHeight:=maxh;
 
 
-  pnlGroups.ClientHeight:=group[0].GroupBox.top+group[0].GroupBox.Height+2;
-  HeaderControl1.Top:=pnlgroups.Top+pnlGroups.Height;
-  tvStructureView.top:=HeaderControl1.Top+HeaderControl1.Height;
-
-
-
 
   for i:=0 to groupcount-1 do
   begin
@@ -5334,6 +5474,8 @@ begin
     else
       group[i].box.width:=20;
   end;
+
+  pnlGroups.ClientHeight:=group[0].GroupBox.top+group[0].GroupBox.Height+2;
 end;
 
 initialization

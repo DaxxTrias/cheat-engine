@@ -42,7 +42,7 @@ resourcestring
   rsFirstStepTooHardBetterGiveUpNow =
     'First step too hard? Better give up now!';
 
-  rsTutorial1='Welcome to the ............ Tutorial. (v3.2)'+#13#10+
+  rsTutorial1='Welcome to the ............ Tutorial. (v3.3)'+#13#10+
               ''+#13#10+
               'This tutorial will try to explain the basics of cheating on games, and getting you more familiar with .............'+#13#10+
               ''+#13#10+
@@ -51,7 +51,7 @@ resourcestring
               ''+#13#10+
               'When the process window is open find this tutorial. The process name is probably ''tutorial.exe'' unless you'+
               ' renamed it.'+#13#10+
-              'Select it, and click ok. Just ignore all the other buttons right now, but experiment with them later if you feel like it.'+#13#10+
+              'Select it, and click "Open". Just ignore all the other buttons right now, but experiment with them later if you feel like it.'+#13#10+
               ''+#13#10+
               'When everything went right, the process window should be gone now and at the top of CE the process name is'+
               ' shown.'+#13#10+
@@ -118,6 +118,9 @@ begin
   randomize;
 
   memo1.lines.text:=rsTutorial1;
+
+  font.size:=12;
+
 end;
 
 procedure TForm1.btnOKClick(Sender: TObject);

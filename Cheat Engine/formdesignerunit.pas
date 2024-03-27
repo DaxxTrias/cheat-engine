@@ -11,7 +11,7 @@ uses
   JvDesignImp, JvDesignUtils, typinfo, PropEdits, ObjectInspector, LResources,
   maps, ExtDlgs, PopupNotifier, IDEDialogs, ceguicomponents, LMessages, luacaller,
   luahandler, cefuncproc, ListViewPropEdit, TreeViewPropEdit, AnchorEditor,
-  LCLType, GraphicPropEdit, GraphPropEdits, registry;
+  LCLType, GraphicPropEdit, GraphPropEdits, registry, math;
 
 
 
@@ -73,6 +73,8 @@ type
     PopupMenu: TToolButton;
     Calendar: TToolButton;
     SelectDirectoryDialog: TToolButton;
+    RadioButton: TToolButton;
+    ScrollBox: TToolButton;
     ToolButton6: TToolButton;
     CEImage: TToolButton;
     procedure controlPopupPopup(Sender: TObject);
@@ -190,11 +192,15 @@ uses mainunit;
 resourcestring
   rsInvalidObject = '{Invalid object}';
   rsFormDesignerCaption = 'Form Designer';
+  rsFormFilesFrmFRM = 'Form files(*.frm)|*.FRM';
+  rsFormFilesLfmLFM = 'Form files(*.lfm)|*.LFM';
+  rsShowCheckboxesForBoolean = 'Show checkboxes for boolean';
+
 
 procedure TFormDesigner.setFormName;
 begin
   if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TComponent) then
-    caption:='Form Designer'+':'+TComponent(GlobalDesignHook.LookupRoot).name;
+    caption:=rsFormDesignerCaption+':'+TComponent(GlobalDesignHook.LookupRoot).name;
 end;
 
 procedure TFormDesigner.foundlist3Data(Sender: TObject; Item: TListItem);
@@ -272,7 +278,7 @@ procedure TFormDesigner.miLoadClick(Sender: TObject);
 var f: TCeform;
 begin
   OpenDialog1.DefaultExt := '.FRM';
-  OpenDialog1.Filter := 'Form files(*.frm)|*.FRM';
+  OpenDialog1.Filter := rsFormFilesFrmFRM;
   if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TCEForm) and (OpenDialog1.Execute) then
   begin
     f:=TCEForm(GlobalDesignHook.LookupRoot);
@@ -286,7 +292,7 @@ procedure TFormDesigner.miLoadLFMClick(Sender: TObject);
 var f: TCeform;
 begin
   OpenDialog1.DefaultExt := '.LFM';
-  OpenDialog1.Filter := 'Form files(*.lfm)|*.LFM';
+  OpenDialog1.Filter := rsFormFilesLfmLFM;
   if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TCEForm) and (OpenDialog1.Execute) then
   begin
     f:=TCEForm(GlobalDesignHook.LookupRoot);
@@ -353,7 +359,7 @@ procedure TFormDesigner.miSaveClick(Sender: TObject);
 var f: TCeform;
 begin
   SaveDialog1.DefaultExt := '.FRM';
-  SaveDialog1.Filter := 'Form files(*.frm)|*.FRM';
+  SaveDialog1.Filter := rsFormFilesFrmFRM;
   if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TCEForm) and (SaveDialog1.Execute) then
   begin
     f:=TCEForm(GlobalDesignHook.LookupRoot);
@@ -366,7 +372,7 @@ procedure TFormDesigner.miSaveLFMClick(Sender: TObject);
 var f: TCeform;
 begin
   SaveDialog1.DefaultExt := '.LFM';
-  SaveDialog1.Filter := 'Form files(*.lfm)|*.LFM';
+  SaveDialog1.Filter := rsFormFilesLfmLFM;
   if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TCEForm) and (SaveDialog1.Execute) then
   begin
     f:=TCEForm(GlobalDesignHook.LookupRoot);
@@ -1024,6 +1030,7 @@ var x: array of integer;
 
   miChangeCheckboxSetting: TMenuItem;
   reg: Tregistry;
+  i: integer;
 begin
   GlobalDesignHook.LookupRoot:=f;
 
@@ -1054,7 +1061,7 @@ begin
     end;
 
     miChangeCheckboxSetting:=tmenuitem.create(oid.MainPopupMenu);
-    miChangeCheckboxSetting.caption:='Show checkboxes for boolean';
+    miChangeCheckboxSetting.caption:=rsShowCheckboxesForBoolean;
     miChangeCheckboxSetting.checked:=oid.GridControl[oipgpProperties].CheckboxForBoolean;
     miChangeCheckboxSetting.OnClick:=CheckBoxForbooleanClick;
     miChangeCheckboxSetting.AutoCheck:=true;
@@ -1069,6 +1076,8 @@ begin
 
 
     ComponentTreeWindowProc:=oid.ComponentTree.WindowProc;
+
+
     oid.ComponentTree.WindowProc:=mousedownhack;
 
     oid.OnSelectPersistentsInOI:=ObjectInspectorSelectionChange;
@@ -1084,7 +1093,18 @@ begin
       oid.left:=0;
       oid.top:=0;
     end;
+
     oid.show;
+    {
+    oipgpProperties,
+    oipgpEvents,
+    oipgpFavorite,
+    oipgpRestricted
+    }
+
+
+
+    oid.DefaultItemHeight:=max(oid.DefaultItemHeight, oid.Canvas.TextHeight('QFDZj')+2); //make sure the itemheight fits the current dpi
     oid.OnDestroy:=OIDDestroy;
 
 
@@ -1101,9 +1121,7 @@ begin
   f.active:=true;
 
   f.designsurface.PopupMenu:=controlPopup;
-
   f.show;
-  f.BringToFront;
 end;
 
 

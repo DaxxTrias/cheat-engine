@@ -971,7 +971,8 @@ implementation
 
 uses luahandler,luacaller, formdesignerunit;
 
-
+resourcestring
+  rsInvalidFormData = 'Invalid formdata';
 
 {$ifdef cpu32}
 //In this implementation the data field of treenodes contain a pointer to an 8 byte storage  (I don't think I could just change/add to the Data field of the TTreenode components)
@@ -1381,7 +1382,7 @@ begin
       ResyncWithLua;
     end
     else
-      raise exception.create('Invalid formdata');
+      raise exception.create(rsInvalidFormData);
   end;
 end;
 
@@ -1519,10 +1520,41 @@ initialization
   RegisterClass(TCalendar);
   RegisterClass(TFindDialog);
   RegisterClass(TSelectDirectoryDialog);
+  RegisterClass(TScrollBox);
 
-
+  RegisterClass(TRadioButton);
 
   RegisterClass(tceform);
+
+
+  //some support for those that use lazarus. This way ce can load these components  {
+  RegisterClass(TButton);
+  RegisterClass(TLabel);
+  RegisterClass(TPanel);
+  RegisterClass(TImage);
+  RegisterClass(TMemo);
+  RegisterClass(TEdit);
+  RegisterClass(TToggleBox);
+
+  RegisterClass(TComboBox);
+  RegisterClass(TListBox);
+
+  RegisterClass(TCheckBox);
+  RegisterClass(TGroupBox);
+  RegisterClass(TRadioGroup);
+  RegisterClass(TTimer);
+  RegisterClass(TSaveDialog);
+  RegisterClass(TOpenDialog);
+  RegisterClass(TProgressBar);
+  RegisterClass(TTrackbar);
+  RegisterClass(TListView);
+  RegisterClass(TSplitter);
+  RegisterClass(TTreeview);
+
+  RegisterClass(TPageControl);
+  RegisterClass(TTrayIcon);
+
+
 
 
   RegisterPropertyEditor(ClassTypeInfo(TListItems), TCEListView, 'Items', TCEListViewItemsPropertyEditor);
@@ -1560,6 +1592,7 @@ initialization
   RegisterPropertyEditor(TypeInfo(TTabGetImageEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TGetSiteInfoEvent), nil, '', THiddenPropertyEditor);
   RegisterPropertyEditor(TypeInfo(TGetDockCaptionEvent), nil, '', THiddenPropertyEditor);
+
 
 end.
 

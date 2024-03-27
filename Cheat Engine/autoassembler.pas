@@ -36,6 +36,7 @@ procedure UnregisterAutoAssemblerCommand(command: string);
 function registerAutoAssemblerPrologue(m: TAutoAssemblerPrologue; postAOBSCAN: boolean=false): integer;
 procedure unregisterAutoAssemblerPrologue(id: integer);
 
+var oldaamessage: boolean;
 
 implementation
 
@@ -47,7 +48,8 @@ uses strutils, memscan, disassembler, networkInterface, networkInterfaceApi,
 
 {$ifdef windows}
 uses simpleaobscanner, StrUtils, LuaHandler, memscan, disassembler, networkInterface,
-     networkInterfaceApi, LuaCaller, SynHighlighterAA, Parsers, Globals, memoryQuery;
+     networkInterfaceApi, LuaCaller, SynHighlighterAA, Parsers, Globals, memoryQuery,
+     MemoryBrowserFormUnit;
 {$endif}
 
 
@@ -118,6 +120,7 @@ resourcestring
   rsAAError = 'Error: ';
   rsAAModuleNotFound = 'module not found:';
   rsAALuaErrorInTheScriptAtLine = 'Lua error in the script at line ';
+  rsGoTo = 'Go to ';
 
 //type
 //  TregisteredAutoAssemblerCommands =  TFPGList<TRegisteredAutoAssemblerCommand>;
@@ -532,6 +535,7 @@ var i,j: integer;
     currentline: string;
     instring: boolean;
     incomment: boolean;
+    bracecomment: boolean;
 begin
   //remove comments
   instring:=false;
@@ -544,13 +548,15 @@ begin
     begin
       if incomment then
       begin
+
+
         //inside a comment, remove everything till a } is encountered
-        if ((currentline[j]='}') and (processhandler.SystemArchitecture<>archArm)) or
-           ((currentline[j]='*') and (j<length(currentline)) and (currentline[j+1]='/')) then
+        if (bracecomment and ((currentline[j]='}') and (processhandler.SystemArchitecture<>archArm))) or
+           ((not bracecomment) and (currentline[j]='*') and (j<length(currentline)) and (currentline[j+1]='/')) then
         begin
           incomment:=false; //and continue parsing the code...
 
-          if ((currentline[j]='*') and (j<length(currentline)) and (currentline[j+1]='/')) then
+          if (not bracecomment) then
             currentline[j+1]:=' ';
         end;
 
@@ -575,6 +581,8 @@ begin
              ((currentline[j]='/') and (j<length(currentline)) and (currentline[j+1]='*')) then
           begin
             incomment:=true;
+            bracecomment:=currentline[j]='{';
+
             currentline[j]:=' '; //replace from here till the first } with spaces, this goes on for multiple lines
           end;
         end;
@@ -833,7 +841,7 @@ begin
                 aobscanmodules[m].maxaddress:=$7fffffff;
             end;
 
-            aobscanmodules[m].maxaddress:=$ffffffffffffffff;
+            aobscanmodules[m].maxaddress:=qword($ffffffffffffffff);
             setlength(aobscanmodules[m].entries,0); //shouldn't be needed, but do it anyhow
           end;
 
@@ -1020,6 +1028,7 @@ begin
 
 
 end;
+
 
 procedure luacode(code: TStrings; syntaxcheckonly: boolean);
 {
@@ -1233,7 +1242,9 @@ var i,j,k,l,e: integer;
 
     connection: TCEConnection;
 
+    mi: TModuleInfo;
     aaid: longint;
+    strictmode: boolean;
 begin
   setlength(readmems,0);
   setlength(allocs,0);
@@ -1318,10 +1329,17 @@ begin
 
     luacode(code, syntaxcheckonly);
 
+    strictmode:=false;
+    for i:=0 to code.count-1 do
+      if uppercase(TrimRight(code[i]))='{$STRICT}' then
+        strictmode:=true;
+
     removecomments(code);  //also trims each line
     unlabeledlabels(code);
 
-    getPotentialLabels(code, potentiallabels);
+    if not strictmode then
+      getPotentialLabels(code, potentiallabels);
+
 
     //6.3: do the aobscans first
     //this will break scripts that use define(state,33) aobscan(name, 11 22 state 44 55), but really, live with it
@@ -1346,6 +1364,8 @@ begin
           //check if useless
           if length(currentline)=0 then continue;
           if copy(currentline,1,2)='//' then continue; //skip
+
+
 
           //do this first. Do not touch registersymbol with any kind of define/label/whatsoever
           if uppercase(copy(currentline,1,15))='REGISTERSYMBOL(' then
@@ -1519,6 +1539,7 @@ begin
                     end else raise exception.Create(Format(rsTheMemoryAtCanNotBeRead, [s1]));
                   finally
                     freemem(bytebuf);
+                    bytebuf:=nil;
                   end;
 
                 end
@@ -1695,6 +1716,9 @@ begin
             begin
               s1:=trim(copy(currentline,a+1,b-a-1));
 
+              if (length(s1)>1) and ((s1[1]='''') or (s1[1]='"')) then
+                s1:=AnsiDequotedStr(s1,s1[1]);
+
               if pos(':',s1)=0 then
               begin
                 s2:=extractfilename(s1);
@@ -1710,9 +1734,12 @@ begin
               end; //else direct file path
 
               try
-                InjectDll(s1,'');
-                symhandler.reinitialize;
-                symhandler.waitforsymbolsloaded
+                if symhandler.getmodulebyname(extractfilename(s1), mi)=false then //check if it's already injected
+                begin
+                  InjectDll(s1,'');
+                  symhandler.reinitialize;
+                end;
+                symhandler.waitforsymbolsloaded;
               except
                 raise exception.create(Format(rsCouldNotBeInjected, [s1]));
               end;
@@ -1785,7 +1812,10 @@ begin
                 on e:exception do
                 begin
                   if bytebuf<>nil then
+                  begin
                     freemem(bytebuf);
+                    bytebuf:=nil;
+                  end;
 
                   raise exception.create(e.Message);
                 end;
@@ -2981,22 +3011,43 @@ begin
       {$IFNDEF UNIX}
       if popupmessages then
       begin
+        testPtr:=0;
+
         s1:='';
         for i:=0 to length(globalallocs)-1 do
+        begin
+          if testPtr=0 then testPtr:=globalallocs[i].address;
+
           s1:=s1+#13#10+globalallocs[i].varname+'='+IntToHex(globalallocs[i].address,8);
+        end;
 
 
         for i:=0 to length(allocs)-1 do
+        begin
+          if testPtr=0 then testPtr:=allocs[i].address;
           s1:=s1+#13#10+allocs[i].varname+'='+IntToHex(allocs[i].address,8);
+        end;
 
         if length(kallocs)>0 then
         begin
+          if testPtr=0 then testPtr:=kallocs[i].address;
+
           s1:=#13#10+rsTheFollowingKernelAddressesWhereAllocated+':';
           for i:=0 to length(kallocs)-1 do
             s1:=s1+#13#10+kallocs[i].varname+'='+IntToHex(kallocs[i].address,8);
         end;
 
-        showmessage(rsTheCodeInjectionWasSuccessfull+s1);
+       // if messagedl
+        if (testPtr=0) or (oldaamessage) then
+          showmessage(rsTheCodeInjectionWasSuccessfull+s1)
+        else
+        begin
+          if MessageDlg(rsTheCodeInjectionWasSuccessfull+s1+#13#10+rsGoTo+inttohex(testptr,8)+'?', mtInformation,[mbYes, mbNo], 0, mbno)=mrYes then
+          begin
+            memorybrowser.disassemblerview.selectedaddress:=testptr;
+            memorybrowser.show;
+          end;
+        end;
       end;
       {$ENDIF}
     end;
@@ -3011,7 +3062,10 @@ begin
 
     for i:=0 to length(readmems)-1 do
       if readmems[i].bytes<>nil then
+      begin
         freemem(readmems[i].bytes);
+        readmems[i].bytes:=nil;
+      end;
 
     setlength(readmems,0);
 

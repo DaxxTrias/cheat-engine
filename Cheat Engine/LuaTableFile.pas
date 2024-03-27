@@ -13,6 +13,10 @@ implementation
 
 uses LuaClass, LuaHandler, LuaObject, MainUnit, luafile;
 
+resourcestring
+  rsErrorRaisedWithMessage = ' error raised with message: ';
+  rsTableDileEntryAlreadyExistsForFilename = 'Table file entry already exists for filename: ';
+  rsCreateTableFileRequiresAtLeastOneParameter = 'createTableFile requires at least one parameter';
 
 function indexOfLuaFileByName(filename: string; internal: boolean=false): integer;
 var
@@ -74,14 +78,14 @@ begin
       mainform.editedsincelastsave:=true;
     except
       on e : Exception do begin
-        lua_pushstring(L, e.className + ' error raised with message: ' + e.message);
+        lua_pushstring(L, e.className + rsErrorRaisedWithMessage + e.message);
         lua_error(L);
       end;
     end;
   end
   else
   begin
-      lua_pushstring(L, 'Table file entry already exists for filename: ' + filename);
+      lua_pushstring(L, rsTableDileEntryAlreadyExistsForFilename + filename);
       lua_error(L);
   end;
 end;
@@ -103,7 +107,7 @@ begin
   end
   else
   begin
-    lua_pushstring(L, 'createTableFile requires at least one parameter');
+    lua_pushstring(L, rsCreateTableFileRequiresAtLeastOneParameter);
     lua_error(L);
   end;
 end;
@@ -112,8 +116,6 @@ function findTableFile(L: Plua_State): integer; cdecl;
 var parameters: integer;
   f: string;
   i: integer;
-
-  s: tmemorystream;
 begin
   result:=0;
   parameters:=lua_gettop(L);
@@ -149,21 +151,22 @@ begin
 end;
 
 function tablefile_saveToFile(L: Plua_State): integer; cdecl;
-var parameters: integer;
+var
   lf: TLuaFile;
   f: string;
 begin
+  result:=0;
   lf:=luaclass_getClassObject(L);
   f:=lf.name;
-  if parameters>=1 then
-    f:=Lua_ToString(L, -1);
+  if lua_gettop(L)>=1 then
+    f:=Lua_ToString(L, 1);
 
   lf.stream.Position:=0;
   lf.stream.SaveToFile(f);
 end;
 
 function tablefile_getData(L: Plua_State): integer; cdecl;
-var parameters: integer;
+var
   lf: TLuaFile;
 begin
   result:=1;

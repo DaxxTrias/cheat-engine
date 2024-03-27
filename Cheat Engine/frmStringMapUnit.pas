@@ -45,8 +45,8 @@ type
   end;
 
   TfrmStringMap = class(TForm)
-    btnScan: TButton;
     btnFree: TButton;
+    btnScan: TButton;
     btnShowList: TButton;
     cbRegExp: TCheckBox;
     cbCaseSensitive: TCheckBox;
@@ -59,6 +59,7 @@ type
     miFind: TMenuItem;
     miNext: TMenuItem;
     Panel1: TPanel;
+    Panel2: TPanel;
     pmStringList: TPopupMenu;
     ProgressBar1: TProgressBar;
     SaveDialog1: TSaveDialog;
@@ -108,6 +109,9 @@ resourcestring
   rsStringcount = 'Stringcount: %s';
   rsBtnShowList = '<<Show list';
   rsNoReadableMemoryFound = 'No readable memory found';
+  rsError = 'Error=';
+  rsUnhandledTStringScanCrash = 'Unhandled TStringScan crash';
+  rsGenerateRegExprEngineFailed = 'GenerateRegExprEngine failed';
 
 procedure TStringscan.docleanup;
 begin
@@ -342,7 +346,7 @@ begin
     end;
   except
     on e: exception do
-      MessageBox(0, pchar(ansitoutf8('Error='+e.message)),'Unhandled TStringScan crash', MB_OK or MB_ICONERROR);
+      MessageBox(0, pchar(ansitoutf8(rsError+e.message)),pchar(rsUnhandledTStringScanCrash), MB_OK or MB_ICONERROR);
   end;
 end;
 
@@ -458,7 +462,7 @@ begin
       regex:=GenerateRegExprEngine(pchar(edtRegExp.Text), regflags);
 
       if regex=nil then
-        raise exception.create('GenerateRegExprEngine failed');
+        raise exception.create(rsGenerateRegExprEngineFailed);
     end
     else
       regex:=nil;

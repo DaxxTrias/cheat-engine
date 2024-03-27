@@ -18,6 +18,7 @@
 #include "vmxhelper.h"
 #include "vmxoffload.h"
 #include "ultimap.h"
+#include "ultimap2.h"
 
 UINT64 PhysicalMemoryRanges=0; //initialized once, and used thereafter. If the user adds/removes ram at runtime, screw him and make him the reload the driver
 UINT64 PhysicalMemoryRangesListSize=0;
@@ -363,7 +364,17 @@ NTSTATUS DispatchIoctl(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 					ShowResult=1;
 				
 
-				ntStatus=GetMemoryRegionData((DWORD)PInputBuf->ProcessID,NULL,(PVOID)(PInputBuf->StartAddress),&(POutputBuf->protection),&length,&BaseAddress);
+				__try
+				{
+					ntStatus = GetMemoryRegionData((DWORD)PInputBuf->ProcessID, NULL, (PVOID)(PInputBuf->StartAddress), &(POutputBuf->protection), &length, &BaseAddress);
+				}
+				__except(1)
+				{
+					DbgPrint("GetMemoryRegionData error");
+					ntStatus = STATUS_UNSUCCESSFUL;
+					break;
+				}
+
 				POutputBuf->length=(UINT64)length;
 
 				if (ShowResult)
@@ -384,55 +395,14 @@ NTSTATUS DispatchIoctl(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 			{
 				//PEPROCESS selectedprocess=NULL;
 
+				KIRQL old;
 				DbgPrint("test\n");
 
-				/*
-				__try
-				{
-					PMDL mdl=NULL;
-					char *buffer;
+				old=KeRaiseIrqlToDpcLevel();
+				//PsSuspendProcess(PsGetCurrentProcess());				
+				//DbgPrint("after suspend\n");
 
-					mdl = IoAllocateMdl((PVOID)0x00400000, 0x4096, FALSE, TRUE, NULL);
-					if (!mdl)
-					{
-						DbgPrint("Not enough memory dude!!!!\n");
-						ntStatus = STATUS_INSUFFICIENT_RESOURCES;
-						break;
-					}
-
-			        //PsLookupProcessByProcessId((PVOID)696,&selectedprocess);
-
-					DbgPrint("Before\n");
-					DbgPrint("mdl->Process=%x",mdl->Process);
-					DbgPrint("mdl->MappedSystemVa=%x",mdl->MappedSystemVa);
-					DbgPrint("mdl->StartVa=%x",mdl->StartVa);
-
-
-					//KeAttachProcess((PEPROCESS)selectedprocess);
-					MmProbeAndLockPages(mdl, UserMode, IoReadAccess);
-					
-					DbgPrint("After\n");
-					DbgPrint("mdl->Process=%x",mdl->Process);
-					DbgPrint("mdl->MappedSystemVa=%x",mdl->MappedSystemVa);
-					DbgPrint("mdl->StartVa=%x",mdl->StartVa);
-					
-
-					buffer = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority );
-					//KeDetachProcess();
-
-					
-					DbgPrint("buffer=%x\n",(ULONG)buffer);
-					//MmUnlockPages(mdl);
-					//IoFreeMdl(mdl); 
-				}
-				__except(1)
-				{
-					DbgPrint("Damn\n");
-
-				}
-				*/
-			
-
+				KeLowerIrql(old);
 
 				break;
 			}
@@ -1216,7 +1186,7 @@ NTSTATUS DispatchIoctl(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 
 				inp = Irp->AssociatedIrp.SystemBuffer;
 
-				ExFreePool(inp->Address);
+				ExFreePool((PVOID)inp->Address);
 
 				ntStatus = STATUS_SUCCESS;
 
@@ -1264,7 +1234,7 @@ NTSTATUS DispatchIoctl(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 
 							__try
 							{
-								FromMDL=IoAllocateMdl(inp->address, inp->size, FALSE, FALSE, NULL);
+								FromMDL=IoAllocateMdl((PVOID)inp->address, inp->size, FALSE, FALSE, NULL);
 								if (FromMDL)
 									MmProbeAndLockPages(FromMDL, KernelMode, IoReadAccess);
 							}
@@ -1287,7 +1257,7 @@ NTSTATUS DispatchIoctl(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 					DbgPrint("From kernel or self\n", inp->FromPID);
 					__try
 					{
-						FromMDL = IoAllocateMdl(inp->address, inp->size, FALSE, FALSE, NULL);
+						FromMDL = IoAllocateMdl((PVOID)inp->address, inp->size, FALSE, FALSE, NULL);
 						if (FromMDL)
 						{
 							DbgPrint("IoAllocateMdl success\n");
@@ -1323,8 +1293,8 @@ NTSTATUS DispatchIoctl(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 
 								__try
 								{
-									outp->Address = MmMapLockedPagesSpecifyCache(FromMDL, UserMode, MmWriteCombined, NULL, FALSE, NormalPagePriority);
-									outp->FromMDL = FromMDL;
+									outp->Address = (UINT64)MmMapLockedPagesSpecifyCache(FromMDL, UserMode, MmWriteCombined, NULL, FALSE, NormalPagePriority);
+									outp->FromMDL = (UINT64)FromMDL;
 									ntStatus = STATUS_SUCCESS;
 								}
 								__finally
@@ -1347,8 +1317,8 @@ NTSTATUS DispatchIoctl(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 
 						__try
 						{
-							outp->Address = MmMapLockedPagesSpecifyCache(FromMDL, UserMode, MmWriteCombined, NULL, FALSE, NormalPagePriority);
-							outp->FromMDL = FromMDL;
+							outp->Address = (UINT64)MmMapLockedPagesSpecifyCache(FromMDL, UserMode, MmWriteCombined, NULL, FALSE, NormalPagePriority);
+							outp->FromMDL = (UINT64)FromMDL;
 							ntStatus = STATUS_SUCCESS;
 						}
 						__except (1)
@@ -1672,6 +1642,86 @@ NTSTATUS DispatchIoctl(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp)
 				{
 					ntStatus=STATUS_UNSUCCESSFUL;
 				}
+				break;
+			}
+
+		case IOCTL_CE_ULTIMAP2:
+			{
+				struct input
+				{
+					UINT32 PID;	
+					UINT32 Size;
+					UINT32 RangeCount;
+					UINT32 Reserved;
+					URANGE Ranges[8];
+					WCHAR OutputPath[200];
+				} *inp = Irp->AssociatedIrp.SystemBuffer;
+				int i;
+
+				DbgPrint("IOCTL_CE_ULTIMAP2");
+				for (i = 0; i < inp->RangeCount; i++)
+					DbgPrint("%d=%p -> %p", i, (PVOID)inp->Ranges[i].StartAddress, (PVOID)inp->Ranges[i].EndAddress);
+
+				SetupUltimap2(inp->PID, inp->Size, inp->OutputPath, inp->RangeCount, inp->Ranges);
+				break;
+			}
+
+		case IOCTL_CE_ULTIMAP2_WAITFORDATA:
+		{
+
+			ULONG timeout = *(ULONG *)Irp->AssociatedIrp.SystemBuffer;
+			PULTIMAP2DATAEVENT output = Irp->AssociatedIrp.SystemBuffer;
+			output->Address = 0;
+
+			ntStatus = ultimap2_waitForData(timeout, output);
+
+			break;
+		}
+
+		case IOCTL_CE_ULTIMAP2_LOCKFILE:
+		{
+			int cpunr = *(int *)Irp->AssociatedIrp.SystemBuffer;
+			ultimap2_LockFile(cpunr);
+			break;
+		}
+
+		case IOCTL_CE_ULTIMAP2_RELEASEFILE:
+		{
+			int cpunr = *(int *)Irp->AssociatedIrp.SystemBuffer;
+			ultimap2_ReleaseFile(cpunr);
+			break;
+		}
+
+
+		case IOCTL_CE_ULTIMAP2_CONTINUE:
+		{
+			int cpunr=*(int*)Irp->AssociatedIrp.SystemBuffer;
+			ntStatus = ultimap2_continue(cpunr);
+
+			break;
+		}
+
+		case IOCTL_CE_ULTIMAP2_FLUSH:
+		{			
+			ntStatus = ultimap2_flushBuffers();
+			break;
+		}
+
+		case IOCTL_CE_ULTIMAP2_PAUSE:
+		{
+			ntStatus = ultimap2_pause();
+			break;
+		}
+
+		case IOCTL_CE_ULTIMAP2_RESUME:
+		{
+			ntStatus = ultimap2_resume();
+			break;
+		}
+
+		case IOCTL_CE_DISABLEULTIMAP2:
+			{
+				DisableUltimap2();
 				break;
 			}
 

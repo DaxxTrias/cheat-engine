@@ -66,7 +66,7 @@ type
       function StructureNameLookup(var address: ptruint; var name: string): boolean;
       procedure AssemblerEvent(address:qword; instruction: string; var bytes: TAssemblerBytes);
       procedure AutoAssemblerPrologueEvent(code: TStrings; syntaxcheckonly: boolean);
-      procedure AutoAssemblerTemplateCallback(script: TStrings);
+      procedure AutoAssemblerTemplateCallback(script: TStrings; sender: TObject);
       procedure ScreenFormEvent(Sender: TObject; Form: TCustomForm);
 
       function BreakpointEvent(bp: pointer; context: pointer):boolean;
@@ -125,6 +125,12 @@ uses
   luahandler, LuaByteTable, MainUnit, MemoryRecordUnit, disassemblerviewunit,
   hexviewunit, d3dhookUnit, luaclass, debuggertypedefinitions;
 
+resourcestring
+  rsThisTypeOfMethod = 'This type of method:';
+  rsIsNotYetSupported = ' is not yet supported';
+  rsAutoAssemblerCallbackLuaFunctionError = 'AutoAssemblerCallback: Lua Function error(';
+  rsStructureDissectEventLuaFunctionError = 'StructureDissectEvent: Lua Function error(';
+
 type
   TLuaCallData=class(tobject)
     GetMethodProp: lua_CFunction; //used when lua wants a function to a class method/property  (GetMethodProp)
@@ -168,6 +174,7 @@ begin
 
   if lua_isnil(L, luafunctiononstack) then //nil, special case, always succeed
   begin
+    CleanupLuaCall(m);
     m.code:=nil;
     m.data:=nil;
     exit;
@@ -175,7 +182,7 @@ begin
 
   i:=LuaCallList.IndexOf(typename);
   if i=-1 then
-    raise exception.create('This type of method:'+typename+' is not yet supported');
+    raise exception.create(rsThisTypeOfMethod+typename+rsIsNotYetSupported);
 
   newcode:=TLuaCallData(LuaCallList.Objects[i]).SetMethodProp;
 
@@ -223,7 +230,7 @@ var
 begin
   i:=LuaCallList.IndexOf(typename);
   if i=-1 then
-    raise exception.create('This type of method:'+typename+' is not yet supported');
+    raise exception.create(rsThisTypeOfMethod+typename+rsIsNotYetSupported);
 
   f:=TLuaCallData(LuaCallList.Objects[i]).GetMethodProp;
 
@@ -940,7 +947,7 @@ begin
       result:=Lua_ToString(luavm, -2);
     end
     else
-      raise exception.create('AutoAssemblerCallback: Lua Function error('+lua_tostring(luavm, -1)+')');
+      raise exception.create(rsAutoAssemblerCallbackLuaFunctionError+lua_tostring(luavm, -1)+')');
 
   finally
     lua_settop(Luavm, oldstack);
@@ -963,7 +970,7 @@ begin
     if lua_pcall(Luavm, 2,1,0)=0 then
       result:=lua_toboolean(luavm, -1)
     else
-      raise exception.create('StructureDissectEvent: Lua Function error('+lua_tostring(luavm, -1)+')');
+      raise exception.create(rsStructureDissectEventLuaFunctionError+lua_tostring(luavm, -1)+')');
   finally
     lua_settop(Luavm, oldstack);
     luacs.leave;
@@ -1129,7 +1136,7 @@ begin
   end;
 end;
 
-procedure TLuaCaller.AutoAssemblerTemplateCallback(script: TStrings);
+procedure TLuaCaller.AutoAssemblerTemplateCallback(script: TStrings; sender: TObject);
 var oldstack: integer;
 begin
   Luacs.Enter;
@@ -1138,7 +1145,8 @@ begin
 
     PushFunction;
     luaclass_newClass(luavm, script);
-    lua_pcall(Luavm, 1,0,0);
+    luaclass_newClass(luavm, sender);
+    lua_pcall(Luavm, 2,0,0);
   finally
     lua_settop(Luavm, oldstack);
     luacs.leave;
