@@ -32,13 +32,13 @@ const
   strMyCheatTables='My Mod Tables';
   strSpeedHack='Speedmodifier';
 {$else}
-  strCheatEngine='Cheat Engine';
-  strCheatTable='Cheat Table';
-  strCheatTableLower='cheat table';
+  strCheatEngine='CE';
+  strCheatTable='C Table';
+  strCheatTableLower='c table';
   strCheat='Cheat';
   strTrainer='Trainer';
   strTrainerLower='trainer';
-  strMyCheatTables='My Cheat Tables';
+  strMyCheatTables='My C Tables';
   strSpeedHack='Speedhack';
 {$endif}
 

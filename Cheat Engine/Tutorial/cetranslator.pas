@@ -77,12 +77,12 @@ type
 function altnamer(s: string): string;
 begin
   {$ifdef altname}
-  s:=StringReplace(s, 'Cheat Engine','Runtime Modifier',[rfReplaceAll, rfIgnoreCase]);
-  s:=StringReplace(s, 'cheating in','modding',[rfReplaceAll]);
-  s:=StringReplace(s, 'cheating','modding',[rfReplaceAll]);
-  s:=StringReplace(s, 'cheatengine','runtimemodifier',[rfReplaceAll]);
+  s:=StringReplace(s, 'CE','Runtime Modifier',[rfReplaceAll, rfIgnoreCase]);
+  s:=StringReplace(s, 'c in','modding',[rfReplaceAll]);
+  s:=StringReplace(s, 'c','modding',[rfReplaceAll]);
+  s:=StringReplace(s, 'ce','runtimemodifier',[rfReplaceAll]);
   s:=StringReplace(s, 'runtimemodifier.org','cheatengine.org',[rfReplaceAll]);
-  s:=StringReplace(s, 'cheat','modification',[rfReplaceAll]);
+  s:=StringReplace(s, 'c','modification',[rfReplaceAll]);
   s:=StringReplace(s, 'Tutorial-','rtm-Tutorial-',[rfReplaceAll, rfIgnoreCase]);
   s:=StringReplace(s, ' CE',' RT-MOD',[rfReplaceAll]);
 
