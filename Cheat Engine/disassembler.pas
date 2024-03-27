@@ -512,8 +512,10 @@ function TDisassembler.getRM(bt: byte): byte;
 begin
   result:=bt and 7;
 
-  if rex_b and (NOT ((((bt shl 6) and 3)<>3) and ((bt and 7)=4)))  then //if this instruction does NOT have a SIB byte, only then apply the rex_B bit
-    result:=result or 8; //extend the RM field
+  //if this instruction does NOT have a SIB byte, only then apply the rex_B bit
+  //It has an SIB byte if RM==4 and mod!=3
+  if rex_b and (not ((result=4) and (getmod(bt)<>3))) then
+    result:=result or 8;
 end;
 
 function TDisassembler.getREG(bt: byte): byte;
@@ -837,6 +839,7 @@ begin
           end;
 
       3:  begin
+
             case getrm(memory[modrmbyte]) of
               0:  case inst of
                     0: if rex_w or (opperandsize=64) then result:='rax' else result:='eax';
@@ -7350,14 +7353,14 @@ begin
             end;
 
       $86 : begin
-              description:='exchage memory with register';
+              description:='exchange memory with register';
               lastdisassembledata.opcode:='xchg';
               lastdisassembledata.parameters:=modrm(memory,prefix2,1,2,last)+r8(memory[1]);
               inc(offset,last-1);
             end;
 
       $87 : begin
-              description:='exchage memory with register';
+              description:='exchange memory with register';
               lastdisassembledata.opcode:='xchg';
               if $66 in prefix2 then
                 lastdisassembledata.parameters:=modrm(memory,prefix2,1,1,last)+r16(memory[1]) else

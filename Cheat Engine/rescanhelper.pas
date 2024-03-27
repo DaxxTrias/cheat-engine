@@ -41,6 +41,8 @@ end;
 
 implementation
 
+uses ProcessHandlerUnit;
+
 function TRescanHelper.DownloadPages(page: ptruint): TPageInfo;
 var
   getPages: packed record
@@ -323,6 +325,8 @@ var i,j: integer;
 begin
   i:=lo;
   j:=hi;
+
+  if hi<0 then exit;
 
   x:=memoryregion[(lo+hi) div 2];
 

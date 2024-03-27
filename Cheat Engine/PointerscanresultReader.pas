@@ -61,6 +61,8 @@ type
 
     fEndsWithOffsetList: array of dword;
 
+    fCanResume: boolean;
+
     compressedPointerScanResult: PPointerscanResult;
     compressedTempBuffer: PByteArray;
 
@@ -107,9 +109,12 @@ type
     property MaxBitCountLevel: dword read fMaxBitCountLevel;
     property MaxBitCountOffset: dword read fMaxBitCountOffset;
     property LastRawPointer: pointer read fLastRawPointer;
+    property CanResume: boolean read fCanResume;
 end;
 
 implementation
+
+uses ProcessHandlerUnit;
 
 function TPointerscanresultreader.getMergedResultCount: integer;
 begin
@@ -179,6 +184,9 @@ begin
 
     //and the name
     s.Write(modulelist[i][1],x);
+
+    //and the base (for debugging info)
+    s.WriteQWord(qword(modulelist.Objects[i]));
   end;
 end;
 
@@ -466,6 +474,8 @@ begin
     configfile.Read(temppchar[0], x);
     temppchar[x]:=#0;
 
+    a:=configfile.ReadQWord;  //discard this info (only used for scandata)
+
     if original=nil then
     begin
       j:=tempmodulelist.IndexOf(temppchar);
@@ -629,6 +639,9 @@ begin
 
   freemem(temppchar);
   configfile.Free;
+
+
+  fCanResume:=fileexists(filename+'.resume.config') and fileexists(filename+'.resume.scandata') and fileexists(filename+'.resume.queue');
 end;
 
 destructor TPointerscanresultReader.destroy;

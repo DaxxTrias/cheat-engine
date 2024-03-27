@@ -878,7 +878,7 @@ begin
           if i>0 then
             lpbuffer.AllocationBase:=pointer(r[i-1].base+r[i-1].size)
           else
-            lpbuffer.AllocationBase:=0;
+            lpbuffer.AllocationBase:=nil;
 
           lpbuffer.AllocationProtect:=PAGE_NOACCESS;
 
@@ -1688,7 +1688,6 @@ var
   end;
   i: integer;
 
-  DS_AREA: QWORD;
 begin
   outputdebugstring(pchar(Format('ultimap: %x,%x,%d',[cr3, debugctl_value, DS_AREA_SIZE])));
 
@@ -1730,7 +1729,7 @@ var
   cc: dword;
   msrvalue: qword;
 begin
-  result:=-1;
+  result:=QWORD($ffffffffffffffff);
 
   if dbvmversion>=6 then
     result:=dbvm_readMSR(msr) //will raise a GPF if it doesn't exist
@@ -1787,7 +1786,7 @@ begin
     cc:=IOCTL_CE_LAUNCHDBVM;
 
 
-    temp:='\??\'+applicationpath+'vmdisk.img';
+    temp:='\??\'+widestring(applicationpath)+'vmdisk.img';
 
 
     input.dbvmimgpath:=qword(ptrUint(@temp[1]));

@@ -1,10 +1,10 @@
 object MainForm: TMainForm
   Tag = 2
-  Left = 606
+  Left = 531
   Height = 554
   Hint = ' '
-  Top = 247
-  Width = 839
+  Top = 241
+  Width = 597
   HelpContext = 3
   HorzScrollBar.Visible = False
   VertScrollBar.Visible = False
@@ -342,7 +342,6 @@ object MainForm: TMainForm
       Width = 42
       Caption = 'Test cap'
       ParentColor = False
-      Visible = False
       OnClick = Label59Click
     end
     object Label61: TLabel

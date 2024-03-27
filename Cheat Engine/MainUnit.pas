@@ -23,7 +23,7 @@ uses
   FPimage, byteinterpreter, frmgroupscanalgoritmgeneratorunit, vartypestrings,
   groupscancommandparser, GraphType, IntfGraphics, RemoteMemoryManager,
   DBK64SecondaryLoader, savedscanhandler, debuggertypedefinitions, networkInterface,
-  FrmMemoryRecordDropdownSettingsUnit, xmlutils;
+  FrmMemoryRecordDropdownSettingsUnit, xmlutils, zstream;
 
 //the following are just for compatibility
 
@@ -873,7 +873,7 @@ uses mainunit2, ProcessWindowUnit, MemoryBrowserFormUnit, TypePopup, HotKeys,
   frmFloatingPointPanelUnit, pluginexports, DBK32functions, frmUltimapUnit,
   frmSetCrosshairUnit, StructuresFrm2, frmMemoryViewExUnit,
   frmD3DHookSnapshotConfigUnit, frmSaveSnapshotsUnit, frmsnapshothandlerUnit,
-  frmNetworkDataCompressionUnit;
+  frmNetworkDataCompressionUnit, ProcessHandlerUnit, ProcessList, pointeraddresslist;
 
 resourcestring
   rsInvalidStartAddress = 'Invalid start address: %s';
@@ -7926,8 +7926,24 @@ begin
 end;
 
 procedure TMainForm.Label59Click(Sender: TObject);
+var
+  l: TPointerListHandler;
+  fs: TFileStream;
+  cs: Tdecompressionstream;
+  p: ptruint;
 begin
-  memscan.TerminateScan(true);
+  fs:=tfilestream.Create('e:\ptr\tut-018281F8.scandata', fmOpenRead);
+  cs:=Tdecompressionstream.create(fs);
+
+  l:=TPointerListHandler.createFromStream(cs, progressbar1);
+
+  p:=l.getPointer($6355d0);
+
+  cs.free;
+  fs.free;
+
+
+  showmessage(inttohex(p, 8)); //should be 01827d78
 end;
 
 procedure ChangeIcon(hModule: HModule; restype: PChar; resname: PChar;
