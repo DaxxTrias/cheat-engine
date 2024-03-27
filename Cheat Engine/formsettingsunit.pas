@@ -285,12 +285,12 @@ end;
 
 resourcestring
   strProcessWatcherWillPreventUnloader='Enabling the process watcher will prevent the unloader from working';
-  rsYouHavenTSelectedAnyMemoryTypeThisWillResultInChea = 'You haven''t selected any memory type. This will result in Cheat Engine finding NO memory! Are you stupid?';
+  rsYouHavenTSelectedAnyMemoryTypeThisWillResultInChea = 'You haven''t selected any memory type. This will result in CE finding NO memory! Are you stupid?';
   rsIsNotAValidInterval = '%s is not a valid interval';
   rsTheScanbufferSizeHasToBeGreaterThan0 = 'The scanbuffer size has to be greater than 0';
   rsTheValueForTheKeypollIntervalIsInvalid = 'the value for the keypoll interval (%s is invalid';
   rsTheValueForTheWaitBetweenHotkeyPressesIsInvalid = 'the value for the wait between hotkey presses (%s is invalid';
-  rsPleaseBootWithUnsignedDriversAllowedF8DuringBootOr = 'Please boot with unsigned drivers allowed(F8 during boot), or sign the driver yourself';
+  rsPleaseBootWithUnsignedDriversAllowedF8DuringBootOr = 'Please boot with  drivers allowed(F8 during boot), or sign the driver yourself';
   rsRequiresDBVM = '(Requires DBVM)';
   rsThisPluginIsAlreadyLoaded = 'This plugin is already loaded';
   rsIdle = 'Idle';
@@ -309,10 +309,10 @@ resourcestring
   rsDebuggerOptions = 'Debugger Options';
   rsExtra = 'Extra';
   rsNoName = 'No Name';
-  rsPopupHideCheatEngine = 'Popup/Hide cheat engine';
+  rsPopupHideCheatEngine = 'Popup/Hide CE';
   rsPauseTheSelectedProcess = 'Pause the selected process';
-  rsToggleTheSpeedhack = 'Toggle the speedhack';
-  rsSpeedhackSpeed = 'Speedhack speed';
+  rsToggleTheSpeedhack = 'Toggle the sp3edhack';
+  rsSpeedhackSpeed = 'Sp3edhack speed';
   rsChangeTypeTo = 'Change type to';
   rsBinary = 'Binary';
   rsByte = 'Byte';
@@ -405,7 +405,7 @@ begin
   reg:=Tregistry.Create;
   try
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine',true) then
+    if Reg.OpenKey('\Software\CE',true) then
     begin
       //write the settings
       reg.WriteInteger('Saved Stacksize', stacksize);
@@ -554,16 +554,16 @@ begin
 
 
         //save the hotkeylist
-        reg.WriteBinaryData('Show Cheat Engine Hotkey',frameHotkeyConfig.newhotkeys[0][0],10);
+        reg.WriteBinaryData('Show CE Hotkey',frameHotkeyConfig.newhotkeys[0][0],10);
         reg.WriteBinaryData('Pause process Hotkey',frameHotkeyConfig.newhotkeys[1][0],10);
-        reg.WriteBinaryData('Toggle speedhack Hotkey',frameHotkeyConfig.newhotkeys[2][0],10);
+        reg.WriteBinaryData('Toggle sp3edhack Hotkey',frameHotkeyConfig.newhotkeys[2][0],10);
 
 
-        reg.WriteFloat('Speedhack 1 speed',frameHotkeyConfig.newspeedhackspeed1.speed);
-        reg.WriteFloat('Speedhack 2 speed',frameHotkeyConfig.newspeedhackspeed2.speed);
-        reg.WriteFloat('Speedhack 3 speed',frameHotkeyConfig.newspeedhackspeed3.speed);
-        reg.WriteFloat('Speedhack 4 speed',frameHotkeyConfig.newspeedhackspeed4.speed);
-        reg.WriteFloat('Speedhack 5 speed',frameHotkeyConfig.newspeedhackspeed5.speed);
+        reg.WriteFloat('Sp3edhack 1 speed',frameHotkeyConfig.newspeedhackspeed1.speed);
+        reg.WriteFloat('Sp3edhack 2 speed',frameHotkeyConfig.newspeedhackspeed2.speed);
+        reg.WriteFloat('Sp3edhack 3 speed',frameHotkeyConfig.newspeedhackspeed3.speed);
+        reg.WriteFloat('Sp3edhack 4 speed',frameHotkeyConfig.newspeedhackspeed4.speed);
+        reg.WriteFloat('Sp3edhack 5 speed',frameHotkeyConfig.newspeedhackspeed5.speed);
 
         mainunit2.speedhackspeed1:=frameHotkeyConfig.newspeedhackspeed1;
         mainunit2.speedhackspeed2:=frameHotkeyConfig.newspeedhackspeed2;
@@ -571,17 +571,17 @@ begin
         mainunit2.speedhackspeed4:=frameHotkeyConfig.newspeedhackspeed4;
         mainunit2.speedhackspeed5:=frameHotkeyConfig.newspeedhackspeed5;
 
-        reg.WriteBinaryData('Set Speedhack speed 1 Hotkey',frameHotkeyConfig.newhotkeys[3][0],10);
-        reg.WriteBinaryData('Set Speedhack speed 2 Hotkey',frameHotkeyConfig.newhotkeys[4][0],10);
-        reg.WriteBinaryData('Set Speedhack speed 3 Hotkey',frameHotkeyConfig.newhotkeys[5][0],10);
-        reg.WriteBinaryData('Set Speedhack speed 4 Hotkey',frameHotkeyConfig.newhotkeys[6][0],10);
-        reg.WriteBinaryData('Set Speedhack speed 5 Hotkey',frameHotkeyConfig.newhotkeys[7][0],10);
+        reg.WriteBinaryData('Set Sp3edhack speed 1 Hotkey',frameHotkeyConfig.newhotkeys[3][0],10);
+        reg.WriteBinaryData('Set Sp3edhack speed 2 Hotkey',frameHotkeyConfig.newhotkeys[4][0],10);
+        reg.WriteBinaryData('Set Sp3edhack speed 3 Hotkey',frameHotkeyConfig.newhotkeys[5][0],10);
+        reg.WriteBinaryData('Set Sp3edhack speed 4 Hotkey',frameHotkeyConfig.newhotkeys[6][0],10);
+        reg.WriteBinaryData('Set Sp3edhack speed 5 Hotkey',frameHotkeyConfig.newhotkeys[7][0],10);
 
-        reg.WriteBinaryData('Increase Speedhack speed',frameHotkeyConfig.newhotkeys[8][0],10);
-        reg.WriteFloat('Increase Speedhack delta',frameHotkeyConfig.speedupdelta);
+        reg.WriteBinaryData('Increase Sp3edhack speed',frameHotkeyConfig.newhotkeys[8][0],10);
+        reg.WriteFloat('Increase Sp3edhack delta',frameHotkeyConfig.speedupdelta);
 
-        reg.WriteBinaryData('Decrease Speedhack speed',frameHotkeyConfig.newhotkeys[9][0],10);
-        reg.WriteFloat('Decrease Speedhack delta',frameHotkeyConfig.slowdowndelta);
+        reg.WriteBinaryData('Decrease Sp3edhack speed',frameHotkeyConfig.newhotkeys[9][0],10);
+        reg.WriteFloat('Decrease Sp3edhack delta',frameHotkeyConfig.slowdowndelta);
 
         mainunit2.speedupdelta:=frameHotkeyConfig.speedupdelta;
         mainunit2.slowdowndelta:=frameHotkeyConfig.slowdowndelta;
@@ -688,8 +688,8 @@ begin
 
 {$ifndef net}
     //save the tools hotkeys
-    reg.DeleteKey('\Software\Cheat Engine\Tools');
-    if Reg.OpenKey('\Software\Cheat Engine\Tools',true) then
+    reg.DeleteKey('\Software\CE\Tools');
+    if Reg.OpenKey('\Software\CE\Tools',true) then
     begin
       for i:=0 to lvTools.Items.Count-1 do
       begin
@@ -708,8 +708,8 @@ begin
     end;
 
     //save the plugins
-    reg.DeleteKey('\Software\Cheat Engine\Plugins'+cpu);
-    if Reg.OpenKey('\Software\Cheat Engine\Plugins'+cpu,true) then
+    reg.DeleteKey('\Software\CE\Plugins'+cpu);
+    if Reg.OpenKey('\Software\CE\Plugins'+cpu,true) then
     begin
       for i:=0 to clbplugins.Count-1 do
       begin

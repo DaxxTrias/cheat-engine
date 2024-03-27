@@ -170,7 +170,7 @@ resourcestring
   rsButAllowDecrease = 'but allow decrease';
   rsTo = 'to';
   rsBy = 'by';
-  rsOnCloseWarning = 'This form had an onClose event. Good thing this was only a stub, else Cheat Engine would have terminated';
+  rsOnCloseWarning = 'This form had an onClose event. Good thing this was only a stub, else ............ would have terminated';
   rsAlreadyATrainerFormDefined =
       'There is already a trainer form defined. '
     +'Continuing will erase the current trainerscript and cheats in the '
@@ -195,7 +195,7 @@ resourcestring
     +'want to set the hotkey for';
   rsYouNeedACheatTableWithCheatEntries = 'You need a cheat table with cheat '
     +'entries';
-  rsDonTSupportCheatEngineOrYourself = 'Don''t support Cheat Engine (or '
+  rsDonTSupportCheatEngineOrYourself = 'Don''t support ............ (or '
     +'yourself)';
   rsThankYou = 'Thank you! :)';
   rsAaaaw = 'aaaaw :(';
@@ -925,7 +925,7 @@ begin
   l.add('');
   l.add('RequiredCEVersion='+floattostr(ceversion));
   l.add('if (getCEVersion==nil) or (getCEVersion()<RequiredCEVersion) then');
-  l.add('  messageDialog(''Please install Cheat Engine ''..RequiredCEVersion, mtError, mbOK)');
+  l.add('  messageDialog(''Please install ............ ''..RequiredCEVersion, mtError, mbOK)');
   l.add('  closeCE()');
   l.add('end');
 

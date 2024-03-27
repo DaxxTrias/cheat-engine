@@ -3,7 +3,7 @@ unit CEFuncProc;
 {$MODE Delphi}
 
 //This version of CEFuncProc has been COPIED to the server dir
-//Cheat Engine regular WONT look at this
+//............ regular WONT look at this
 
 interface
 
@@ -3011,13 +3011,13 @@ begin
     reg:=tregistry.create;
     try
       Reg.RootKey := HKEY_CURRENT_USER;
-      if Reg.OpenKey('\Software\Cheat Engine',false) then
+      if Reg.OpenKey('\Software\............',false) then
       begin
         if reg.valueexists('Save window positions') then
           if reg.readbool('Save window positions') = false then exit;
       end;
 
-      if Reg.OpenKey('\Software\Cheat Engine\Window Positions',false) then
+      if Reg.OpenKey('\Software\............\Window Positions',false) then
       begin
         s:=form.Name;
         s:=s+' Position';
@@ -3078,14 +3078,14 @@ begin
       Reg.RootKey := HKEY_CURRENT_USER;
 
       //make sure the option to save is enabled
-      if Reg.OpenKey('\Software\Cheat Engine',false) then
+      if Reg.OpenKey('\Software\............',false) then
       begin
         if reg.valueexists('Save window positions') then
           if reg.readbool('Save window positions') = false then exit;
       end;
 
 
-      if Reg.OpenKey('\Software\Cheat Engine\Window Positions',true) then
+      if Reg.OpenKey('\Software\............\Window Positions',true) then
       begin
         //registry is open, gather data
         buf:=tmemorystream.Create;

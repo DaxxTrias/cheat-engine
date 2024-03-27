@@ -105,7 +105,7 @@ begin
   reg:=tregistry.create;
   try
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine\D3DHook',false) then
+    if Reg.OpenKey('\Software\............\D3DHook',false) then
     begin
       if reg.ValueExists('Snapshot Folder') then
         dirSnapshot.text:=reg.ReadString('Snapshot Folder');
@@ -153,7 +153,7 @@ begin
   reg:=tregistry.create;
   try
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine\D3DHook',true) then
+    if Reg.OpenKey('\Software\............\D3DHook',true) then
     begin
       reg.WriteString('Snapshot Folder', dirSnapshot.Text);
       reg.WriteBool('Snapshot Progressive', cbProgressive.checked);

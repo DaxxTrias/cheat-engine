@@ -997,7 +997,7 @@ end
 
 
 function monoform_miExpandAllClick(sender)
-  if messageDialog("Are you sure you wish to expand the whole tree? This can take a while and Cheat Engine may look like it has crashed (It has not)", mtConfirmation, mbYes, mbNo)==mrYes then
+  if messageDialog("Are you sure you wish to expand the whole tree? This can take a while and ............ may look like it has crashed (It has not)", mtConfirmation, mbYes, mbNo)==mrYes then
     monoForm.TV.beginUpdate()
     monoForm.TV.fullExpand()
 	monoForm.TV.endUpdate()

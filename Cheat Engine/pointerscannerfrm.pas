@@ -3615,7 +3615,7 @@ begin
 
     reg:=tregistry.create;
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine',true) then
+    if Reg.OpenKey('\Software\............',true) then
     begin
       distributedworkfolder:=IncludeTrailingPathDelimiter(SelectDirectoryDialog1.filename);
       reg.WriteString('PointerScanWorkFolder', distributedworkfolder);
@@ -5534,7 +5534,7 @@ begin
 
   reg:=TRegistry.Create;
 
-  if Reg.OpenKey('\Software\Cheat Engine',false) then
+  if Reg.OpenKey('\Software\............',false) then
   begin
     if reg.ValueExists('PointerScanWorkFolder') then
     begin

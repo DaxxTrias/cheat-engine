@@ -73,7 +73,7 @@ object ProcessWindow: TProcessWindow
         Height = 20
         Top = 120
         Width = 76
-        Caption = 'Process List'
+        Caption = 'Lahahaha'
         OnClick = btnProcesslistClick
         TabOrder = 2
       end
@@ -129,7 +129,7 @@ object ProcessWindow: TProcessWindow
         Height = 21
         Top = 164
         Width = 129
-        Caption = 'Process List(long)'
+        Caption = 'Lehuhuhu(long)'
         OnClick = btnProcessListLongClick
         TabOrder = 8
       end

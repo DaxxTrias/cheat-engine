@@ -918,7 +918,7 @@ resourcestring
   rsRename = 'Rename';
   rsSaveToDisk = 'Save to disk';
   rsAreYouSureYouWantToDelete = 'Are you sure you want to delete %s?';
-  rsCheatEngine = 'Cheat Engine';
+  rsCheatEngine = '............';
   rsWhatWillBeTheNewNameForThisTab = 'What will be the new name for this tab?';
   rsScan = 'Scan';
   rsScanresult = 'Scanresult';
@@ -926,14 +926,14 @@ resourcestring
   rsWhatNameDoYouWantToGiveToTheseScanresults =
     'What name do you want to give to these scanresults?';
   rsThankYouForTryingOutCheatEngineBecauseItHasExpired =
-    'Thank you for trying out Cheat Engine. Because it has expired Cheat Engine will now close. Is that ok with you?';
+    'Thank you for trying out ............. Because it has expired ............ will now close. Is that ok with you?';
   rsWHATAreYouSayingYouReGoingToContinueUsingCEILLEGAL =
     'WHAT!!! Are you saying you''re going to continue using CE ILLEGALLY??? If you say yes, i''m going to mail the cops to '
     + 'get you and send you to jail!!!';
   rsHrmpfBecauseIMInAGoodMoodILlLetYouGoThisTimeButDon =
     'Hrmpf... Because I''m in a good mood i''ll let you go this time. But don''t do it again you filthy pirate';
   rsAprilFools = 'April fools!!!!';
-  strClickToGoHome = 'Click here to go to the Cheat Engine homepage';
+  strClickToGoHome = 'Click here to go to the ............ homepage';
   rsLuaScriptCheatTable = 'Lua script: Cheat Table';
   strChangeDescription1 = 'Description';
   strChangeDescription2 = 'Change the description to:';
@@ -966,7 +966,7 @@ resourcestring
   rsComparingTo = 'Comparing to %s';
   rsHex = 'Hex';
   rsDoYouWantToGoToTheCheatEngineWebsite =
-    'Do you want to go to the Cheat Engine website?';
+    'Do you want to go to the ............ website?';
 
   strdeleteall = 'Are you sure you want to delete all addresses?';
   stralreadyin = 'This address is already in the list';
@@ -1013,17 +1013,17 @@ resourcestring
   strHideAll = 'will hide all windows';
   strUnHideForeground = 'will bring the foreground window back';
   strUnhideAll = 'will bring all windows back';
-  rsBringsCheatEngineToFront = 'brings Cheat Engine to front';
+  rsBringsCheatEngineToFront = 'brings ............ to front';
 
   strhappybirthday = 'Let''s sing Happy Birthday for Dark Byte today!';
   strXMess = 'Merry christmas and happy new year';
   strNewyear = 'And what are your good intentions for this year? ;-)';
-  strfuture = 'Wow,I never imagined people would use Cheat Engine up to today';
+  strfuture = 'Wow,I never imagined people would use ............ up to today';
   rsLicenseExpired =
-    'Your license to use Cheat Engine has expired. You can buy a license to use cheat engine for 1 month for $200, 6 months for only $1000 and for 1 year for ' + 'only $1800. If you don''t renew your license Cheat Engine will be severely limited in it''s abilities. (e.g: Next scan has been disabled)';
+    'Your license to use ............ has expired. You can buy a license to use ............ for 1 month for $200, 6 months for only $1000 and for 1 year for ' + 'only $1800. If you don''t renew your license ............ will be severely limited in it''s abilities. (e.g: Next scan has been disabled)';
   rsEXPIRED = 'EXPIRED';
   strdontbother =
-    'Don''t even bother. Cheat Engine uses the main thread to receive messages when the scan is done, freeze it and CE will crash!';
+    'Don''t even bother. ............ uses the main thread to receive messages when the scan is done, freeze it and CE will crash!';
   rsTheProcessIsnTFullyOpenedIndicatingAInvalidProcess =
     'The process isn''t fully opened. Indicating a invalid ProcessID. You still want to find out the EPROCESS? (BSOD is '
     + 'possible)';
@@ -3605,13 +3605,13 @@ begin
   vartype.OnChange := nil;
   //disable the onchange event so CreateCustomType doesn't keep setting it
   try
-    if reg.OpenKey('\Software\Cheat Engine\CustomTypes\', False) then
+    if reg.OpenKey('\Software\............\CustomTypes\', False) then
     begin
       CustomTypes := TStringList.Create;
       reg.GetKeyNames(CustomTypes);
       for i := 0 to CustomTypes.Count - 1 do
       begin
-        if reg.OpenKey('\Software\Cheat Engine\CustomTypes\' + CustomTypes[i], False) then
+        if reg.OpenKey('\Software\............\CustomTypes\' + CustomTypes[i], False) then
         begin
           try
             islua := False;
@@ -3678,7 +3678,7 @@ begin
       mtConfirmation, [mbNo, mbYes], 0) = mrYes then
     begin
       reg := tregistry.Create;
-      reg.DeleteKey('\Software\Cheat Engine\CustomTypes\' + ct.Name);
+      reg.DeleteKey('\Software\............\CustomTypes\' + ct.Name);
       ct.remove;
       RefreshCustomTypes;
     end;
@@ -3717,7 +3717,7 @@ begin
       begin
         //delete the old one
         reg := Tregistry.Create;
-        reg.DeleteKey('\Software\Cheat Engine\CustomTypes\' + oldname);
+        reg.DeleteKey('\Software\............\CustomTypes\' + oldname);
         reg.Free;
       end;
     end;
@@ -3726,7 +3726,7 @@ begin
 
     //Add/change this to the registry
     reg := Tregistry.Create;
-    if Reg.OpenKey('\Software\Cheat Engine\CustomTypes\' + ct.Name, True) then
+    if Reg.OpenKey('\Software\............\CustomTypes\' + ct.Name, True) then
     begin
       reg.WriteString('Script', script);
       if lua then
@@ -4539,7 +4539,7 @@ begin
 
   reg:=TRegistry.create;
   try
-    if reg.OpenKey('\Software\Cheat Engine\', true) then
+    if reg.OpenKey('\Software\............\', true) then
       reg.WriteBool('Show previous value column', miShowPreviousValue.checked);
   finally
     reg.free;
@@ -4725,7 +4725,7 @@ begin
   reg := Tregistry.Create;
   try
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine', False) then
+    if Reg.OpenKey('\Software\............', False) then
     begin
       if reg.ValueExists('Initial tables dir') then
       begin
@@ -6703,7 +6703,7 @@ begin
     reg := TRegistry.Create;
     try
       Reg.RootKey := HKEY_CURRENT_USER;
-      if Reg.OpenKey('\Software\Cheat Engine', False) then
+      if Reg.OpenKey('\Software\............', False) then
         hotkey := reg.ReadString('BringToFrontHotkey');
     except
     end;
@@ -6760,9 +6760,9 @@ begin
   try
     Reg.RootKey := HKEY_CURRENT_USER;
 
-    if not Reg.OpenKey('\Software\Cheat Engine', False) then
+    if not Reg.OpenKey('\Software\............', False) then
     begin
-      if Reg.OpenKey('\Software\Cheat Engine', True) then
+      if Reg.OpenKey('\Software\............', True) then
       begin
         //write some default data into the register
         reg.WriteBool('Undo', True);
@@ -6801,7 +6801,7 @@ begin
 
   //  animatewindow(mainform.Handle,10000,AW_CENTER);
   //mainform.repaint;
-  fronttext := 'brings Cheat engine to front';
+  fronttext := 'brings ............ to front';
 
   if dontrunshow then
     exit;
@@ -7226,7 +7226,7 @@ begin
   reg := Tregistry.Create;
   try
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine', True) then
+    if Reg.OpenKey('\Software\............', True) then
       reg.WriteString('Initial tables dir', dir);
 
   finally

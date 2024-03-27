@@ -1,7 +1,7 @@
-A. Cheat Engine Licence
+A. ............ Licence
 B. OpenCandy End User License Agreement
 
-A. Cheat Engine Licence
+A. ............ Licence
 1) This license agreement is a legal agreement between you and the author of this program.
 2) By installing or otherwise using this program you agree to be bound by this agreement. If you do not agree to the terms of this Agreement, you may not install or use this program.
 3) This program is distributed as "FREEWARE" and "AS IS".

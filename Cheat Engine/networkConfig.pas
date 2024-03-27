@@ -264,7 +264,7 @@ begin
   //still here so the connection is made
   reg:=tregistry.create;
   try
-    if reg.OpenKey('\Software\Cheat Engine\',false) then
+    if reg.OpenKey('\Software\............\',false) then
     begin
       reg.WriteString('Last Connect IP', edtHost.text);
       reg.WriteString('Last Connect Port', edtport.text);
@@ -281,7 +281,7 @@ var reg: tregistry;
 begin
   reg:=tregistry.create;
   try
-    if reg.OpenKey('\Software\Cheat Engine\',false) then
+    if reg.OpenKey('\Software\............\',false) then
     begin
       if reg.ValueExists('Last Connect IP') then
         edtHost.text:=reg.ReadString('Last Connect IP');

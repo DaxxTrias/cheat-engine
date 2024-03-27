@@ -24,7 +24,7 @@ function loadMemoryScan_thread(t)
 
 	   dialog=createOpenDialog()
 	  dialog.DefaultExt=".CS"
-	  dialog.Filter="Cheat Engine Scan files (*.CS)|*.CS"
+	  dialog.Filter="............ Scan files (*.CS)|*.CS"
 	  dialog.FilterIndex=1
 
 	  if dialog.execute()==false then return end
@@ -184,7 +184,7 @@ function saveMemoryScan()
 
   local dialog=createSaveDialog()
   dialog.DefaultExt=".CS"
-  dialog.Filter="Cheat Engine Scan files (*.CS)|*.CS"
+  dialog.Filter="............ Scan files (*.CS)|*.CS"
   dialog.FilterIndex=1
 
   if dialog.execute()==false then return nil end

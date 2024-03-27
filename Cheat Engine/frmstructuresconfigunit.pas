@@ -278,7 +278,7 @@ begin
   reg:=tregistry.create;
   try
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine\DissectData',true) then
+    if Reg.OpenKey('\Software\............\DissectData',true) then
     begin
 
       reg.WriteInteger('Default Color',defaultText);
@@ -336,7 +336,7 @@ begin
   reg:=tregistry.create;
   try
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine\DissectData',false) then
+    if Reg.OpenKey('\Software\............\DissectData',false) then
     begin
       if reg.ValueExists('Default Color') then defaultText:=reg.ReadInteger('Default Color');
       if reg.ValueExists('Match Color') then equalText:=reg.ReadInteger('Match Color');

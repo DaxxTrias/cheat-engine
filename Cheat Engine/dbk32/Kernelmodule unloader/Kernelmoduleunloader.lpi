@@ -76,8 +76,8 @@
       <Filename Value="..\..\bin\kernelmoduleunloader-$(TargetCPU)"/>
     </Target>
     <SearchPaths>
-      <IncludeFiles Value="F:\svn\Cheat Engine 6\dbk32\"/>
-      <OtherUnitFiles Value="F:\svn\Cheat Engine 6\dbk32\"/>
+      <IncludeFiles Value="F:\svn\............ 6\dbk32\"/>
+      <OtherUnitFiles Value="F:\svn\............ 6\dbk32\"/>
     </SearchPaths>
     <Linking>
       <Debugging>

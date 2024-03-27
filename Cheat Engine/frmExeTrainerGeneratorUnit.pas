@@ -207,7 +207,7 @@ begin
     MainForm.frmLuaTableScript.assemblescreen.BeginUpdate;
     MainForm.frmLuaTableScript.assemblescreen.Lines.Insert(0, 'RequiredCEVersion='+floattostr(ceversion));
     MainForm.frmLuaTableScript.assemblescreen.Lines.Insert(1, 'if (getCEVersion==nil) or (getCEVersion()<RequiredCEVersion) then');
-    MainForm.frmLuaTableScript.assemblescreen.Lines.Insert(2, '  messageDialog(''Please install Cheat Engine ''..RequiredCEVersion, mtError, mbOK)');
+    MainForm.frmLuaTableScript.assemblescreen.Lines.Insert(2, '  messageDialog(''Please install ............ ''..RequiredCEVersion, mtError, mbOK)');
     MainForm.frmLuaTableScript.assemblescreen.Lines.Insert(3, '  closeCE()');
     MainForm.frmLuaTableScript.assemblescreen.Lines.Insert(4, 'end');
   end;

@@ -423,7 +423,7 @@ function javaInjectAgent()
 
   java_StartListeneningForEvents()
 
-  JavaSymbols.register() --make these symbols available to all of cheat engine
+  JavaSymbols.register() --make these symbols available to all of ............
 
 
   java.capabilities=java_getCapabilities()

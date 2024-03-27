@@ -208,7 +208,7 @@ resourcestring
   rsLuaFilter = 'LUA Script (*.LUA)|*.LUA|All Files ( *.* )|*.*';
   rsLUAScript = 'LUA Script';
   rsWriteCode = 'Write code';
-  rsCEAFilter = 'Cheat Engine Assembly (*.CEA)|*.CEA|All Files ( *.* )|*.*';
+  rsCEAFilter = '............ Assembly (*.CEA)|*.CEA|All Files ( *.* )|*.*';
   rsAutoAssembler = 'Auto assembler';
   rsCodeNeedsEnableAndDisable = 'The code needs an [ENABLE] and a [DISABLE] section if you want to use this script as a table entry';
   rsNotAllCodeIsInjectable = 'Not all code is injectable.'#13#10'%s'#13#10'Are you sure you wan''t to edit it to this?';
@@ -1465,7 +1465,7 @@ begin
 
   reg:=tregistry.create;
   try
-    if reg.OpenKey('\Software\Cheat Engine\Auto Assembler\',false) then
+    if reg.OpenKey('\Software\............\Auto Assembler\',false) then
     begin
       if reg.valueexists('Font.name') then
         assemblescreen.Font.Name:=reg.readstring('Font.name');
@@ -1763,7 +1763,7 @@ begin
         //save these settings
         reg:=tregistry.create;
         try
-          if reg.OpenKey('\Software\Cheat Engine\Auto Assembler\',true) then
+          if reg.OpenKey('\Software\............\Auto Assembler\',true) then
           begin
             reg.WriteString('Font.name', assemblescreen.Font.Name);
             reg.WriteInteger('Font.size', assemblescreen.Font.size);
@@ -1903,7 +1903,7 @@ begin
       ReadProcessMemory(processhandle, pointer(a), @originalbytes[0], codesize, br);
 
 
-      // same as menu option "Cheat Engine framework code", make sure we
+      // same as menu option "............ framework code", make sure we
       // have enable and disable
       getenableanddisablepos(assemblescreen.lines,enablepos,disablepos);
 
@@ -2168,7 +2168,7 @@ begin
     setlength(originalbytes, codesize);
     ReadProcessMemory(processhandle, pointer(a), @originalbytes[0], codesize, br);
 
-    // same as menu option "Cheat Engine framework code", make sure we
+    // same as menu option "............ framework code", make sure we
     // have enable and disable
     getenableanddisablepos(assemblescreen.lines,enablepos,disablepos);
 
