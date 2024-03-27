@@ -130,7 +130,7 @@ uses autoassembler, MainUnit, MainUnit2, LuaClass, frmluaengineunit, plugin, plu
   rttihelper, LuaDotNetPipe, LuaRemoteExecutor, windows7taskbar, debugeventhandler,
   tcclib, dotnethost, CSharpCompiler, LuaCECustomButton, feces, process,
   networkInterface, networkInterfaceApi, LuaVirtualStringTree, userbytedisassembler,
-  parsers, LuaNetworkInterface;
+  parsers, LuaNetworkInterface, symbolsync;
 
   {$warn 5044 off}
 
@@ -243,6 +243,7 @@ begin
 end;
 
 threadvar insideErrorHandler: boolean;
+
 function lua_defaulterrorhandler(L: Plua_State):integer; cdecl;
 var
   e: string;
@@ -250,6 +251,7 @@ var
 begin
   result:=0;
   insideErrorHandler:=true;
+
   try
     lua_getglobal(L,'onLuaError');
     if lua_isfunction(L,-1) then
@@ -288,14 +290,10 @@ begin
 
     lua_pop(L,1);
     lua_pushstring(L,traceresult);
-
-
-
     result:=1;
-  except
-    result:=0;
+  finally
+    insideErrorHandler:=false;
   end;
-  insideErrorHandler:=false;
 end;
 
 function lua_pcall(L: Plua_State; nargs, nresults, errf: Integer): Integer; cdecl;
@@ -330,15 +328,22 @@ begin
     result:=lua.lua_pcall(L, nargs, nresults, errf);
 
     if addedexceptionhandler then
+    begin
       lua_remove(L,errf);
+      errf:=0;
+    end;
+
   except
     on e: exception do
     begin
       lua_pop(L, lua_gettop(L));
       result:=LUA_ERRRUN;
+      if addedexceptionhandler then
+        errf:=0;
+
       lua_pushstring(l, e.Message);
 
-      if (GetCurrentThreadId=MainThreadID) and (e.Message='Access violation') and mainform.miEnableLCLDebug.checked then
+      if (GetCurrentThreadId=MainThreadID) and mainform.miEnableLCLDebug.checked then
       begin
         DebugLn('Lua Exception: '+e.Message);
         lazlogger.DumpExceptionBackTrace;
@@ -350,8 +355,6 @@ begin
   begin
     if GetCurrentThreadId=MainThreadID then
     begin
-
-
       //lua_Debug
       error:=Lua_ToString(l, -1);
       if (error<>'') then
@@ -366,7 +369,7 @@ begin
           usesluaengineform:=true;
         end;
 
-        printoutput.add(rsError+error);
+        printoutput.AddText(rsError+error);
 
         if (frmLuaEngine<>nil) and usesluaengineform and (frmLuaEngine.cbShowOnPrint.checked) then
           frmLuaEngine.show;
@@ -671,15 +674,77 @@ begin
     result:='nil';
 end;
 
+procedure LoadLuaScriptsFromPath(path: string; var mainformwasset: boolean; var addresslistwasset: boolean);
+var
+  DirInfo: TSearchRec;
+  i,r: integer;
+  pc: pchar;
+
+
+begin
+  ZeroMemory(@DirInfo,sizeof(TSearchRec));
+  r := FindFirst(path+'*.lua', FaAnyfile, DirInfo);
+
+  while (r = 0) do
+  begin
+    if (DirInfo.Attr and FaVolumeId <> FaVolumeID) then
+    begin
+      if ((DirInfo.Attr and FaDirectory) <> FaDirectory) then
+      begin
+        i:=lua_dofile(luavm, pchar( UTF8ToWinCP(autorunpath+DirInfo.name)));
+        if i<>0 then //error
+        begin
+          i:=lua_gettop(luavm);
+          if i>0 then
+          begin
+            pc:=lua_tolstring(luavm, -1,nil);
+            if pc<>nil then
+              showmessage(DirInfo.name+rsError2+pc)
+            else
+              showmessage(DirInfo.name+rsError3);
+          end
+          else showmessage(DirInfo.name+rsError3);
+        end;
+
+        //reset stack
+        lua_pop(LuaVM, lua_gettop(luavm));
+
+        if mainformwasset then
+        begin
+          lua_getglobal(LuaVM,'MainForm');
+          if lua_isnil(LuaVM,-1) then
+          begin
+            MessageDlg(format(rsScriptCorruptedVar, [autorunpath+DirInfo.name, 'MainForm']), mtError,[mbOK],0);
+            mainformwasset:=false;
+          end;
+          lua_pop(LuaVM,1);
+        end;
+
+        if addresslistwasset then
+        begin
+          lua_getglobal(LuaVM,'AddressList');
+          if lua_isnil(LuaVM,-1) then
+          begin
+            MessageDlg(format(rsScriptCorruptedVar, [autorunpath+DirInfo.name, 'AddressList']), mtError,[mbOK],0);
+            addresslistwasset:=false;
+          end;
+          lua_pop(LuaVM,1);
+        end;
+
+      end;
+    end;
+    r := FindNext(DirInfo);
+  end;
+  FindClose(DirInfo);
+end;
+
 procedure InitializeLuaScripts(noautorun: boolean=false);
 var f: string;
   i,r: integer;
+
   pc: pchar;
-  DirInfo: TSearchRec;
   mainformwasset: boolean=true;
-  addresslistwasset: boolean=true;
-
-
+  addresslistwasset: boolean=false;
 begin
   lua_getglobal(LuaVM,'MainForm');
   if lua_isnil(LuaVM,-1) then
@@ -743,68 +808,11 @@ begin
   end;
 
   //autorun folder
-
   if noautorun=false then
   begin
-
-
-    ZeroMemory(@DirInfo,sizeof(TSearchRec));
-    r := FindFirst(autorunpath+'*.lua', FaAnyfile, DirInfo);
-
-    while (r = 0) do
-    begin
-      if (DirInfo.Attr and FaVolumeId <> FaVolumeID) then
-      begin
-        if ((DirInfo.Attr and FaDirectory) <> FaDirectory) then
-        begin
-          i:=lua_dofile(luavm, pchar( UTF8ToWinCP(autorunpath+DirInfo.name)));
-          if i<>0 then //error
-          begin
-            i:=lua_gettop(luavm);
-            if i>0 then
-            begin
-              pc:=lua_tolstring(luavm, -1,nil);
-              if pc<>nil then
-                showmessage(DirInfo.name+rsError2+pc)
-              else
-                showmessage(DirInfo.name+rsError3);
-            end
-            else showmessage(DirInfo.name+rsError3);
-          end;
-
-          //reset stack
-          lua_pop(LuaVM, lua_gettop(luavm));
-
-          if mainformwasset then
-          begin
-            lua_getglobal(LuaVM,'MainForm');
-            if lua_isnil(LuaVM,-1) then
-            begin
-              MessageDlg(format(rsScriptCorruptedVar, [autorunpath+DirInfo.name, 'MainForm']), mtError,[mbOK],0);
-              mainformwasset:=false;
-            end;
-            lua_pop(LuaVM,1);
-          end;
-
-          if addresslistwasset then
-          begin
-            lua_getglobal(LuaVM,'AddressList');
-            if lua_isnil(LuaVM,-1) then
-            begin
-              MessageDlg(format(rsScriptCorruptedVar, [autorunpath+DirInfo.name, 'AddressList']), mtError,[mbOK],0);
-              addresslistwasset:=false;
-            end;
-            lua_pop(LuaVM,1);
-          end;
-
-        end;
-      end;
-      r := FindNext(DirInfo);
-    end;
-    FindClose(DirInfo);
+    loadLuaScriptsFromPath(autorunpath, mainformwasset, addresslistwasset);
+    LoadLuaScriptsFromPath(autorunpath+'custom'+PathDelim, mainformwasset, addresslistwasset);
   end;
-
-
 
   if translationfilepath<>'' then
   begin
@@ -1531,98 +1539,66 @@ var i,e: integer;
   oldstack: integer;
   l: Plua_State;
 begin
- // OutputDebugString(inttohex(qword(GetCurrentThreadId),1)+':LUA_functioncall calling '+routinetocall);
- { if GetCurrentThreadId<>MainThreadID then
-  begin
-    OutputDebugString('Not main thread');
-    l:=lua_newthread(luavm);
-  end
-  else  }
-    l:=luavm;
-
+  l:=luavm;
 
   result:=-1;
   oldstack:=lua_gettop(l);
 
- // OutputDebugString('LUA_functioncall: oldstack='+inttostr(oldstack));
+  try
+    lua_getglobal(l, pchar(routinetocall));
+    p:=lua_gettop(l);
 
- // if luacs.TryEnter then
-  begin
-    try
-      //check if the routine exists
-    //  OutputDebugString('LUA_functioncall: calling getglobal');
-
-      lua_getglobal(l, pchar(routinetocall));
-
-     // OutputDebugString('LUA_functioncall: after getglobal');
-
-      p:=lua_gettop(l);
-     // OutputDebugString('LUA_functioncall: newstack='+inttostr(p));
-
-      if p<>oldstack then
+    if p<>oldstack then
+    begin
+      if lua_isfunction(l, -1) then
       begin
-        if lua_isfunction(l, -1) then
+        //routine exists, fill in the parameters
+        for i:=0 to length(parameters)-1 do
         begin
-          //OutputDebugString('LUA_functioncall: function exists');
-          //OutputDebugString('LUA_functioncall: length(parameters)='+inttostr(length(parameters)));
-
-          //routine exists, fill in the parameters
-          for i:=0 to length(parameters)-1 do
-          begin
-            case parameters[i].VType of
-              system.vtInteger : lua_pushinteger(L, parameters[i].VInteger);
-              system.vtBoolean: lua_pushboolean(L, parameters[i].VBoolean);
-              system.vtChar:
-              begin
-                c:=parameters[i].VChar;
-                lua_pushstring(L, c);
-              end;
-              system.vtExtended: lua_pushnumber(L, parameters[i].VExtended^);
-              system.vtString: lua_pushstring(L, pchar(parameters[i].VString));
-              system.vtPointer: lua_pushlightuserdata(L, parameters[i].VPointer);
-              system.vtPChar: lua_pushstring(L, parameters[i].VPChar);
-              system.vtObject: luaclass_newClass(L, parameters[i].VObject); //lua_pushlightuserdata(L, pointer(parameters[i].VObject));
-              system.vtClass: lua_pushlightuserdata(L, pointer(parameters[i].VClass));
-              system.vtWideChar, vtPWideChar, vtVariant, vtInterface,
-                vtWideString: lua_pushstring(L, rsCheatengineIsBeingAFag);
-              system.vtAnsiString: lua_pushstring(L, pchar(parameters[i].VAnsiString));
-              system.vtCurrency: lua_pushnumber(L, parameters[i].VCurrency^);
-              system.vtInt64:
-              begin
-                if (parameters[i].VInt64^<=$ffffffff) then
-                  lua_pushinteger(L, parameters[i].VInt64^)
-                else
-                  lua_pushlightuserdata(L, pointer(parameters[i].VInt64^));
-              end;
-              system.vtQWord:
-              begin
-                if (parameters[i].VQWord^<=$ffffffff) then
-                  lua_pushinteger(L, parameters[i].VQWord^)
-                else
-                  lua_pushlightuserdata(L, pointer(parameters[i].VQWord^));
-              end;
+          case parameters[i].VType of
+            system.vtInteger : lua_pushinteger(L, parameters[i].VInteger);
+            system.vtBoolean: lua_pushboolean(L, parameters[i].VBoolean);
+            system.vtChar:
+            begin
+              c:=parameters[i].VChar;
+              lua_pushstring(L, c);
             end;
-
+            system.vtExtended: lua_pushnumber(L, parameters[i].VExtended^);
+            system.vtString: lua_pushstring(L, pchar(parameters[i].VString));
+            system.vtPointer: lua_pushlightuserdata(L, parameters[i].VPointer);
+            system.vtPChar: lua_pushstring(L, parameters[i].VPChar);
+            system.vtObject: luaclass_newClass(L, parameters[i].VObject); //lua_pushlightuserdata(L, pointer(parameters[i].VObject));
+            system.vtClass: lua_pushlightuserdata(L, pointer(parameters[i].VClass));
+            system.vtWideChar, vtPWideChar, vtVariant, vtInterface,
+              vtWideString: lua_pushstring(L, rsCheatengineIsBeingAFag);
+            system.vtAnsiString: lua_pushstring(L, pchar(parameters[i].VAnsiString));
+            system.vtCurrency: lua_pushnumber(L, parameters[i].VCurrency^);
+            system.vtInt64:
+            begin
+              if (parameters[i].VInt64^<=$ffffffff) then
+                lua_pushinteger(L, parameters[i].VInt64^)
+              else
+                lua_pushlightuserdata(L, pointer(parameters[i].VInt64^));
+            end;
+            system.vtQWord:
+            begin
+              if (parameters[i].VQWord^<=$ffffffff) then
+                lua_pushinteger(L, parameters[i].VQWord^)
+              else
+                lua_pushlightuserdata(L, pointer(parameters[i].VQWord^));
+            end;
           end;
 
-         // OutputDebugString('Lua_functioncall: Calling lua_pcall');
-          lua_pcall(L, length(parameters), 1, 0);
-         // OutputDebugString('Lua_functioncall: returned from lua_pcall');
-          i:=lua_gettop(L);
-          if i>0 then //it has a parameter
-            result:=lua_tointeger(L, -1);
         end;
+        lua_pcall(L, length(parameters), 1, 0);
 
-
+        i:=lua_gettop(L);
+        if i>0 then //it has a parameter
+          result:=lua_tointeger(L, -1);
       end;
-
-
-    finally
-     // OutputDebugString('Lua_functioncall exit');
-      lua_settop(L, oldstack);
- //     luacs.leave;
     end;
-
+  finally
+    lua_settop(L, oldstack);
   end;
 end;
 
@@ -5041,7 +5017,7 @@ begin
   if lua_gettop(L)>=1 then
     luaclass_newClass(L, TOpenDialog.create(lua_toceuserdata(L, 1)))
   else
-    luaclass_newClass(L, TOpenDialog.create(nil));
+    luaclass_newClass(L, TOpenDialog.create(nil), true);
 
   result:=1;
 end;
@@ -8511,6 +8487,11 @@ begin
   result:=1;
 end;
 
+function getABI(L: PLua_State): integer; cdecl;
+begin
+  lua_pushinteger(L, integer(processhandler.OSABI));
+  result:=1;
+end;
 
 
 function unregisterFormAddNotification(L: PLua_State): integer; cdecl;
@@ -10130,6 +10111,67 @@ begin
     unregisterStructureAndElementListCallback(lua_tointeger(L, 1));
 end;
 //----
+
+
+function lua_registerSpeedhackCallbacks(L: PLua_State): integer; cdecl;
+var
+  f: integer;
+  routine: string;
+  lc,lc2: tluacaller;
+begin
+  result:=0;
+  if lua_gettop(L)>=2 then
+  begin
+    if lua_isfunction(L, 1) then
+    begin
+      lua_pushvalue(L, 1);
+      f:=luaL_ref(L,LUA_REGISTRYINDEX);
+
+      lc:=TLuaCaller.create;
+      lc.luaroutineIndex:=f;
+    end
+    else
+    if lua_isstring(L,1) then
+    begin
+      routine:=lua_tostring(L,1);
+      lc:=TLuaCaller.create;
+      lc.luaroutine:=routine;
+    end
+    else exit;
+
+    if lua_isfunction(L, 2) then
+    begin
+      lua_pushvalue(L, 2);
+      f:=luaL_ref(L,LUA_REGISTRYINDEX);
+
+      lc2:=TLuaCaller.create;
+      lc2.luaroutineIndex:=f;
+    end
+    else
+    if lua_isstring(L,2) then
+    begin
+      routine:=lua_tostring(L,2);
+      lc2:=TLuaCaller.create;
+      lc2.luaroutine:=routine;
+    end
+    else exit;
+
+    lua_pushinteger(L, registerSpeedhackCallbacks(lc.SpeedHackOnActivate, lc2.SpeedHackSetSpeedEvent));
+    result:=1;
+  end;
+
+end;
+
+function lua_unregisterSpeedhackCallbacks(L: PLua_State): integer; cdecl;
+var i: integer;
+begin
+  result:=0;
+  if lua_gettop(L)>=1 then
+  begin
+    i:=lua_tointeger(L,1);
+    unregisterSpeedhackCallbacks(i);
+  end;
+end;
 
 function lua_registerGlobalDisassembleOverride(L: PLua_State): integer; cdecl;
 var
@@ -15510,8 +15552,6 @@ begin
 
           try
             slist.AddSymbol('tcclib',sname,address,1);
-            symhandler.DeleteUserdefinedSymbol(sname);
-            symhandler.AddUserdefinedSymbol(inttohex(address,8),sname,true);
           except
           end;
           lua_pop(L,1);
@@ -16185,6 +16225,19 @@ begin
 
 end;
 
+function lua_syncSymbolsNow(L: Plua_State): integer;  cdecl;
+var retrieveOnly: boolean;
+begin
+  if lua_gettop(L)>=1 then
+    retrieveOnly:=lua_toboolean(L,1)
+  else
+    retrieveOnly:=false;
+
+
+  syncSymbolsNow(retrieveOnly);
+  result:=0;
+end;
+
 procedure InitLimitedLuastate(L: Plua_State);
 begin
   //don't put functioncallback events in here, as limited luastates can be destroyed
@@ -16198,6 +16251,8 @@ begin
   lua_register(L, 'targetIsX86', targetIsX86);
   lua_register(L, 'targetIsArm', targetIsArm);
   lua_register(L, 'targetIsAndroid', targetIsAndroid);
+
+  lua_register(L, 'getABI', getABI);
 
 
 
@@ -16340,13 +16395,15 @@ begin
 
   lua_register(L, 'convertToUTF8',lua_convertToUTF8);
 
+
+  lua_register(L, 'syncSymbolsNow',lua_syncSymbolsNow);
+
+
   initializeLuaNetworkInterface(L);
 
 {$ifdef darwin}
   lua_register(L, 'createMachThread', lua_createMachThread);
 {$endif}
-
-
 
 
 end;
@@ -16828,6 +16885,10 @@ begin
     lua_register(L, 'unregisterStructureAndElementListCallback', lua_unregisterStructureAndElementListCallback);
 
 
+    lua_register(L, 'registerSpeedhackCallbacks', lua_registerSpeedhackCallbacks);
+    lua_register(L, 'unregisterSpeedhackCallbacks', lua_unregisterSpeedhackCallbacks);
+
+
 
 
     lua_register(L, 'shortCutToText', lua_shortCutToText);
@@ -17026,6 +17087,8 @@ begin
     lua_register(L, 'growMemoryRegion', lua_growMemoryRegion);
 
     lua_register(L, 'loadCEServerExtension', lua_loadCEServerExtension);
+
+
 
 
 
@@ -17244,9 +17307,9 @@ end;
 var
   tm: TThreadManager;
   oldReleaseThreadVars: procedure;
-
-
-
+  {$ifdef DEBUGTHREADERRORS}
+  oldEndThreadHandler: TEndThreadHandler;
+  {$endif}
 
 procedure ReleaseLuaThreadVars;
 var s: pstring;
@@ -17266,6 +17329,34 @@ begin
 end;
 
 
+{$ifdef DEBUGTHREADERRORS}
+
+procedure ThreadError(data: Exception);
+begin
+  MessageDlg('Error in thread '+GetThreadName+':'+data.Message, mtError,[mbok],0);
+end;
+
+Procedure EndThreadHandler(ExitCode : DWord);
+var m: tmethod;
+begin
+  if TThread.CurrentThread.FreeOnTerminate=false then
+  begin
+    if TThread.CurrentThread.FatalException<>nil then
+    begin
+      m.code:=@threadError;
+      m.data:=TThread.CurrentThread.FatalException;
+      tthread.Synchronize(nil, TThreadMethod(m));
+    end;
+  end;
+
+
+  if assigned(oldEndThreadHandler) then
+    oldEndThreadHandler(Exitcode);
+end;
+{$endif}
+
+
+
 initialization
   _LuaCS:=TCriticalSection.create;
   luarefcs:=TCriticalSection.create;
@@ -17275,6 +17366,11 @@ initialization
   GetThreadManager(tm);
   oldReleaseThreadVars:=tm.ReleaseThreadVars;
   tm.ReleaseThreadVars:=@ReleaseLuaThreadVars;
+
+  {$ifdef DEBUGTHREADERRORS}
+  oldEndThreadHandler:=tm.EndThread;
+  tm.EndThread:=@EndThreadHandler;
+  {$endif}
 
 
   SetThreadManager(tm);

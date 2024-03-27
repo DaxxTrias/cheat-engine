@@ -3223,12 +3223,31 @@ begin
 end;
 
 procedure TMemoryBrowser.hexviewKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+var a: qword;
+  psize: integer;
+  gotoaddress: qword;
+  x: ptruint;
 begin
   if shift=[ssCtrl] then
   begin
     case key of
       vk_space: //ctrl+space
       begin
+        if hexview.HasSelection then
+        begin
+          psize:=1+hexview.SelectionStop-hexview.selectionstart;
+          if psize>=4 then
+          begin
+            key:=0;
+            if psize>8 then psize:=8;
+
+            if ReadProcessMemory(processhandle, pointer(hexview.SelectionStart), @gotoaddress, processhandler.pointersize,x) then
+              disassemblerview.SelectedAddress:=gotoaddress;
+
+            exit;
+          end;
+        end;
+
         disassemblerview.SelectedAddress:=memoryaddress;
         key:=0;
       end;
@@ -5113,7 +5132,7 @@ begin
   frmFloatingPointPanel.Top:=self.top+(self.ClientOrigin.y-self.top)-(frmFloatingPointPanel.ClientOrigin.y-frmFloatingPointPanel.top);
   frmFloatingPointPanel.ClientHeight:=scrollbox1.Height;
 
-  frmFloatingPointPanel.SetContextPointer(context);
+  frmFloatingPointPanel.SetContextPointer(debuggerthread.CurrentThread.context);
 
   frmFloatingPointPanel.show;//pop to foreground
 end;

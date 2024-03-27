@@ -1,7 +1,7 @@
 object frmStructures2: TfrmStructures2
-  Left = 494
+  Left = 496
   Height = 509
-  Top = 86
+  Top = 88
   Width = 585
   Caption = 'Structure dissect'
   ClientHeight = 489
@@ -43,12 +43,13 @@ object frmStructures2: TfrmStructures2
     OnAdvancedCustomDrawItem = tvStructureViewAdvancedCustomDrawItem
     OnCollapsed = tvStructureViewCollapsed
     OnCollapsing = tvStructureViewCollapsing
+    OnCreateNodeClass = tvStructureViewCreateNodeClass
     OnDblClick = tvStructureViewDblClick
     OnExpanded = tvStructureViewExpanded
     OnExpanding = tvStructureViewExpanding
     OnMouseDown = tvStructureViewMouseDown
     OnSelectionChanged = tvStructureViewSelectionChanged
-    Options = [tvoAllowMultiselect, tvoAutoItemHeight, tvoKeepCollapsedNodes, tvoReadOnly, tvoRowSelect, tvoShowButtons, tvoShowLines]
+    Options = [tvoAllowMultiselect, tvoAutoItemHeight, tvoReadOnly, tvoRowSelect, tvoShowButtons, tvoShowLines]
   end
   object HeaderControl1: THeaderControl
     AnchorSideTop.Control = pnlGroups

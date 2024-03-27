@@ -54,10 +54,10 @@ __thread int debugfd;
 
 __thread char* threadname;
 
-#define CESERVERVERSION 5
+#define CESERVERVERSION 6 //6 because modulelist got changed
 
 
-char versionstring[]="CHEATENGINE Network 2.2";
+char versionstring[]="CHEATENGINE Network 2.3";
 char *CESERVERPATH;
 
 volatile int connections=0;
@@ -623,6 +623,7 @@ case CMD_SETTHREADCONTEXT:
             m=(PCeModuleEntry)&outputstream[pos];
             m->modulebase=me.baseAddress;
             m->modulesize=me.moduleSize;
+            m->modulefileoffset=me.fileOffset;
             m->modulenamesize=namelen;
             m->modulepart=me.part;
             m->result=1;
@@ -726,6 +727,7 @@ case CMD_SETTHREADCONTEXT:
           r->modulebase=me.baseAddress;
           r->modulesize=me.moduleSize;
           r->modulenamesize=strlen(me.moduleName);
+          r->modulefileoffset=me.fileOffset;
           r->modulepart=me.part;
 
 
@@ -1079,37 +1081,45 @@ case CMD_SETTHREADCONTEXT:
     {
       //get the list and send it to the client
       //zip it first
-      uint32_t symbolpathsize;
+      struct {
+        uint32_t fileoffset;
+        uint32_t symbolpathsize;
+      } input;
 
-      //debug_log("CMD_GETSYMBOLLISTFROMFILE\n");
-
-      if (recvall(currentsocket, &symbolpathsize, sizeof(symbolpathsize), MSG_WAITALL)>0)
+      if (recvall(currentsocket, &input, sizeof(input), MSG_WAITALL)>0)
       {
-        char *symbolpath=(char *)malloc(symbolpathsize+1);
-        symbolpath[symbolpathsize]='\0';
+        if (input.fileoffset)
+          debug_log("CMD_GETSYMBOLLISTFROMFILE with fileoffset=%x\n",input.fileoffset);
 
-        if (recvall(currentsocket, symbolpath, symbolpathsize, MSG_WAITALL)>0)
+        char *symbolpath=(char *)malloc(input.symbolpathsize+1);
+        symbolpath[input.symbolpathsize]='\0';
+
+        if (recvall(currentsocket, symbolpath, input.symbolpathsize, MSG_WAITALL)>0)
         {
           unsigned char *output=NULL;
 
-          //debug_log("symbolpath=%s\n", symbolpath);
+          if (input.fileoffset)
+            debug_log("symbolpath=%s\n", symbolpath);
 
           if (memcmp("/dev/", symbolpath, 5)!=0) //don't even bother if it's a /dev/ file
-            GetSymbolListFromFile(symbolpath, &output);
+            GetSymbolListFromFile(symbolpath, input.fileoffset, &output);
 
           if (output)
           {
-            //debug_log("output is not NULL (%p)\n", output);
-
-            fflush(stdout);
-
-            //debug_log("Sending %d bytes\n", *(uint32_t *)&output[4]);
+            if (input.fileoffset)
+            {
+              debug_log("output is not NULL (%p)\n", output);
+              debug_log("Sending %d bytes\n", *(uint32_t *)&output[4]);
+              fflush(stdout);
+            }
             sendall(currentsocket, output, *(uint32_t *)&output[4], 0); //the output buffer contains the size itself
             free(output);
           }
           else
           {
-           // debug_log("Sending 8 bytes (fail)\n");
+            if (input.fileoffset)
+              debug_log("Sending 8 bytes (fail)\n");
+
             uint64_t fail=0;
             sendall(currentsocket, &fail, sizeof(fail), 0); //just write 0
           }
@@ -1354,7 +1364,7 @@ case CMD_SETTHREADCONTEXT:
       int32_t count=0;
       recvall(currentsocket, &c, sizeof(c),0);
 
-     // debug_log("CMD_PIPEREAD: %d bytes\n",c.size);
+      debug_log("CMD_PIPEREAD: %d bytes\n",c.size);
       if (c.size)
       {
         void *buf=malloc(c.size);
@@ -1375,18 +1385,29 @@ case CMD_SETTHREADCONTEXT:
     {
       CeWritePipe c;
       uint32_t count=0;
+      c.size=0;
       recvall(currentsocket, &c, sizeof(c),0);
 
-   //  debug_log("CMD_PIPEWRITE:hPipe=%d count=%d  timeout:%d\n",c.hPipe, c.size, c.timeout);
+     // debug_log("CMD_PIPEWRITE:hPipe=%d count=%d  timeout:%d\n",c.hPipe, c.size, c.timeout);
 
       if (c.size)
       {
+       // debug_log("valid size");
         void *buf=malloc(c.size);
         if (buf)
         {
+         // debug_log("allocated memory. Calling recvall\n");
           count=recvall(currentsocket, buf, c.size,0);
           if (count>0)
+          {
+            //debug_log("recvall returned %d\n", count);
+            //debug_log("Sending this to the pipe\n", count);
+
+           // fflush(stdout);
             count=WritePipe(c.hPipe,buf, count, c.timeout);
+
+            //debug_log("WritePipe returned %d\n", count);
+          }
 
           free(buf);
         }
@@ -2018,6 +2039,7 @@ int main(int argc, char *argv[])
   initCESERVERPATH();
   debug_log("CESERVERPATH=%s\n", CESERVERPATH);
 
+
   fflush(stdout);
   debug_log("MEMORY_SEARCH_OPTION=%d\n", MEMORY_SEARCH_OPTION);
   fflush(stdout);
@@ -2032,6 +2054,8 @@ int main(int argc, char *argv[])
     debug_log("process_vm_readv==NULL, so MEMORY_SEARCH_OPTION can not be 2. Setting it to 0\n");
     MEMORY_SEARCH_OPTION=0; //fallback to 0
   }
+
+
 
   debug_log("MEMORY_SEARCH_OPTION=%d\n", MEMORY_SEARCH_OPTION);
 
