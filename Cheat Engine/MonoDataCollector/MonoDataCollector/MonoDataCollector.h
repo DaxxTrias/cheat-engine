@@ -10,6 +10,6 @@ DWORD WINAPI SuicideCheck(LPVOID lpThreadParameter);
 void MacPortEntryPoint(void *param);
 #endif
 
-#if defined(__linux__) || defined(__ANDROID__)
+#ifdef __linux__
 void LinuxPortEntryPoint(void *param);
 #endif

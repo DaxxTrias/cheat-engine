@@ -114,12 +114,10 @@
 #define ARM_BREAKPOINT_LEN_4    0xf
 #define ARM_BREAKPOINT_LEN_8    0xff
 
-#if defined (__arm__) || defined(__aarch64__)
 static inline unsigned int encode_ctrl_reg(int mismatch, int len, int type, int privilege, int enabled)
 {
         return (mismatch << 22) | (len << 5) | (type << 3) | (privilege << 1) | enabled;
 }
-#endif
 
 #ifndef __ANDROID__
   #if defined(__i386__) || defined(__x86_64__)
@@ -1109,15 +1107,19 @@ int SetBreakpoint(HANDLE hProcess, int tid, int debugreg, void *address, int bpt
 
           if (de.debugevent!=SIGSTOP) //in case a breakpoint or something else happened before sigstop happened
           {
+
+
             debug_log("Not a SIGSTOP. Adding to queue and leave suspended\n");
-            td->isPaused=1; //mark as paused for other api's
             AddDebugEventToQueue(p, &de);
+            td->isPaused=1; //mark as paused for other api's
           }
           else
           {
-            td->isPaused=0;
+
             r=safe_ptrace(PTRACE_CONT, wtid, 0,0);
             debug_log("PTRACE_CONT=%d\n", r);
+
+            td->isPaused=0;
           }
         }
       }
@@ -1387,8 +1389,10 @@ int RemoveBreakpoint(HANDLE hProcess, int tid, int debugreg,int wasWatchpoint)
           if (de.debugevent!=SIGSTOP) //in case a breakpoint or something else happened before sigstop happened
           {
             debug_log("Not a SIGSTOP. Adding to queue and leave suspended\n");
-            td->isPaused=1;
             AddDebugEventToQueue(p, &de);
+
+
+            td->isPaused=1;
           }
           else
           {
@@ -1533,9 +1537,8 @@ BOOL GetThreadContext(HANDLE hProcess, int tid, PCONTEXT Context)
           if (de.debugevent!=SIGSTOP) //in case a breakpoint or something else happened before sigstop happened
           {
             debug_log("Not a SIGSTOP. Adding to queue and leave suspended\n");
-            td->isPaused=1;
             AddDebugEventToQueue(p, &de);
-
+            td->isPaused=1;
           }
           else
           {
@@ -1674,8 +1677,8 @@ BOOL SetThreadContext(HANDLE hProcess, int tid, PCONTEXT Context)
             if (de.debugevent!=SIGSTOP) //in case a breakpoint or something else happened before sigstop happened
             {
               debug_log("Not a SIGSTOP. Adding to queue and leave suspended\n");
-              td->isPaused=1;
               AddDebugEventToQueue(p, &de);
+              td->isPaused=1;
             }
             else
             {
@@ -2201,36 +2204,12 @@ int WaitForDebugEvent(HANDLE hProcess, PDebugEvent devent, int timeout)
  *Does not care about which thread to wait for
  */
 {
-
   if (GetHandleType(hProcess) == htProcesHandle )
   {
     PProcessData p=(PProcessData)GetPointerFromHandle(hProcess);
 
-
-
     if (p->debuggedThreadEvent.threadid==0)
     {
-
-      int isdebugged=FindPausedThread(p);
-      if (isdebugged)
-      {
-        debug_log("Error: WaitForDebugEvent and FindPausedThread returned true and p->debuggedThreadEvent.threadid==0");
-
-
-        int i;
-        for (i=0; i<p->threadlistpos; i++)
-        {
-          if (p->threadlist[i].isPaused)
-          {
-            p->threadlist[i].isPaused=0;
-            debug_log("suspendcount=%d\n", p->threadlist[i].suspendCount);
-            debug_log("suspendedDevent.debugevent=%d\n", p->threadlist[i].suspendedDevent.debugevent);
-          }
-        }
-
-
-      }
-
       int r=0;
       struct DebugEventQueueElement *de=NULL;
 
@@ -2362,7 +2341,7 @@ int WaitForDebugEvent(HANDLE hProcess, PDebugEvent devent, int timeout)
 
 int ContinueFromDebugEvent(HANDLE hProcess, int tid, int ignoresignal)
 {
-  //printf("ContinueFromDebugEvent called (%d)\n",tid);
+  //printf("ContinueFromDebugEvent called\n");
   if (GetHandleType(hProcess) == htProcesHandle )
   {
     PProcessData p=(PProcessData)GetPointerFromHandle(hProcess);
@@ -2376,12 +2355,6 @@ int ContinueFromDebugEvent(HANDLE hProcess, int tid, int ignoresignal)
       debug_log("Virtual event. Ignore\n");
       p->debuggedThreadEvent.threadid=0;
       p->debuggedThreadEvent.debugevent=0;
-
-      if (td)
-      {
-        debug_log("td->isPaused was %d\n", td->isPaused);
-      }
-
       return 1; //ignore it
     }
 
@@ -2595,7 +2568,7 @@ int StopDebug(HANDLE hProcess)
                 break;
               else
               {
-                debug_log("Got %d instead (status=%x)\n",tid, status);
+                debug_log("Got %d instead\n");
                 safe_ptrace(PTRACE_CONT, tid, 0, 0);
                 continue;
               }
@@ -2687,11 +2660,6 @@ int WriteProcessMemoryDebug(HANDLE hProcess, PProcessData p, void *lpAddress, vo
 
       debug_log("After WaitForDebugEventNative (tid=%d)\n", event.threadid);
     }
-    else
-    {
-      debug_log("isdebugged=%d\n", isdebugged);
-
-    }
 
 
 
@@ -2760,19 +2728,20 @@ int WriteProcessMemoryDebug(HANDLE hProcess, PProcessData p, void *lpAddress, vo
 
       //  debug_log("Continue from sigstop\n");
 
+        safe_ptrace(PTRACE_CONT, event.threadid, 0,0);
+
         if (td)
           td->isPaused=0;
 
-        safe_ptrace(PTRACE_CONT, event.threadid, 0,0);
+
       }
       else
       {
         debug_log("WriteProcessMemoryDebug: Adding unexpected signal to eventqueue (event.debugevent=%d event.threadid)\n", event.debugevent, event.threadid);
 
+        AddDebugEventToQueue(p, &event);
         if (td)
           td->isPaused=1;
-
-        AddDebugEventToQueue(p, &event);
       }
     }
 
@@ -3865,23 +3834,6 @@ int SearchHandleListProcessCallback(PProcessData data, int *pid)
   return (data->pid==*pid);
 }
 
-int CloseAllPipesCallback(void *data, void *searchdata)
-{
-  return 1;
-}
-
-void CloseAllPipes()
-{
-  HANDLE h;
-  do
-  {
-    h=SearchHandleList(htPipeHandle, CloseAllPipesCallback,0);
-    if (h)
-      CloseHandle(h);
-
-  } while (h);
-}
-
 HANDLE OpenPipe(char *pipename, int timeout) //the \\.\pipe\ part has already been stripped
 {
   int i;
@@ -3940,7 +3892,7 @@ int ReadPipe(HANDLE ph, void* destination, int size, int timeout) //todo: implem
   PPipeData pd=(PPipeData)GetPointerFromHandle(ph);
   if (pd)
   {
-    //debug_log("ReadPipe on socket %s\n", pd->pipename);
+    debug_log("ReadPipe on socket %s\n", pd->pipename);
     return recvall(pd->socket, destination, size,0);
   }
   else
@@ -3952,7 +3904,7 @@ int WritePipe(HANDLE ph, void* source, int size, int timeout) //todo: implement 
   PPipeData pd=(PPipeData)GetPointerFromHandle(ph);
   if (pd)
   {
-    //debug_log("WritePipe on socket %s\n", pd->pipename);
+    debug_log("WritePipe on socket %s\n", pd->pipename);
     return sendall(pd->socket, source, size,0);
   }
   else
@@ -4608,8 +4560,6 @@ void CloseHandle(HANDLE h)
   else
   if (ht==htPipeHandle)
   {
-    debug_log("Closing pipe handle\n");
-
     PPipeData pd=GetPointerFromHandle(h);
     close(pd->socket);
     free(pd->pipename);

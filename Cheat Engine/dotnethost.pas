@@ -116,6 +116,7 @@ begin
     if not assigned(CLRCreateInstance) then
       raise EDotNetException.create('CLRCreateInstance not found in MSCorEE.dll');
 
+
     if CLRCreateInstance(CLSID_CLRMetaHost, IID_ICLRMetaHost, mh)<>S_OK then
       raise EDotNetException.create('Failed to create CLRMetaHost instance');
 

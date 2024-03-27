@@ -1586,7 +1586,6 @@ var i: integer=0;
       found: boolean;
       j,k: integer;
       temps: string;
-      oldname: string;
     begin
       if name='' then
       begin
@@ -1599,7 +1598,6 @@ var i: integer=0;
 
       if debug_getAddressFromScript then OutputDebugString('getAddressFromScript');
 
-      oldname:=name;
       name:=uppercase(name);
 
       if debug_getAddressFromScript then OutputDebugString('looking for '+name);
@@ -1635,20 +1633,7 @@ var i: integer=0;
           end;
         end;
 
-      if debug_getAddressFromScript then OutputDebugString('symbols original case...');
-      try
-        if targetself then
-          result:=selfsymhandler.getAddressFromName(oldname)
-        else
-          result:=symhandler.getAddressFromName(oldname);
-
-        if result<>0 then exit;
-
-        if debug_getAddressFromScript then OutputDebugString('result=0 and no exception....');
-      except
-      end;
-
-      if debug_getAddressFromScript then OutputDebugString('symbols uppercase...');
+      if debug_getAddressFromScript then OutputDebugString('symbols...');
       try
         if targetself then
           result:=selfsymhandler.getAddressFromName(name)
@@ -2439,10 +2424,6 @@ begin
               except
                 raise exception.Create(format(rsXCouldNotBeFound, [s1]));
               end;
-
-              if testptr=0 then
-                raise exception.Create(format(rsXCouldNotBeFound, [s1]));
-
 
 
               multilineinjection:=TStringList.create;

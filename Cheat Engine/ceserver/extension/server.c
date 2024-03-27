@@ -68,15 +68,11 @@ int debug_log(const char * format , ...)
   va_list list;
   va_start(list,format);
   int ret = vprintf(format,list);
-  va_end(list);
-
 
   #ifdef __ANDROID__
-  va_start(list,format);
-  LOGD(format,list);
-  va_end(list);
+    LOGD(format,list);
   #endif
-
+  va_end(list);
   return ret;
 }
 
@@ -357,20 +353,13 @@ int DispatchCommand(int currentsocket, unsigned char command)
     {
       uint32_t modulepathlength;
       debug_log("EXTCMD_LOADMODULE\n");
-      debug_log("receiving modulepath:\n");
 
       if (recvall(currentsocket, &modulepathlength, sizeof(modulepathlength), 0)>0)
       {
-        debug_log("pathlength is %d bytes long\n", modulepathlength);
-
-        char *modulepath[modulepathlength+4];
+        char *modulepath[modulepathlength+1];
         if (recvall(currentsocket, modulepath, modulepathlength, 0)>0)
         {
           modulepath[modulepathlength]=0;
-          modulepath[modulepathlength+1]=0;
-          modulepath[modulepathlength+2]=0;
-          modulepath[modulepathlength+3]=0;
-
           debug_log("EXTCMD_LOADMODULE: modulepath=%s\n",modulepath);
           uint64_t result;
           result=(uint64_t)(dlopen((const char *)modulepath, RTLD_NOW));
@@ -380,6 +369,8 @@ int DispatchCommand(int currentsocket, unsigned char command)
           if (result==0)
           {
             debug_log("EXTCMD_LOADMODULE: %s\n",dlerror());
+
+
           }
 
           sendall(currentsocket, &result, sizeof(result), 0);

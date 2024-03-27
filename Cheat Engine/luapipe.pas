@@ -96,10 +96,7 @@ end;
 
 procedure TPipeConnection.lock;
 begin
-  if ftimeout<>0 then
-    cs.Enter(ftimeout)
-  else
-    cs.enter;
+  cs.Enter;
 end;
 
 procedure TPipeconnection.unlock;
