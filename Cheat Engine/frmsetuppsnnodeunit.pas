@@ -5,53 +5,62 @@ unit frmSetupPSNNodeUnit;
 interface
 
 uses
-  Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, StdCtrls;
+  windows, Classes, SysUtils, FileUtil, Forms, Controls, Graphics, Dialogs, StdCtrls, math,
+  registry;
 
 type
 
   { TfrmSetupPSNNode }
 
   TfrmSetupPSNNode = class(TForm)
+    btnOK: TButton;
+    btnCancel: TButton;
     Button1: TButton;
-    Button2: TButton;
-    CheckBox1: TCheckBox;
-    CheckBox2: TCheckBox;
-    CheckBox3: TCheckBox;
-    CheckBox4: TCheckBox;
-    CheckBox5: TCheckBox;
-    CheckBox6: TCheckBox;
-    CheckBox7: TCheckBox;
-    CheckBox8: TCheckBox;
-    CheckBox9: TCheckBox;
+    cbAllowParents: TCheckBox;
+    cbMaxFoundResults: TCheckBox;
+    cbMaxTimeToScan: TCheckBox;
+    cbAllowChildren: TCheckBox;
+    cbConnectToOtherNode: TCheckBox;
     cbPriority: TComboBox;
+    cbAutoTrustChildren: TCheckBox;
+    cbAllowTempFiles: TCheckBox;
+    edtPort: TEdit;
+    edtChildPassword: TEdit;
+    edtConnectIP: TEdit;
+    edtConnectPort: TEdit;
+    edtConnectPassword: TEdit;
+    edtParentPassword: TEdit;
     edtThreadCount: TEdit;
-    Edit10: TEdit;
-    Edit2: TEdit;
-    Edit3: TEdit;
-    Edit4: TEdit;
-    Edit5: TEdit;
-    Edit6: TEdit;
-    Edit7: TEdit;
-    Edit8: TEdit;
-    Edit9: TEdit;
-    GroupBox1: TGroupBox;
-    GroupBox2: TGroupBox;
-    Label1: TLabel;
+    edtPublicname: TEdit;
+    edtMaxResultsToFind: TEdit;
+    edtMaxTimeToScan: TEdit;
+    lblPasswordParent: TLabel;
+    lblListenPort: TLabel;
+    lblIP: TLabel;
+    lblPort: TLabel;
+    lblPasswordChild: TLabel;
+    lblPassword: TLabel;
     lblPublicName: TLabel;
     lblThreadCount: TLabel;
     Label3: TLabel;
     Label4: TLabel;
-    Label5: TLabel;
-    Label6: TLabel;
     lblPriority: TLabel;
-    Label8: TLabel;
-    Label9: TLabel;
-    procedure Edit8Change(Sender: TObject);
+    rbConnectAsParent: TRadioButton;
+    rbConnectAsChild: TRadioButton;
+    procedure btnOKClick(Sender: TObject);
+    procedure cbConnectToOtherNodeChange(Sender: TObject);
+    procedure edtConnectPasswordChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
   private
     { private declarations }
   public
     { public declarations }
+    threadcount: integer;
+    listenport: integer;
+    connectport: integer;
+    maxresultstofind: integer;
+    maxtimetoscan: integer;
+    priority: TThreadPriority;
   end;
 
 var
@@ -59,18 +68,195 @@ var
 
 implementation
 
+uses CEFuncProc;
+
 {$R *.lfm}
 
 { TfrmSetupPSNNode }
 
 procedure TfrmSetupPSNNode.FormCreate(Sender: TObject);
+var
+  cpucount: integer;
+  reg: Tregistry;
+  names: TStringlist;
+  i: integer;
+  compname: pchar;
+  compnamesize: dword;
+begin
+  cpucount:=GetCPUCount;
+
+  //assumption: when a core with hyperthreading core is running at 100% it's hyperthreaded processor will be running at 90%
+  //This means that 10 cores are needed to provide an equivalent for one extra core when hyperthreading is used
+  //In short, leave the hyperhtreaded processors alone so the user can use that hardly useful processing power to surf the web or move the mouse...
+  //(at most use one)
+  if HasHyperthreading then
+    cpucount:=ceil((cpucount / 2)+(cpucount / 4));
+
+  edtThreadCount.text:=inttostr(cpucount);
+
+  getmem(compname, 256);
+  compnamesize:=255;
+  if GetComputerName(compname, compnamesize) then
+  begin
+    compname[compnamesize]:=#0;
+    edtPublicname.text:=compname;
+  end
+  else
+    edtPublicname.text:=GetUserNameFromPID(GetProcessID)+'-'+inttohex(random(65536),1);
+
+
+  freemem(compname);
+
+  reg:=tregistry.Create;
+  Reg.RootKey := HKEY_CURRENT_USER;
+  try
+    if Reg.OpenKey('\Software\Cheat Engine\PSNNodeConfig', false) then
+    begin
+      if reg.ValueExists('ThreadCount') then
+        edtThreadCount.Text:=IntToStr(reg.ReadInteger('ThreadCount'));
+
+      if reg.ValueExists('ThreadPriority') then
+        cbPriority.ItemIndex:=reg.ReadInteger('ThreadPriority');
+
+      if reg.ValueExists('PublicName') then
+        edtPublicname.text:=reg.ReadString('PublicName');
+
+      if reg.ValueExists('AllowIncomingParents') then
+        cbAllowParents.Checked:=reg.ReadBool('AllowIncomingParents');
+
+      if reg.ValueExists('ParentPassword') then
+        edtParentPassword.text:=reg.ReadString('ParentPassword');
+
+      if reg.ValueExists('AllowIncomingChildren') then
+        cbAllowChildren.checked:=reg.ReadBool('AllowIncomingChildren');
+
+      if reg.ValueExists('ChildPassword') then
+        edtChildPassword.text:=reg.ReadString('ChildPassword');
+
+      if reg.ValueExists('AutoTrustChildren') then
+        cbAutoTrustChildren.checked:=reg.ReadBool('AutoTrustChildren');
+
+      if reg.ValueExists('DefaultConnect') then
+        cbConnectToOtherNode.checked:=reg.ReadBool('DefaultConnect');
+
+      if reg.ValueExists('DefaultConnectAsChild') then
+        rbConnectAsChild.checked:=reg.ReadBool('DefaultConnectAsChild');
+
+      rbConnectAsParent.checked:=not rbConnectAsChild.checked;
+
+      if reg.ValueExists('DefaultConnectIP') then
+        edtConnectIP.text:=reg.ReadString('DefaultConnectIP');
+
+      if reg.ValueExists('DefaultConnectPort') then
+        edtConnectPort.text:=inttostr(reg.ReadInteger('DefaultConnectPort'));
+
+      if reg.ValueExists('DefaultConnectPassword') then
+        edtConnectPassword.text:=reg.ReadString('DefaultConnectPassword');
+
+      if reg.ValueExists('StopScansAfterResultsFound') then
+        cbMaxFoundResults.Checked:=reg.ReadBool('StopScansAfterResultsFound');
+
+      if reg.ValueExists('StopResultCount') then
+        edtMaxTimeToScan.text:=IntToStr(reg.ReadInteger('StopResultCount'));
+
+
+      if reg.ValueExists('StopScansAfterTime') then
+        cbMaxTimeToScan.Checked:=reg.ReadBool('StopScansAfterTime');
+
+      if reg.ValueExists('StopTime') then
+        edtMaxTimeToScan.text:=IntToStr(reg.ReadInteger('StopTime'));
+
+      if reg.ValueExists('AllowTempFiles') then
+        cbAllowTempFiles.checked:=reg.ReadBool('AllowTempFiles');
+
+    end;
+  finally
+    reg.free;
+  end;
+
+end;
+
+procedure TfrmSetupPSNNode.edtConnectPasswordChange(Sender: TObject);
 begin
 
 end;
 
-procedure TfrmSetupPSNNode.Edit8Change(Sender: TObject);
+procedure TfrmSetupPSNNode.btnOKClick(Sender: TObject);
+var reg: TRegistry;
 begin
+  threadcount:=strtoint(edtThreadcount.text);
+  listenport:=strtoint(edtPort.text);
+  if cbConnectToOtherNode.checked then
+    connectport:=strtoint(edtConnectPort.text);
 
+  if cbMaxFoundResults.checked then
+    maxresultstofind:=strtoint(edtMaxResultsToFind.text)
+  else
+    maxresultstofind:=0;
+
+  if cbMaxTimeToScan.checked then
+    maxtimetoscan:=strtoint(edtMaxTimeToScan.text)*1000
+  else
+    maxtimetoscan:=0;
+
+  case cbPriority.itemindex of
+    0: priority:=tpIdle;
+    1: priority:=tpLowest;
+    2: priority:=tpLower;
+    3: priority:=tpNormal;
+    4: priority:=tpHigher;
+    5: priority:=tpHighest;
+    6: priority:=tpTimeCritical;
+  end;
+
+  reg:=tregistry.Create;
+  Reg.RootKey := HKEY_CURRENT_USER;
+  try
+    if Reg.OpenKey('\Software\Cheat Engine\PSNNodeConfig', true) then
+    begin
+      reg.WriteInteger('ThreadCount', threadcount);
+      reg.WriteInteger('ThreadPriority', cbPriority.itemindex);
+      reg.WriteString('PublicName', edtPublicname.text);
+      reg.WriteBool('AllowIncomingParents', cbAllowParents.Checked);
+      reg.WriteString('ParentPassword', edtParentPassword.text);
+      reg.WriteBool('AllowIncomingChildren', cbAllowChildren.checked);
+      reg.WriteString('ChildPassword', edtChildPassword.text);
+      reg.WriteBool('AutoTrustChildren', cbAutoTrustChildren.checked);
+      reg.WriteBool('DefaultConnect', cbConnectToOtherNode.checked);
+      reg.WriteBool('DefaultConnectAsChild', rbConnectAsChild.checked);
+      reg.WriteString('DefaultConnectIP', edtConnectIP.text);
+      reg.WriteInteger('DefaultConnectPort', connectport);
+      reg.WriteString('DefaultConnectPassword', edtConnectPassword.text);
+      reg.WriteBool('StopScansAfterResultsFound', cbMaxFoundResults.Checked);
+      reg.WriteInteger('StopResultCount', maxtimetoscan);
+      reg.WriteBool('StopScansAfterTime', cbMaxTimeToScan.Checked);
+      reg.WriteInteger('StopTime', maxtimetoscan);
+      reg.WriteBool('AllowTempFiles', cbAllowTempFiles.checked);
+    end;
+  finally
+    reg.free;
+  end;
+
+
+
+
+  modalresult:=mrok;
+end;
+
+procedure TfrmSetupPSNNode.cbConnectToOtherNodeChange(Sender: TObject);
+var newstate: boolean;
+begin
+  newstate:=cbConnectToOtherNode.checked;
+  rbConnectAsParent.enabled:=newstate;
+  rbConnectAsChild.enabled:=newstate;
+
+  lblIP.enabled:=newstate;
+  lblPort.enabled:=newstate;
+  lblPassword.enabled:=newstate;
+
+  edtConnectIP.enabled:=newstate;
+  edtConnectPort.enabled:=newstate;
+  edtConnectPassword.enabled:=newstate;
 end;
 
 end.
