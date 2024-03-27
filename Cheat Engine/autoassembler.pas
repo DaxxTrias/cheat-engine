@@ -33,7 +33,7 @@ end;
 
 procedure RegisterAutoAssemblerCommand(command: string; callback: TAutoAssemblerCallback);
 procedure UnregisterAutoAssemblerCommand(command: string);
-function registerAutoAssemblerPrologue(m: TAutoAssemblerPrologue): integer;
+function registerAutoAssemblerPrologue(m: TAutoAssemblerPrologue; postAOBSCAN: boolean=false): integer;
 procedure unregisterAutoAssemblerPrologue(id: integer);
 
 
@@ -122,33 +122,62 @@ resourcestring
 //type
 //  TregisteredAutoAssemblerCommands =  TFPGList<TRegisteredAutoAssemblerCommand>;
 
+type
+  TAutoAssemblerPrologues=array of TAutoAssemblerPrologue;
+  PAutoAssemblerPrologues=^TAutoAssemblerPrologues;
 var
   registeredAutoAssemblerCommands: TList;
 
-  AutoAssemblerPrologues: array of TAutoAssemblerPrologue;
+  AutoAssemblerPrologues: TAutoAssemblerPrologues;
+  AutoAssemblerProloguesPostAOBSCAN: TAutoAssemblerPrologues;
 
-function registerAutoAssemblerPrologue(m: TAutoAssemblerPrologue): integer;
+function registerAutoAssemblerPrologue(m: TAutoAssemblerPrologue; postAOBSCAN: boolean=false): integer;
 var i: integer;
+    prologues: PAutoAssemblerPrologues;
 begin
-  for i:=0 to length(AutoAssemblerPrologues)-1 do
+  if postAOBSCAN then prologues:=@AutoAssemblerProloguesPostAOBSCAN
+                 else prologues:=@AutoAssemblerPrologues;
+  for i:=0 to length(prologues^)-1 do
   begin
-    if assigned(AutoAssemblerPrologues[i])=false then
+    if assigned(prologues^[i])=false then
     begin
-      AutoAssemblerPrologues[i]:=m;
-      result:=i;
+      prologues^[i]:=m;
+      result:=i+1;
+
+      if postAOBSCAN then
+        result:=-result;
+
       exit;
     end
   end;
 
-  result:=length(AutoAssemblerPrologues);
-  setlength(AutoAssemblerPrologues, result+1);
-  AutoAssemblerPrologues[result]:=m;
+  result:=length(prologues^)+1;  //first one is id 1
+  setlength(prologues^, result);
+  prologues^[result-1]:=m;
+
+  if postAOBSCAN then
+    result:=-result; //first one is id -1
 end;
 
 procedure unregisterAutoAssemblerPrologue(id: integer);
+var
+  prologues: PAutoAssemblerPrologues;
 begin
-  if id<length(AutoAssemblerPrologues) then
-    AutoAssemblerPrologues[id]:=nil;
+  if id=0 then exit; //does not exist
+
+  if id<0 then
+  begin
+    prologues:=@AutoAssemblerProloguesPostAOBSCAN;
+    id:=-id;
+  end
+  else
+    prologues:=@AutoAssemblerPrologues;
+
+  if id<=length(prologues^) then
+  begin
+    CleanupLuaCall(TMethod(prologues^[id-1]));
+    prologues^[id-1]:=nil;
+  end;
 end;
 
 procedure RegisterAutoAssemblerCommand(command: string; callback: TAutoAssemblerCallback);
@@ -159,16 +188,9 @@ begin
   if registeredAutoAssemblerCommands=nil then
     registeredAutoAssemblerCommands:=TList.Create;
 
-  command:=uppercase(command);
-  for i:=0 to registeredAutoAssemblerCommands.Count-1 do
-    if TRegisteredAutoAssemblerCommand(registeredAutoAssemblerCommands[i]).command=command then
-    begin
-      //update
-      CleanupLuaCall(tmethod(TRegisteredAutoAssemblerCommand(registeredAutoAssemblerCommands[i]).callback));
-      TRegisteredAutoAssemblerCommand(registeredAutoAssemblerCommands[i]).callback:=nil;//TAutoAssemblerCallback(callback);
-      exit;
-    end;
+  UnregisterAutoAssemblerCommand(command);
 
+  command:=uppercase(command);
   c:=TRegisteredAutoAssemblerCommand.create;
   c.command:=command;
   c.callback:=callback;
@@ -254,12 +276,12 @@ begin
   result:=input;
   tokens:=tstringlist.Create;
   try
-    tokenize(input,tokens);
-    for i:=0 to tokens.Count-1 do
+    tokenize(result,tokens);
+    for i:=tokens.Count-1 downto 0 do
       if tokens[i]=token then
       begin
         j:=integer(tokens.Objects[i]);
-        result:=copy(input,1,j-1)+replacewith+copy(input,j+length(token),length(input));
+        result:=copy(result,1,j-1)+replacewith+copy(result,j+length(token),length(result));
       end;
 
   finally
@@ -926,7 +948,7 @@ begin
         for j:=0 to length(aobscanmodules)-1 do
         begin
           //exact address only. No widening/appending of the groups is possible (Users may want to scan for 00 00 in a 16 byte region)
-          if (startaddress=aobscanmodules[j].minaddress) and (stopaddress=aobscanmodules[j].minaddress) then
+          if (startaddress=aobscanmodules[j].minaddress) and (stopaddress=aobscanmodules[j].maxaddress) then
           begin
             m:=j;
             break;
@@ -1305,6 +1327,11 @@ begin
     //this will break scripts that use define(state,33) aobscan(name, 11 22 state 44 55), but really, live with it
 
     aobscans(code, syntaxcheckonly);
+
+    if not targetself then
+      for i:=0 to length(AutoAssemblerProloguesPostAOBSCAN)-1 do
+        if assigned(AutoAssemblerProloguesPostAOBSCAN[i]) then
+          AutoAssemblerProloguesPostAOBSCAN[i](code, syntaxcheckonly);
 
     //first pass
 

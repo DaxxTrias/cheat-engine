@@ -147,6 +147,9 @@ type
     function getDropDownCount: integer;
     function getDropDownValue(index: integer): string;
     function getDropDownDescription(index: integer): string;
+
+    function GetCollapsed: boolean;
+    procedure SetCollapsed(state: boolean);
   public
 
 
@@ -234,8 +237,10 @@ type
   published
     property IsGroupHeader: boolean read fisGroupHeader write fisGroupHeader;
     property IsReadableAddress: boolean read fIsReadableAddress; //gets set by getValue, so at least read the value once
+    property IsReadable: boolean read fIsReadableAddress;
     property ID: integer read fID write setID;
     property Index: integer read getIndex;
+    property Collapsed: boolean read GetCollapsed write SetCollapsed;
     property Color: TColor read fColor write setColor;
     property Count: integer read getChildCount;
     property AddressString: string read getAddressString;
@@ -268,6 +273,8 @@ type
   private
     fOnHotkey: TNotifyevent;
     fOnPostHotkey: TNotifyevent;
+    factivateSound: string;
+    fdeactivateSound: string;
   public
     fID: integer;
     fDescription: string;
@@ -276,10 +283,14 @@ type
     action: TMemrecHotkeyAction;
     value: string;
 
+
+
     procedure doHotkey;
     constructor create(AnOwner: TMemoryRecord);
     destructor destroy; override;
   published
+    property ActivateSound: string read factivateSound write factivateSound;
+    property DeactivateSound: string read fdeactivateSound write fdeactivateSound;
     property Description: string read fDescription;
     property Owner: TMemoryRecord read fOwner;
     property ID: integer read fID;
@@ -342,6 +353,20 @@ begin
 end;
 
 {---------------------------------MemoryRecord---------------------------------}
+
+function TMemoryRecord.GetCollapsed: boolean;
+begin
+  result:=not treenode.Expanded;
+end;
+
+procedure TMemoryRecord.SetCollapsed(state: boolean);
+begin
+  if state then
+    treenode.Collapse(false)
+  else
+    treenode.Expand(false);
+end;
+
 
 function TMemoryRecord.getDropDownCount: integer;
 begin
@@ -804,6 +829,14 @@ begin
           if tempnode2<>nil then
             hk.value:=tempnode2.TextContent;
 
+          tempnode2:=tempnode.childnodes[i].findnode('ActivateSound');
+          if tempnode2<>nil then
+            hk.activateSound:=tempnode2.TextContent;
+
+          tempnode2:=tempnode.childnodes[i].findnode('DeactivateSound');
+          if tempnode2<>nil then
+            hk.deactivateSound:=tempnode2.TextContent;
+
           tempnode2:=tempnode.ChildNodes[i].FindNode('Keys');
           if tempnode2<>nil then
           begin
@@ -1127,6 +1160,13 @@ begin
 
       if hotkey[i].id>=0 then
         hk.AppendChild(doc.CreateElement('ID')).TextContent:=inttostr(hotkey[i].id);
+
+      if hotkey[i].value<>'' then
+        hk.AppendChild(doc.CreateElement('ActivateSound')).TextContent:=hotkey[i].activateSound;
+
+      if hotkey[i].value<>'' then
+        hk.AppendChild(doc.CreateElement('DeactivateSound')).TextContent:=hotkey[i].deactivateSound;
+
     end;
 
   end;
@@ -1362,31 +1402,84 @@ begin
 end;
 
 procedure TMemoryRecord.DoHotkey(hk: TMemoryRecordhotkey);
+var oldstate: boolean;
 begin
   if (hk<>nil) and (hk.owner=self) then
   begin
     try
       case hk.action of
-        mrhToggleActivation: active:=not active;
-        mrhSetValue:         SetValue(hk.value);
-        mrhIncreaseValue:    increaseValue(hk.value);
-        mrhDecreaseValue:    decreaseValue(hk.value);
+        mrhToggleActivation:
+        begin
+          active:=not active;
+
+          if (hk.activateSound<>'') and active then
+            LUA_DoScript('playSound(findTableFile([['+hk.activateSound+']]))');
+
+          if (hk.deactivateSound<>'') and (not active) then
+            LUA_DoScript('playSound(findTableFile([['+hk.deactivateSound+']]))'); //also gives a signal when failing to activate
+        end;
+
+        mrhSetValue:
+        begin
+          SetValue(hk.value);
+
+          if (hk.activateSound<>'') then
+            LUA_DoScript('playSound(findTableFile([['+hk.activateSound+']]))');
+        end;
+
+        mrhIncreaseValue:
+        begin
+          increaseValue(hk.value);
+          if (hk.activateSound<>'') then
+            LUA_DoScript('playSound(findTableFile([['+hk.activateSound+']]))');
+        end;
+
+        mrhDecreaseValue:
+        begin
+          decreaseValue(hk.value);
+          if (hk.activateSound<>'') then
+            LUA_DoScript('playSound(findTableFile([['+hk.activateSound+']]))');
+        end;
 
 
         mrhToggleActivationAllowDecrease:
         begin
           allowDecrease:=True;
           active:=not active;
+
+          if (hk.activateSound<>'') and active then
+            LUA_DoScript('playSound(findTableFile([['+hk.activateSound+']]))');
+
+          if (hk.deactivateSound<>'') and (not active) then
+            LUA_DoScript('playSound(findTableFile([['+hk.deactivateSound+']]))'); //also gives a signal when failing to activate
         end;
 
         mrhToggleActivationAllowIncrease:
         begin
           allowIncrease:=True;
           active:=not active;
+
+          if (hk.activateSound<>'') and active then
+            LUA_DoScript('playSound(findTableFile([['+hk.activateSound+']]))');
+
+          if (hk.deactivateSound<>'') and (not active) then
+            LUA_DoScript('playSound(findTableFile([['+hk.deactivateSound+']]))'); //also gives a signal when failing to activate
+
         end;
 
-        mrhActivate: active:=true;
-        mrhDeactivate: active:=false;
+        mrhActivate:
+        begin
+          active:=true;
+          if (hk.activateSound<>'') and active then
+            LUA_DoScript('playSound(findTableFile([['+hk.activateSound+']]))');
+        end;
+
+        mrhDeactivate:
+        begin
+          active:=false;
+          if (hk.deactivateSound<>'') and (not active) then
+            LUA_DoScript('playSound(findTableFile([['+hk.deactivateSound+']]))'); //also gives a signal when failing to activate
+        end;
 
 
       end;
@@ -1657,6 +1750,7 @@ begin
     baseaddress:=a;
   end;
 
+  GetRealAddress;
 
   //update the children
   for i:=0 to count-1 do

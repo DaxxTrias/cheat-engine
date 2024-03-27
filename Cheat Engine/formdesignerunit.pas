@@ -11,7 +11,7 @@ uses
   JvDesignImp, JvDesignUtils, typinfo, PropEdits, ObjectInspector, LResources,
   maps, ExtDlgs, PopupNotifier, IDEDialogs, ceguicomponents, LMessages, luacaller,
   luahandler, cefuncproc, ListViewPropEdit, TreeViewPropEdit, AnchorEditor,
-  LCLType;
+  LCLType, GraphicPropEdit, GraphPropEdits, registry;
 
 
 
@@ -36,7 +36,9 @@ type
     miAddItems: TMenuItem;
     miDelete: TMenuItem;
     miSave: TMenuItem;
+    miSaveLFM: TMenuItem;
     miLoad: TMenuItem;
+    miLoadLFM: TMenuItem;
     miBringToFront: TMenuItem;
     miSendToBack: TMenuItem;
     OpenDialog1: TOpenDialog;
@@ -85,9 +87,11 @@ type
     procedure miAnchorEditorClick(Sender: TObject);
     procedure miDeleteClick(Sender: TObject);
     procedure miLoadClick(Sender: TObject);
+    procedure miLoadLFMClick(Sender: TObject);
     procedure miMenuMoveDownClick(Sender: TObject);
     procedure miMenuMoveUpClick(Sender: TObject);
     procedure miSaveClick(Sender: TObject);
+    procedure miSaveLFMClick(Sender: TObject);
     procedure miBringToFrontClick(Sender: TObject);
     procedure miSendToBackClick(Sender: TObject);
     procedure miSetupMainMenuClick(Sender: TObject);
@@ -122,6 +126,7 @@ type
     function CompatibleMethodExists(const Name: String; InstProp: PInstProp; var MethodIsCompatible,MethodIsPublished,IdentIsMethod: boolean):boolean;
 
     procedure OnComponentRenamed(AComponent: TComponent);
+    procedure onRefreshPropertyValues;
     procedure setFormName;
     procedure mousedownhack(var TheMessage: TLMessage);
   public
@@ -165,6 +170,7 @@ type
 
     procedure SAD(sender: tobject);
     procedure designForm(f: tceform);
+    procedure CheckBoxForbooleanClick(sender: tobject);
     property OnClose2: TCloseEvent read fOnClose2 write fOnClose2;
   end; 
 
@@ -265,11 +271,27 @@ end;
 procedure TFormDesigner.miLoadClick(Sender: TObject);
 var f: TCeform;
 begin
+  OpenDialog1.DefaultExt := '.FRM';
+  OpenDialog1.Filter := 'Form files(*.frm)|*.FRM';
   if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TCEForm) and (OpenDialog1.Execute) then
   begin
     f:=TCEForm(GlobalDesignHook.LookupRoot);
 
     f.LoadFromFile(UTF8ToAnsi(OpenDialog1.filename));
+    setFormName;
+  end;
+end;
+
+procedure TFormDesigner.miLoadLFMClick(Sender: TObject);
+var f: TCeform;
+begin
+  OpenDialog1.DefaultExt := '.LFM';
+  OpenDialog1.Filter := 'Form files(*.lfm)|*.LFM';
+  if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TCEForm) and (OpenDialog1.Execute) then
+  begin
+    f:=TCEForm(GlobalDesignHook.LookupRoot);
+
+    f.LoadFromFileLFM(UTF8ToAnsi(OpenDialog1.filename));
     setFormName;
   end;
 end;
@@ -330,11 +352,26 @@ end;
 procedure TFormDesigner.miSaveClick(Sender: TObject);
 var f: TCeform;
 begin
+  SaveDialog1.DefaultExt := '.FRM';
+  SaveDialog1.Filter := 'Form files(*.frm)|*.FRM';
   if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TCEForm) and (SaveDialog1.Execute) then
   begin
     f:=TCEForm(GlobalDesignHook.LookupRoot);
 
     f.SaveToFile(Utf8ToAnsi(Savedialog1.filename));
+  end;
+end;
+
+procedure TFormDesigner.miSaveLFMClick(Sender: TObject);
+var f: TCeform;
+begin
+  SaveDialog1.DefaultExt := '.LFM';
+  SaveDialog1.Filter := 'Form files(*.lfm)|*.LFM';
+  if (GlobalDesignHook.LookupRoot<>nil) and (GlobalDesignHook.LookupRoot is TCEForm) and (SaveDialog1.Execute) then
+  begin
+    f:=TCEForm(GlobalDesignHook.LookupRoot);
+
+    f.SaveToFileLFM(Utf8ToAnsi(Savedialog1.filename));
   end;
 end;
 
@@ -456,7 +493,10 @@ begin
     ol[i]:=oid.selection[i];
 
   for i:=0 to length(ol)-1 do
-    ol[i].free;
+  begin
+    if not (ol[i] is TCustomForm) then
+      ol[i].free;
+  end;
 
   TCEform(GlobalDesignHook.LookupRoot).designsurface.ClearSelection;
   TCEform(GlobalDesignHook.LookupRoot).designsurface.UpdateDesigner;
@@ -508,6 +548,11 @@ begin
 end;
 
 
+procedure TFormDesigner.onRefreshPropertyValues;
+begin
+  //refresh
+ // showmessage('weee');
+end;
 
 procedure TFormDesigner.FormCreate(Sender: TObject);
 var h: TPropertyEditorHook;
@@ -546,6 +591,8 @@ begin
 
 
   GlobalDesignHook.AddHandlerComponentRenamed(OnComponentRenamed);
+
+  GlobalDesignHook.AddHandlerRefreshPropertyValues(onRefreshPropertyValues);
 
   setlength(x,0);
   loadedfromsave:=loadformposition(self, x);
@@ -615,7 +662,7 @@ end;
 
 procedure TFormDesigner.DesignerChange(sender: TObject);
 begin
-  showmessage('changed');
+//  showmessage('changed');
 end;
 
 procedure TFormDesigner.DesignerSelectionChange(sender: tobject);
@@ -943,11 +990,40 @@ begin
   AnchorDesigner.show;
 end;
 
+//{$define OLDLAZARUS11}
+procedure TFormDesigner.CheckBoxForbooleanClick(sender: tobject);
+var reg: tregistry;
+begin
+
+  {
+  If you're wondering why this code is giving an error, then update to
+  lazarus 1.6 or remove the comments from the above $define line (or add
+  OLDLAZARUS11 to your defines)
+  }
+  {$ifndef OLDLAZARUS11}
+
+  oid.GridControl[oipgpProperties].CheckboxForBoolean:=tmenuitem(sender).Checked;
+  oid.RebuildPropertyLists;
+
+  reg:=tregistry.create;
+  try
+    Reg.RootKey := HKEY_CURRENT_USER;
+    if Reg.OpenKey('\Software\Cheat Engine',true) then
+      reg.WriteBool('FormDesigner CheckboxForBoolean', oid.GridControl[oipgpProperties].CheckboxForBoolean);
+  finally
+    reg.free;
+  end;
+  {$endif}
+end;
+
 procedure TFormDesigner.designForm(f: tceform);
 var x: array of integer;
   r: trect;
 
   m: tmethod;
+
+  miChangeCheckboxSetting: TMenuItem;
+  reg: Tregistry;
 begin
   GlobalDesignHook.LookupRoot:=f;
 
@@ -962,7 +1038,32 @@ begin
     oid.ComponentTree.PopupMenu:=popupmenu1; //nil;
 
 
+    {$ifndef OLDLAZARUS11}
+    reg:=tregistry.create;
+    try
+      Reg.RootKey := HKEY_CURRENT_USER;
+      if Reg.OpenKey('\Software\Cheat Engine',false) then
+      begin
+        if reg.ValueExists('FormDesigner CheckboxForBoolean') then
+          oid.GridControl[oipgpProperties].CheckboxForBoolean:=reg.ReadBool('FormDesigner CheckboxForBoolean')
+        else
+          oid.GridControl[oipgpProperties].CheckboxForBoolean:=true;
+      end;
+    finally
+      reg.free;
+    end;
+
+    miChangeCheckboxSetting:=tmenuitem.create(oid.MainPopupMenu);
+    miChangeCheckboxSetting.caption:='Show checkboxes for boolean';
+    miChangeCheckboxSetting.checked:=oid.GridControl[oipgpProperties].CheckboxForBoolean;
+    miChangeCheckboxSetting.OnClick:=CheckBoxForbooleanClick;
+    miChangeCheckboxSetting.AutoCheck:=true;
+
+    oid.MainPopupMenu.Items.Add(miChangeCheckboxSetting);
+    {$endif}
+
 //    AnchorDesigner:=TAnchorDesigner.Create(oid);
+
 
     ShowAnchorDesigner:=SAD; //panda       (I wanted to call it ShowAnchorDesigner but that was causing 'issues')
 

@@ -184,12 +184,15 @@ registerAssembler(function(address, instruction):bytetable)
 
 unregisterAssembler(ID): Unregisters the registered assembler
 
-registerAutoAssemblerPrologue(function(script, syntaxcheck))
+registerAutoAssemblerPrologue(function(script, syntaxcheck), postAOB:boolean=false)
   Registers a function to be called when the auto assembler is about to parse an auto assembler script. The script you get is after the [ENABLE] and [DISABLE] tags have been used to strip the script to the according one, but before comment stripping and trimming has occured
 
   script is a Strings object which when changed has direct effect to the script
 
 unregisterAutoAssemblerPrologue(ID)
+
+registerAutoAssemblerTemplate(name, function(script: TStrings): id - Registers an template for the auto assembler. The script parameter is a TStrings object that has a direct connection to the current script. (All script parsing is up to you...).  Returns an ID
+unregisterAutoAssemblerTemplate(ID)
 
 
 showMessage(text) : shows a messagebox with the given text
@@ -203,6 +206,8 @@ getWindowlist(Strings): Fills a Strings inherited object with the top-window lis
 getWindowlist(): Returns a table with the windowlist (pid - window caption )
 
 getThreadlist(List): fills a List object with the threadlist of the currently opened process. Format: %x
+
+
 
 function onOpenProcess(processid):
   If this function is defined it will be called whenever ............ opens a process.
@@ -250,6 +255,8 @@ checkSynchronize(): Calls this from an infinite loop in the main thread when usi
 
 writeToClipboard(text):  Writes the given text to the clipboard
 readFromClipboard():  Reads the text from the clipboard
+
+
 
 speedhack_setSpeed(speed) : Enables the speedhack if needed and sets the specific speed
 speedhack_getSpeed(): Returns the last set speed
@@ -303,6 +310,18 @@ allocateSharedMemory(name, size):
 
 getForegroundProcess() : Returns the processID of the process that is currently on top
 
+
+findWindow(classname OPTIONAL, caption OPTIONAL): windowhandle - Finds a window with the given classname and/or windowname
+getWindow(windowhandle, command) : windowhandle - Gets a specific window based on the given window (Check MSDN getWindow for the command description)
+getWindowCaption(windowhandle) : string - Returns the caption of the window
+getWindowClassName(windowhandle): string - Returns the classname of the window
+getWindowProcessID(windowhandle): processid - Returns the processid of the process this window belongs to
+getForegroundWindow() - windowhandle : Returns the windowhandle of the topmost window
+sendMessage(hwnd, msg, wparam, lparam): result - Sends a message to a window. Those that wish to use it, should know how to use it (and fill in the msg id's yourself)
+
+
+
+
 cheatEngineIs64Bit(): Returns true if CE is 64-bit, false if 32-bit
 targetIs64Bit(): Returns true if the target process is 64-bit, false if 32-bit
 
@@ -346,6 +365,37 @@ getUpdateTimer() : Returns the update timer object
 
 setGlobalKeyPollInterval(integer): Sets the global keypoll interval. The interval determines the speed of how often CE checks if a key has been pressed or not. Lower is more accurate, but eats more cpu power
 setGlobalDelayBetweenHotkeyActivation(integer): Sets the minimum delay between the activation of the same hotey in milliseconds. Affects all hotkeys that do not set their own minimum delay
+
+getXBox360ControllerState(ControllerID OPTIONAL) : table - Fetches the state of the connected xbox controller. Returns a table containing the following fields on success:
+    ControllerID : The id of the controller (between 0 and 3)
+    PacketNumber : The packet id of the state you see. (use to detect changes)
+    GAMEPAD_DPAD_UP : D-PAD Up (boolean)
+    GAMEPAD_DPAD_DOWN: D-PAD Down (boolean)
+    GAMEPAD_DPAD_LEFT: D-PAD Left (boolean)
+    GAMEPAD_DPAD_RIGHT: D-PAD Right (boolean)
+    GAMEPAD_START: Start button (boolean)
+    GAMEPAD_BACK: Back button (boolean)
+    GAMEPAD_LEFT_THUMB: Left thumb stick down (boolean)
+    GAMEPAD_RIGHT_THUMB: Right thumb stick down (boolean)
+
+    GAMEPAD_LEFT_SHOULDER: Left shoulder button (boolean)
+    GAMEPAD_RIGHT_SHOULDER: Right shoulder button (boolean)
+
+    GAMEPAD_A: A button (boolean)
+    GAMEPAD_B: B button (boolean)
+    GAMEPAD_X: X button (boolean)
+    GAMEPAD_Y: Y button (boolean)
+
+    LeftTrigger: Left trigger (integer ranging from 0 to 255)
+    RightTrigger: Right trigger (integer ranging from 0 to 255)
+
+    ThumbLeftX: Horizontal position of the left thumbstick (-32768 to 32767)
+    ThumbLeftY: Verital position of the left thumbstick (-32768 to 32767)
+    ThumbRightX: Horizontal position of the right thumbstick (-32768 to 32767)
+    ThumbRightY: Vertical position of the right thumbstick (-32768 to 32767)  
+
+
+setXBox360ControllerVibration(ControllerID, leftMotor, rightMotor) - Sets the speed of the left and right vibrating motor inside the controller. Range (0 to 65535 where 0 is off)
 
 
 
@@ -391,8 +441,9 @@ alignmentparam is a string which either holds the value the addresses must be di
 
 debug variables
 EFLAGS
-32-bit: EAX, EBX, ECX, EDX, EDI, ESP, EBP, ESP, EIP
-64-bit: RAX, EBX, RBX, RDX, RDI, RSP, RBP, RSP, RIP, R8, R9, R10, R11, R12, R13, R14, R15 : The value of the register
+32/64-bit: EAX, EBX, ECX, EDX, EDI, ESI, EBP, ESP, EIP
+64-bit only: RAX, RBX, RCX, RDX, RDI, RSI, RBP, RSP, RIP, R8, R9, R10, R11, R12, R13, R14, R15 : The value of the register
+
 
 Debug related routines:
 function debugger_onBreakpoint():
@@ -585,6 +636,7 @@ methods
 
 WinControl Class: (Inheritance: Control->Component->Object)
 properties
+  Handle: Integer - The internal windows handle
   DoubleBuffered: boolean - Graphical updates will go to a offscreen bitmap which will then be shown on the screen instead of directly to the screen. May reduce flickering
   ControlCount : integer - The number of child controls of this wincontrol
   Control[] : Control - Array to access a child control
@@ -814,16 +866,34 @@ createEdit(owner): Creates an Edit class object which belongs to the given owner
 
 properties
   Text: string - The current contents of the editfield
+  SelText: string - The current selected contents of the edit field (readonly)
+  SelStart: number - The starting index of the current selection (zero-indexed, readonly)
+  SelLength: number - The length of the current selection. (readonly)
   OnChange: function - The function to call when the editfield is changed
+  OnKeyPress: function - The function to call for the KeyPress event.
+  OnKeyUp: function - The function to call for the KeyUp event.
+  OnKeyDown: function - The function to call for the KeyDown event.
 
 methods
   clear()
-  selectAll()
-  clearSelection()
   copyToClipboard()
   cutToClipboard()
   pasteFromClipboard()
-  onChange(function)
+  selectAll()
+  select(start, length OPTIONAL)
+  selectText(start, length OPTIONAL) : Set the control's current selection. If no length is specified, selects everything after start.
+  clearSelection()
+  getSelText()
+  getSelStart()
+  getSelLength()
+  getOnChange()
+  setOnChange(function)
+  getOnKeyPress()
+  setOnKeyPress(function)
+  getOnKeyUp()
+  setOnKeyUp(function)
+  getOnKeyDown()
+  setOnKeyDown(function)
 
 
 Memo Class: (Inheritance: Edit->WinControl->Control->Component->Object)
@@ -1008,8 +1078,8 @@ methods
   setMin(trackbar, integer)
   getPosition(progressbar)
   setPosition(progressbar, integer)
-  getOnChange(function)
-  setOnChange()
+  getOnChange()
+  setOnChange(function)
 
 
 CollectionItem Class: (Inheritance: Object)
@@ -1473,12 +1543,14 @@ DataString: The internal string
 
 TableFile class (Inheritance: Object)
 findTableFile(filename): Returns the TableFile class object for the saved file
+createTableFile(filename, filepath OPTIONAL): TableFile - Add a new file to your table. If no filepath is specified, it will create a blank file. Otherwise, it will read the contents from disk.
 
 properties
   Name: string
   Stream: MemoryStream
 
 methods
+  delete() : Deletes this file from your table.
   saveToFile(filename)
   getData() : Gets a MemoryStream object
 
@@ -1537,8 +1609,11 @@ properties
   ID: integer - Unique id of this hotkey (ReadOnly)
   Description: string - The description of this hotkey (ReadOnly)
   HotkeyString: string - The hotkey formatted as a string (ReadOnly)
+  ActivateSound: string - Tablefile name of a WAV file inside the table which will get played on activate events
+  DeactivateSound: string - Tablefile name of a .WAV file inside the table which will get played on deactivate events
   OnHotkey: function(sender) - Function to be called when a hotkey has just been pressed
   OnPostHotkey: function(sender) - Function to be called when a hotkey has been pressed and the action has been performed
+
 
 methods
   doHotkey: Executes the hotkey as if it got triggered by the keyboard
@@ -1577,6 +1652,9 @@ properties
   ShowAsSigned: boolean - Self explanatory
   AllowIncrease: boolean - Allow value increasing, unfreeze will reset it to false
   AllowDecrease: boolean - Allow value decreasing, unfreeze will reset it to false
+  Collapsed: boolean - Set to true to collapse this record or false to expand it. Use expand/collapse methods for recursive operations. 
+  IsGroupHeader: boolean - Set to true if the record was created as a Group Header with no address or value info. (ReadOnly)
+  IsReadable: boolean - Set to false if record contains an unreadable address. NOTE: This property will not be set until the value property is accessed at least once. (ReadOnly)
 
   Count: Number of children
   Child[index] : Array to access the child records
@@ -1829,8 +1907,14 @@ createNativeThread(function(Thread,...), ...) :
   The function returns the Thread class object
   function declaration: function (Thread, ...)
 
+createNativeThreadSuspended(function(Thread,...), ...) :
+  Same as createNativeThread nut it won't run until resume is called on it
+
+
 properties
   name: string - This name will be shown when the thread terminated abnormally
+  Finished: boolean - Returns true if the thread has reached the end.  Do not rely on this if the thread is freeOnTerminate(true) (which is the default)
+  Terminated: boolean - Returns true if the Terminate method has been called
 
 methods
   freeOnTerminate(state) :
@@ -1844,6 +1928,15 @@ methods
 
   waitfor() :
     Waits for the given thread to finish (Not recommended to call this from inside the thread itself)
+
+  suspend() :
+    Suspend the thread's execution
+
+  resume() :
+    Resume the thread;s executionmm
+
+  terminate() :
+    Tells the thread it should terminate. The Terminated property will become true
 
 
 
@@ -1991,6 +2084,14 @@ dbk_getPhysicalAddress(address): Returns the physical address of the given addre
 dbk_writesIgnoreWriteProtection(state): Set to true if you do not wish to initiate copy-on-write behaviour
 
 dbvm_getCR4(): Returns the real Control Register 4 state
+
+allocateKernelMemory(size) : Allocates a block of nonpaged memory and returns the address
+freeKernelMemory(address) : Frees the given memory region
+
+mapMemory(address, size,  frompid OPTIONAL, topid OPTIONAL): maps a specific address to the usermode context from the given PID to the given PID. If the PID is 0 or not specified, the cheat engine process is selected. This functions returns 2 results. Address and MDL. The MDL you will need for unmapMemory()
+unmapMemory(address, mdl)                                                         
+
+
 
 
 onAPIPointerChange(function): Registers a callback when an api pointer is changed (can happen when the user clicks ok in settings, or when dbk_use*** is used. Does NOT happen when setAPIPointer is called)

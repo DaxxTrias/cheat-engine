@@ -14,7 +14,7 @@ uses  sysutils, ProcessHandlerUnit;
 uses dialogs,LCLIntf,sysutils,imagehlp, ProcessHandlerUnit;
 {$endif}
 
-const opcodecount=1098; //I wish there was a easier way than to handcount
+const opcodecount=1100; //I wish there was a easier way than to handcount
 
 
 
@@ -1062,6 +1062,9 @@ const opcodes: array [1..opcodecount] of topcode =(
   (mnemonic:'PREFETCH2';opcode1:eo_reg3;paramtype1:par_m8;bytes:2;bt1:$0f;bt2:$18),
   (mnemonic:'PREFETCHA';opcode1:eo_reg0;paramtype1:par_m8;bytes:2;bt1:$0f;bt2:$18),
 
+  (mnemonic:'PREFETCHW';opcode1:eo_reg1;paramtype1:par_m8;bytes:2;bt1:$0f;bt2:$0d),
+  (mnemonic:'PREFETCHWT1';opcode1:eo_reg2;paramtype1:par_m8;bytes:2;bt1:$0f;bt2:$0d),
+
   (mnemonic:'PSADBW';opcode1:eo_reg;paramtype1:par_mm;paramtype2:par_mm_m64;bytes:2;bt1:$0f;bt2:$f6),
   (mnemonic:'PSADBW';opcode1:eo_reg;paramtype1:par_xmm;paramtype2:par_xmm_m128;bytes:3;bt1:$66;bt2:$0f;bt3:$f6),
 
@@ -1575,7 +1578,7 @@ type
 type ttokens=array of string;
 type TAssemblerBytes=array of byte;
 
-type TAssemblerEvent=procedure(address:integer; instruction: string; var bytes: TAssemblerBytes) of object;
+type TAssemblerEvent=procedure(address:qword; instruction: string; var bytes: TAssemblerBytes) of object;
 
 type TassemblerPreference=(apNone, apShort, apLong);
 
@@ -1647,7 +1650,7 @@ uses symbolhandler, assemblerArm, Parsers, NewKernelHandler;
 
 {$ifdef windows}
 uses {$ifndef autoassemblerdll}CEFuncProc,{$endif}symbolhandler, lua, luahandler,
-  lualib, assemblerArm, Parsers, NewKernelHandler;
+  lualib, assemblerArm, Parsers, NewKernelHandler, LuaCaller;
 {$endif}
 
 
@@ -1675,7 +1678,10 @@ end;
 procedure unregisterAssembler(id: integer);
 begin
   if id<length(ExtraAssemblers) then
+  begin
+    CleanupLuaCall(TMethod(ExtraAssemblers[id]));
     ExtraAssemblers[id]:=nil;
+  end;
 end;
 
 

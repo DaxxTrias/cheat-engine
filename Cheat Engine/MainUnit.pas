@@ -84,6 +84,11 @@ type
 
     edtAlignment: record
       Text: string;
+      Enabled: boolean;
+    end;
+
+    rbFsmAligned:record
+      checked: boolean;
     end;
 
 
@@ -1071,6 +1076,7 @@ resourcestring
   rsHexadecimal = 'Hexadecimal';
   rsIsNotAValidX = '%s is not a valid xml name';
   rsMUGenerateGroupscanCommand = 'Generate groupscan command';
+  rsTryTutorial = 'Do you want to try out the tutorial?';
 
 
 var
@@ -2015,8 +2021,7 @@ begin
   if cbpercentage = nil then
   begin
     cbpercentage := tcheckbox.Create(self);
-    cbpercentage.AutoSize := True;
-    cbpercentage.Left := cbFloatSimple.left;
+    cbpercentage.Left := cbUnrandomizer.left;
     cbpercentage.Top := scantype.Top + 2;
 
     cbpercentage.Parent := scantype.Parent;
@@ -3866,13 +3871,13 @@ begin
       Add('bytecount=4  --number of bytes of this type');
       Add('functionbasename="' + fbn + '"');
       Add('');
-      Add('function ' + fbn + '_bytestovalue(b1,b2,b3,b4)');
+      Add('function ' + fbn + '_bytestovalue(b1,b2,b3,b4,address)');
       Add('--Add extra byte parameters as required');
       Add('return 123');
       Add('');
       Add('end');
       Add('');
-      Add('function ' + fbn + '_valuetobytes(i)');
+      Add('function ' + fbn + '_valuetobytes(i,address)');
       Add('');
       Add('--return the bytes to write (usually only used when you change the value)');
       Add('return 0,0,0,0');
@@ -4044,6 +4049,9 @@ begin
 
   scanstate.cbfastscan.Checked := cbFastScan.Checked;
   scanstate.edtAlignment.Text := edtAlignment.Text;
+  scanstate.edtAlignment.enabled:=edtAlignment.enabled;
+
+  scanstate.rbFsmAligned.checked:=rbFsmAligned.checked;
 
   scanstate.scanvalue.Text := scanvalue.Text;
   scanstate.scanvalue.Visible := scanvalue.Visible;
@@ -4210,10 +4218,19 @@ begin
 
     btnNextScan.Enabled := newstate.nextscanstate.Enabled;
 
-    cbFastScan.Checked := newstate.cbfastscan.Checked;
-    edtAlignment.Text := newstate.edtAlignment.Text;
-
     setGbScanOptionsEnabled(newstate.gbScanOptionsEnabled);
+
+    cbFastScan.OnChange:=nil;
+    cbFastScan.Checked := newstate.cbfastscan.Checked;
+    cbFastScan.OnChange:=cbFastScanChange;
+
+    edtAlignment.Text := newstate.edtAlignment.Text;
+    edtAlignment.Enabled:=newstate.edtAlignment.enabled;
+    rbFsmAligned.checked:=newstate.rbFsmAligned.checked;
+    if rbFsmAligned.checked=false then
+      rbfsmLastDigts.checked:=true;
+
+
 
     cbFastScanClick(cbfastscan);    //update the alignment textbox
 
@@ -6331,7 +6348,8 @@ begin
     Browsethismemoryarrea1.Enabled := True;
   end;
 
-  Removeselectedaddresses1.Visible := not (GetVarType in [vtBinary, vtByteArray, vtAll]);
+  if Removeselectedaddresses1.enabled then
+    Removeselectedaddresses1.enabled := not (GetVarType in [vtBinary, vtByteArray, vtAll]);
 
   miChangeValue.enabled:=Browsethismemoryarrea1.enabled;
   miAddAddress.enabled:=Browsethismemoryarrea1.enabled;
@@ -6380,9 +6398,13 @@ begin
         mi.Caption:=TCustomType(customTypes[i]).name;
         mi.RadioItem:=miDisplayDouble.RadioItem;
         mi.AutoCheck:=miDisplayDouble.AutoCheck;
+        mi.GroupIndex:=miDisplayDouble.GroupIndex;
         mi.OnClick:=miChangeDisplayTypeClick;
         mi.tag:=1000+i;
         foundlistpopup.Items.Add(mi);
+
+        if foundlistDisplayOverride=mi.tag then
+          mi.Checked:=true;
       end;
     end;
   end;
@@ -6416,8 +6438,8 @@ begin
 
     screen.Cursor := crhourglass;
 
-    MainForm.Caption := CEWait;
-    Mainform.Refresh;
+    //MainForm.Caption := CEWait;
+    //Mainform.Refresh;
 
     foundlist3.Items.BeginUpdate;
     try
@@ -6436,7 +6458,7 @@ begin
         foundlist.deleteaddress(selected[i]);
 
     finally
-      Mainform.Caption := CENorm;
+      //Mainform.Caption := CENorm;
       screen.Cursor := crDefault;
       foundlist3.Items.EndUpdate;
     end;
@@ -6567,6 +6589,8 @@ begin
     pluginhandler.free;
     pluginhandler:=nil;
   end;
+
+
 
 end;
 
@@ -6908,9 +6932,8 @@ begin
   begin
     reg.WriteBool('First Time User', False);
 
-    if messagedlg('Do you want to try out the tutorial?', mtConfirmation,
-      [mbYes, mbNo], 0) = mrYes then
-        miTutorial.Click;
+    if messagedlg(rsTryTutorial, mtConfirmation, [mbYes, mbNo], 0) = mrYes then
+      miTutorial.Click;
   end;
 
   if reg.ValueExists('Show previous value column') then
@@ -7370,7 +7393,7 @@ procedure TMainForm.actOpenExecute(Sender: TObject);
 var
   merge: boolean;
   app: word;
-  Extension: string;
+  Extension,oldFileName: string;
 
 begin
 
@@ -7381,7 +7404,7 @@ begin
       exit;
 
 
-
+  oldFileName:=Opendialog1.FileName;
   if autoopen or Opendialog1.Execute then
   begin
     SaveIntialTablesDir(extractfilepath(Opendialog1.filename));
@@ -7414,7 +7437,8 @@ begin
 
     reinterpretaddresses;
 
-  end;
+  end
+  else Opendialog1.FileName:=oldFileName;
 
   if advancedoptions <> nil then
   begin
@@ -7441,6 +7465,7 @@ end;
 procedure TMainForm.actSaveExecute(Sender: TObject);
 var
   protect: boolean;
+  oldFileName: string;
 begin
   saveGotCanceled:=true;
   protect := False;
@@ -7452,7 +7477,7 @@ begin
   end;
 
 
-
+  oldFileName:=Savedialog1.FileName;
   if Savedialog1.Execute then
   begin
     if uppercase(ExtractFileExt(savedialog1.FileName)) = '.CETRAINER' then
@@ -7462,12 +7487,10 @@ begin
     savetable(savedialog1.FileName, protect);
 
     saveGotCanceled:=false;
-  end;
-
-  opendialog1.FileName := savedialog1.filename;
-
-  SaveIntialTablesDir(extractfilepath(savedialog1.filename));
-
+    opendialog1.FileName := savedialog1.filename;
+    SaveIntialTablesDir(extractfilepath(savedialog1.filename));
+  end
+  else Savedialog1.FileName:=oldFileName;
 end;
 
 procedure TMainForm.actAutoAssembleExecute(Sender: TObject);
@@ -7620,34 +7643,27 @@ end;
 procedure TMainForm.miGeneratePointermapClick(Sender: TObject);
 var
   frmPointerScanner: TfrmPointerScanner;
-  originalAlligned: boolean;
-  originalConnect: boolean;
-
+  oldSettingsForm: tfrmpointerscannersettings;
 begin
   frmPointerScanner := tfrmpointerscanner.Create(self);
   frmPointerScanner.Show;
 
-  if frmpointerscannersettings = nil then //used over and over
+  oldSettingsForm:=frmpointerscannersettings;
+
+  frmpointerscannersettings := tfrmpointerscannersettings.Create(self);
+
+  if processhandler.is64Bit then
+    frmpointerscannersettings.edtReverseStop.text:='7FFFFFFFFFFFFFFF'
+  else
   begin
-    frmpointerscannersettings := tfrmpointerscannersettings.Create(self);
-
-    if processhandler.is64Bit then
-      frmpointerscannersettings.edtReverseStop.text:='7FFFFFFFFFFFFFFF'
+    if Is64bitOS then
+      frmpointerscannersettings.edtReverseStop.text:='FFFFFFFF'
     else
-    begin
-      if Is64bitOS then
-        frmpointerscannersettings.edtReverseStop.text:='FFFFFFFF'
-      else
-        frmpointerscannersettings.edtReverseStop.text:='7FFFFFFF';
-    end;
+      frmpointerscannersettings.edtReverseStop.text:='7FFFFFFF';
   end;
-  originalAlligned:=frmpointerscannersettings.CbAlligned.checked;
+
   frmpointerscannersettings.CbAlligned.checked:=true;
-
-  originalConnect:=frmpointerscannersettings.cbConnectToNode.checked;
   frmpointerscannersettings.cbConnectToNode.checked:=false;
-
-
 
   frmpointerscannersettings.rbGeneratePointermap.checked:=true;
   frmpointerscannersettings.btnOk.Click;
@@ -7655,8 +7671,9 @@ begin
   frmPointerScanner.SkipNextScanSettings:=true;
   frmPointerScanner.Method3Fastspeedandaveragememoryusage1.Click;
 
-  frmpointerscannersettings.CbAlligned.checked:=originalAlligned;
-  frmpointerscannersettings.cbConnectToNode.checked:=originalConnect;
+  freeandnil(frmpointerscannersettings);
+
+  frmpointerscannersettings:=oldSettingsForm;
 end;
 
 procedure TMainForm.Pointerscanforthisaddress1Click(Sender: TObject);
@@ -7885,7 +7902,10 @@ begin
         end;
       end;
 
-      value:=readAndParseAddress(address, valuetype, ct, hexadecimal);
+      if valuetype=vtAll then
+        value:=readAndParseAddress(address, TVariableType(extra), ct, hexadecimal)
+      else
+        value:=readAndParseAddress(address, valuetype, ct, hexadecimal);
     end;
 
 
@@ -8004,6 +8024,8 @@ procedure TMainForm.Foundlist3KeyDown(Sender: TObject; var Key: word;
 var
   i: integer;
 begin
+
+  foundlistpopupPopup(sender);
   if ((key = Ord('A')) and (ssctrl in Shift) and not (ssalt in Shift)) then
   begin
     //select all
@@ -8104,170 +8126,13 @@ end;
 
 
 procedure TMainForm.Label59Click(Sender: TObject);
-var
- // r: TPointerListHandler;
-  f: tfilestream;
-  ds: Tdecompressionstream;
-
-  i,j: integer;
-  z: qword;
-  sl: tstringlist;
-
-  psr: TPointerListHandler;
-
-  x: qword;
-
-  vqe: TVirtualQueryExCache;
-
-  mbi,mbi2: TMEMORYBASICINFORMATION;
-  A: PTRUINT;
-
-  shouldend: boolean;
-  ph, th: thandle;
-
-
-
-
-
-  s: widestring;
-
-  prh: thandle;
-
-  dh: thandle;
-
-  ch: THandle;
-  pn: UNICODE_STRING;
-  r: NTSTATUS;
-  mms: ulong;
-  cdl: ulong;
-
-
-  sqos: SECURITY_QUALITY_OF_SERVICE;
-
-  gnua: TfrmAutoInject;
-  label p1,p2,p3;
-
+var r: TMapMemoryResult;
 begin
+  r:=MapMemory($00400000, 4096, 0,0);
 
-  try
-    asm
-     push $397
-     {$ifdef cpu32}
-     popfd
-     {$else}
-     popfq
-     {$endif}
-     p1:
-     cpuid
-     //nop
-     p2:
-     nop
-     p3:
-     nop
-    end;
+  showmessage(inttohex(r.address,8));
 
-  except
-    on e:exception do
-    begin
-      if ExceptAddr()=@p1 then
-        showmessage('P1')
-      else
-      if ExceptAddr()=@p2 then
-        showmessage('P2 (correct)')
-      else
-      if ExceptAddr()=@p3 then
-        showmessage('P3')
-      else
-        showmessage(inttohex(ptruint(ExceptAddr()),8));
-    end
-  end;
-
-  {gnua:=TfrmAutoInject.Create(self);
-  gnua.ScriptMode:=smGnuAssembler;
-
-  gnua.show;   }
-
-     {
-  asm
-    mov eax,1
-    cpuid
-    mov z,rcx
-  end;
-
-
-  if (z shr 31) and 1=1 then showmessage('hypervisor present') else showmessage('no hypervisor detected');
-
-  showmessage(inttohex(z,8));
-       }
- // getConnection.loadExtension(processhandle);
-
-//showmessage('still alive')
-
-//  MarkAllPagesAsNonAccessed(ProcessHandle);
-
-
-//  showmessage('sip='+inttohex(r,8));
-
- // windows.GetThreadContext();
-
-
-  //NtCreatePort(@ph, @oa);
-
-//  th:=OpenThread(THREAD_ALL_ACCESS, false, strtoint(scanvalue.text));
-              {
-  showmessage('threadid='+inttohex(getcurrentthreadid,1));
-  th:=OpenThread(THREAD_ALL_ACCESS, false, GetCurrentThreadId);
-
-
-  r:=NtSetInformationThread(th, jwawindows.ThreadHideFromDebugger, nil, 0);
-  showmessage('after');
-  }
-
-
- { vqe:=TVirtualQueryExCache.create(processhandle);
-  a:=0;
-
-  while VirtualQueryEx(processhandle, pointer(a), mbi, sizeof(mbi))<>0 do
-  begin
-    vqe.AddRegion(mbi);
-    a:=a+mbi.RegionSize;
-  end;
-
-
-  a:=0;
-  vqe.getRegion($ff000000, mbi2);
-
-  vqe.getRegion($00400500, mbi2);
-
-  if vqe.getRegion(a, mbi2) then
-  begin
-    shouldend:=false;
-    while VirtualQueryEx(processhandle, pointer(a), mbi, sizeof(mbi))<>0 do
-    begin
-      if shouldend then showmessage('awww');
-      if mbi.BaseAddress<>mbi2.BaseAddress then
-      begin
-        showmessage('fuck');
-        exit;
-      end;
-
-      a:=a+mbi.RegionSize;
-
-      if vqe.getRegion(a, mbi2)=false then shouldend:=true;
-    end;
-  end
-  else
-    showmessage('doublefuck');
-
-  if shouldend=false then showmessage('hmmm');
-
-  a:=0;
-  while vqe.getregion(a,mbi) do a:=a+mbi.RegionSize;
-
-
-
-
-  vqe.free;   }
+  UnmapMemory(r);
 end;
 
 procedure ChangeIcon(hModule: HModule; restype: PChar; resname: PChar;

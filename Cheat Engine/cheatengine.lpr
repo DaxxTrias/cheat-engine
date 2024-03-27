@@ -89,7 +89,7 @@ uses
   Parsers, Globals, NullStream, RipRelativeScanner, LuaRipRelativeScanner,
   VirtualQueryExCache, disassemblerthumb, AccessedMemory, LuaStructureFrm,
   MemoryQuery, pointerparser, GnuAssembler, binutils, dbvmLoadManual, mikmod,
-  frmEditHistoryUnit, LuaInternet;
+  frmEditHistoryUnit, LuaInternet, xinput;
 
 {$R cheatengine.res}
 //{$R manifest.res}  //lazarus now has this build in
@@ -164,6 +164,7 @@ begin
       try
         try
           LoadTable(tabletoload,false);
+          MainForm.Savedialog1.FileName:=tabletoload;
         finally
           if ExtractFileName(tabletoload)='CET_TRAINER.CETRAINER' then //Let's just hope no-one names their trainer exactly this...
             DeleteFile(tabletoload);
@@ -202,7 +203,7 @@ begin
 end;
 
 begin
-  Application.Title:='............ 6.5';
+  Application.Title:='............ 6.5.1';
   Application.Initialize;
   getcedir;
 
