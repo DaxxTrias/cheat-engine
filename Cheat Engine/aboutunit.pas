@@ -160,7 +160,7 @@ end;
 
 procedure TAbout.Label4Click(Sender: TObject);
 begin
-  shellexecute(0,'open',pchar('https://www.patreon.com/cheatengine'),nil,nil,sw_maximize);
+  shellexecute(0,'open',pchar('https://'),nil,nil,sw_maximize);
 end;
 
 procedure TAbout.Label8Click(Sender: TObject);
