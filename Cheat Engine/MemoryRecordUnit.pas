@@ -1298,17 +1298,26 @@ begin
   if VarType in [vtByte, vtWord, vtDword, vtQword, vtSingle, vtDouble] then
   begin
     try
-      if VarType in [vtByte, vtWord, vtDword, vtQword] then
+      if showAsHex then //separate handler for hexadecimal. (handle as int, even for the float types)
       begin
-        oldvalue:=StrToQWordEx(getvalue);
-        decreasevalue:=StrToQWordEx(value);
-        setvalue(IntToStr(oldvalue-decreasevalue));
+        oldvalue:=StrToQWordEx('$'+getvalue);
+        decreasevalue:=StrToQwordEx('$'+value);
+        setvalue(IntTohex(oldvalue-decreasevalue,1));
       end
       else
       begin
-        oldvaluedouble:=StrToFloat(getValue);
-        decreasevalueDouble:=StrToFloat(value);
-        setvalue(FloatToStr(oldvaluedouble-decreasevalueDouble));
+        if VarType in [vtByte, vtWord, vtDword, vtQword] then
+        begin
+          oldvalue:=StrToQWordEx(getvalue);
+          decreasevalue:=StrToQWordEx(value);
+          setvalue(IntToStr(oldvalue-decreasevalue));
+        end
+        else
+        begin
+          oldvaluedouble:=StrToFloat(getValue);
+          decreasevalueDouble:=StrToFloat(value);
+          setvalue(FloatToStr(oldvaluedouble-decreasevalueDouble));
+        end;
       end;
     except
 
@@ -1748,19 +1757,16 @@ begin
     //convert the value to a dropdown list item value
     for i:=0 to c-1 do
     begin
-      if uppercase(DropDownValue[i])=uppercase(result) then
+      if uppercase(utf8toansi(DropDownValue[i]))=uppercase(result) then
       begin
         if fDropDownDescriptionOnly then
-          result:=DropDownDescription[i]
+          result:=utf8toansi(DropDownDescription[i])
         else
-          result:=result+' : '+DropDownDescription[i];
+          result:=result+' : '+utf8toansi(DropDownDescription[i]);
       end;
 
       //still here. The value couldn't be found in the list , so just display the value
     end;
-
-
-
   end;
 end;
 
@@ -1815,9 +1821,9 @@ begin
         if customtype<>nil then
         begin
           if customtype.scriptUsesFloat then
-            result:=FloatToStr(customtype.ConvertDataToFloat(buf))
+            result:=FloatToStr(customtype.ConvertDataToFloat(buf, RealAddress))
           else
-            if showashex then result:=inttohex(customtype.ConvertDataToInteger(buf),8) else if showassigned then result:=inttostr(integer(customtype.ConvertDataToInteger(buf))) else result:=inttostr(customtype.ConvertDataToInteger(buf));
+            if showashex then result:=inttohex(customtype.ConvertDataToInteger(buf, RealAddress),8) else if showassigned then result:=inttostr(integer(customtype.ConvertDataToInteger(buf, RealAddress))) else result:=inttostr(customtype.ConvertDataToInteger(buf, RealAddress));
         end
         else
           result:='error';
@@ -2043,9 +2049,9 @@ begin
         if customtype<>nil then
         Begin
           if customtype.scriptUsesFloat then
-            customtype.ConvertFloatToData(strtofloat(currentValue), ps)
+            customtype.ConvertFloatToData(strtofloat(currentValue), ps, RealAddress)
           else
-            customtype.ConvertIntegerToData(strtoint(currentValue), pdw);
+            customtype.ConvertIntegerToData(strtoint(currentValue), pdw, RealAddress);
 
         end;
       end;
@@ -2154,7 +2160,7 @@ begin
 
       vtByteArray:
       begin
-        ConvertStringToBytes(currentValue, showAsHex, bts);
+        ConvertStringToBytes(currentValue, showAsHex, bts, true);
         if length(bts)>bufsize then
         begin
           //the user wants to input more bytes than it should have
@@ -2165,11 +2171,19 @@ begin
           if not ReadProcessMemory(processhandle, pointer(realAddress), buf, bufsize,x) then exit;
         end;
 
-
         bufsize:=min(length(bts),bufsize);
         for i:=0 to bufsize-1 do
-          if bts[i]<>-1 then
-            pba[i]:=bts[i];
+          if bts[i]>=0 then
+            pba[i]:=bts[i]
+          else
+          begin
+            if bts[i]=-1 then continue;
+
+            if not showashex then raise exception.create('Nibble support is only for hexadecimal display');
+
+            //nibble
+            pba[i]:=(((not (bts[i] shr 8)) and $ff) and pba[i]) or (bts[i] and $ff);
+          end;
       end;
     end;
 

@@ -44,7 +44,9 @@ procedure LUA_DoScript(s: string);
 function LUA_functioncall(routinetocall: string; parameters: array of const): integer;
 procedure LUA_memrec_callback(memrec: pointer; routine: string);
 procedure LUA_SetCurrentContextState(context: PContext);
-function LUA_onBreakpoint(context: PContext): boolean;
+procedure LUa_GetNewContextState(context: PContext);
+
+function LUA_onBreakpoint(context: PContext; functionAlreadyPushed: boolean=false): boolean;
 procedure LUA_onNotify(functionid: integer; sender: tobject);
 function Lua_ToString(L: Plua_State; i: Integer): string;
 function lua_ToCEUserData(L: PLua_state; i: integer): pointer;
@@ -89,7 +91,9 @@ uses mainunit, mainunit2, luaclass, frmluaengineunit, plugin, pluginexports,
   LuaDissectCode, LuaByteTable, LuaBinary, lua_server, HotkeyHandler, LuaPipeClient,
   LuaPipeServer, LuaTreeview, LuaTreeNodes, LuaTreeNode, LuaCalendar, LuaSymbolListHandler,
   LuaCommonDialog, LuaFindDialog, LuaSettings, LuaPageControl, LuaRipRelativeScanner,
-  SymbolListHandler, processhandlerunit, processlist, Globals;
+  SymbolListHandler, processhandlerunit, processlist, DebuggerInterface,
+  WindowsDebugger, VEHDebugger, KernelDebuggerInterface, DebuggerInterfaceAPIWrapper,
+  Globals;
 
 resourcestring
   rsLUA_DoScriptWasNotCalledRomTheMainThread = 'LUA_DoScript was not called '
@@ -536,7 +540,7 @@ begin
   end;
 end;
 
-function LUA_onBreakpoint(context: PContext): boolean;
+function LUA_onBreakpoint(context: PContext; functionAlreadyPushed: boolean=false): boolean;
 var p: integer;
 begin
   result:=false;
@@ -544,160 +548,30 @@ begin
   try
     LUA_SetCurrentContextState(context);
 
-    lua_pop(LuaVM, lua_gettop(luavm)); //clear it just to be sure
 
-    lua_getfield(luavm, LUA_GLOBALSINDEX, pchar('debugger_onBreakpoint'));
-
-    p:=lua_gettop(luavm);
-    if p<>0 then //debugger_onBreakpoint is defined
+    if not functionAlreadyPushed then
     begin
-      if lua_isfunction(luavm, -1) then //it's a function, yeeeeeeeeh
+      lua_pop(LuaVM, lua_gettop(luavm)); //clear it just to be sure
+
+      lua_getglobal(luavm, pchar('debugger_onBreakpoint'));
+      p:=lua_gettop(luavm);
+      if p=0 then exit;
+    end;
+
+    if lua_isfunction(luavm, -1) then //extra check
+    begin
+      if lua_pcall(LuaVM, 0, 1, 0)=0 then
       begin
-
-
-
-       // lua_pop(LuaVM, lua_gettop(luavm));
         p:=lua_gettop(luavm);
 
-        if lua_pcall(LuaVM, 0, 1, 0)=0 then
-        begin
-          p:=lua_gettop(luavm);
-
-          if (p=1) then //only 1 parameter returned
-            result:=lua_tointeger(luavm, -1)<>0;  //return the result is not 0
+        if (p=1) then //only 1 parameter returned
+          result:=lua_tointeger(luavm, -1)<>0;  //return the result is not 0
 
 
-          lua_pop(LuaVM, lua_gettop(luavm)); //clear stack
+        lua_pop(LuaVM, lua_gettop(luavm)); //clear stack
 
-          //set new state if changes where made
-
-         //if p<>0 then
-          begin
-          //  if lua_toboolean(luavm, -1) then
-            begin
-              lua_getglobal(luavm, 'EFLAGS');
-              context.EFLAGS:=lua_tointeger(luavm, -1);
-              lua_pop(luavm,1);
-
-              if not processhandler.is64bit then
-              begin
-                lua_getglobal(luavm, 'EAX');
-                context.{$ifdef cpu64}rax{$else}eax{$endif}:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'EBX');
-                context.{$ifdef cpu64}rbx{$else}ebx{$endif}:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'ECX');
-                context.{$ifdef cpu64}rcx{$else}ecx{$endif}:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'EDX');
-                context.{$ifdef cpu64}rdx{$else}edx{$endif}:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'ESI');
-                context.{$ifdef cpu64}rsi{$else}esi{$endif}:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'EDI');
-                context.{$ifdef cpu64}rdi{$else}edi{$endif}:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'EBP');
-                context.{$ifdef cpu64}rbp{$else}ebp{$endif}:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-
-                lua_getglobal(luavm, 'EIP');
-                context.{$ifdef cpu64}rip{$else}eip{$endif}:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-              end
-              else
-              begin
-
-
-
-              {$ifdef cpu64}
-                lua_getglobal(luavm, 'RAX');
-                context.RAX:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'RBX');
-                context.RBX:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'RCX');
-                context.RCX:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'RDX');
-                context.RDX:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'RSI');
-                context.RSI:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'RDI');
-                context.RDI:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'RBP');
-                context.RBP:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'RSP');
-                context.RSP:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'RIP');
-                context.RIP:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'R8');
-                context.R8:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'R9');
-                context.R9:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'R10');
-                context.R10:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'R11');
-                context.R11:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'R12');
-                context.R12:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'R13');
-                context.R13:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'R14');
-                context.R14:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-
-                lua_getglobal(luavm, 'R15');
-                context.R15:=lua_tointeger(luavm, -1);
-                lua_pop(luavm,1);
-              {$endif}
-
-              end;
-
-              //lua_pop(luavm, lua_gettop(luavm));
-
-            end;
-          end;
-
-        end;
+        //set new state if changes where made
+        LUA_GetNewContextState(context);
       end;
     end;
 
@@ -818,6 +692,127 @@ begin
   end;
 end;
 
+procedure LUA_GetNewContextState(context: PContext);
+begin
+  lua_getglobal(luavm, 'EFLAGS');
+  context.EFLAGS:=lua_tointeger(luavm, -1);
+  lua_pop(luavm,1);
+
+  if not processhandler.is64bit then
+  begin
+    lua_getglobal(luavm, 'EAX');
+    context.{$ifdef cpu64}rax{$else}eax{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'EBX');
+    context.{$ifdef cpu64}rbx{$else}ebx{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'ECX');
+    context.{$ifdef cpu64}rcx{$else}ecx{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'EDX');
+    context.{$ifdef cpu64}rdx{$else}edx{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'ESI');
+    context.{$ifdef cpu64}rsi{$else}esi{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'EDI');
+    context.{$ifdef cpu64}rdi{$else}edi{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'EBP');
+    context.{$ifdef cpu64}rbp{$else}ebp{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'ESP');
+    context.{$ifdef cpu64}rsp{$else}esp{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+
+    lua_getglobal(luavm, 'EIP');
+    context.{$ifdef cpu64}rip{$else}eip{$endif}:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+  end
+  else
+  begin
+  {$ifdef cpu64}
+    lua_getglobal(luavm, 'RAX');
+    context.RAX:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'RBX');
+    context.RBX:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'RCX');
+    context.RCX:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'RDX');
+    context.RDX:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'RSI');
+    context.RSI:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'RDI');
+    context.RDI:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'RBP');
+    context.RBP:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'RSP');
+    context.RSP:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'RIP');
+    context.RIP:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'R8');
+    context.R8:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'R9');
+    context.R9:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'R10');
+    context.R10:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'R11');
+    context.R11:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'R12');
+    context.R12:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'R13');
+    context.R13:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'R14');
+    context.R14:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+
+    lua_getglobal(luavm, 'R15');
+    context.R15:=lua_tointeger(luavm, -1);
+    lua_pop(luavm,1);
+  {$endif}
+
+  end;
+end;
+
 procedure LUA_DoScript(s: string);
 var i: integer;
   pc: pchar;
@@ -867,7 +862,7 @@ begin
   try
     m:=memrec;
 
-    lua_getfield(luavm, LUA_GLOBALSINDEX, pchar(routine));
+    lua_getglobal(luavm, pchar(routine));
 
     p:=lua_gettop(luavm);
     if p<>0 then
@@ -899,7 +894,7 @@ begin
   begin
     try
       //check if the routine exists
-      lua_getfield(luavm, LUA_GLOBALSINDEX, pchar(routinetocall));
+      lua_getglobal(luavm, pchar(routinetocall));
 
       p:=lua_gettop(luavm);
       if p<>oldstack then
@@ -2220,6 +2215,26 @@ begin
   ce_debugProcess(debuggerinterface);
 end;
 
+function debug_getCurrentDebuggerInterface(L:PLua_State): integer; cdecl;
+begin
+
+  if debuggerthread<>nil then
+  begin
+    if (CurrentDebuggerInterface is TWindowsDebuggerInterface) then
+      lua_pushinteger(L, 1);
+
+    if (CurrentDebuggerInterface is TVEHDebugInterface) then
+      lua_pushinteger(L, 2);
+
+    if (CurrentDebuggerInterface is TKernelDebugInterface) then
+      lua_pushinteger(L, 3);
+
+    result:=1;
+  end
+  else
+    result:=0;
+end;
+
 function debug_getBreakpointList(L: Plua_State): integer; cdecl;
 var
   al: TAddressArray;
@@ -2306,6 +2321,8 @@ begin
   result:=1;
 end;
 
+
+
 function debug_canBreak(L: Plua_State): integer; cdecl;
 var list: TAddressArray;
 begin
@@ -2327,7 +2344,11 @@ var parameters: integer;
   size: integer;
   trigger: TBreakpointTrigger;
   method: TBreakpointMethod;
+
+  lc: TLuaCaller;
 begin
+  lc:=nil;
+
   result:=0;
   parameters:=lua_gettop(L);
   if parameters>=1 then
@@ -2341,28 +2362,65 @@ begin
     end else raise exception.create('debug_setBreakpoint needs at least an address');
 
     if parameters>=2 then
-      size:=lua_tointeger(L, 2)
+    begin
+      if lua_isfunction(L,2) then //address, function type
+      begin
+        lua_pushvalue(L,2);
+        lc:=TLuaCaller.create;
+        lc.luaroutineIndex:=luaL_ref(L,LUA_REGISTRYINDEX);
+      end
+      else
+      begin
+        if lua_isnumber(L, 2) then
+          size:=lua_tointeger(L, 2)
+        else
+        begin //function name as string
+          lc:=TLuaCaller.create;
+          lc.luaroutine:=Lua_ToString(L,2);
+        end;
+      end;
+    end
     else
       size:=1;
 
-    if parameters>=3 then
-      trigger:=TBreakpointTrigger(lua_tointeger(L,3))
-    else
-      trigger:=bptExecute;
 
-    if parameters>=4 then
-      method:=TBreakpointMethod(lua_tointeger(L,4))
-    else
-      method:=bpmDebugRegister;
+    if lc=nil then  //address, size OPTIONAL, trigger OPTIONAL, functiontocall OPTIONAL
+    begin
+      if parameters>=3 then
+        trigger:=TBreakpointTrigger(lua_tointeger(L,3))
+      else
+        trigger:=bptExecute;
+
+      if parameters>=4 then
+        method:=TBreakpointMethod(lua_tointeger(L,4))
+      else
+        method:=bpmDebugRegister;
+
+      if parameters>=5 then
+      begin
+        if lua_isfunction(L,5) then //address, function type
+        begin
+          lua_pushvalue(L,5);
+          lc:=TLuaCaller.create;
+          lc.luaroutineIndex:=luaL_ref(L,LUA_REGISTRYINDEX);
+        end
+        else
+        begin
+          lc:=TLuaCaller.create;
+          lc.luaroutine:=Lua_ToString(L,5);
+        end;
+
+      end;
+    end;
 
     try
 
       if startdebuggerifneeded(false) then
       begin
         case trigger of
-          bptAccess: debuggerthread.SetOnAccessBreakpoint(address, size, method);
-          bptWrite: debuggerthread.SetOnWriteBreakpoint(address, size, method);
-          bptExecute: debuggerthread.SetOnExecuteBreakpoint(address, method);
+          bptAccess: debuggerthread.SetOnAccessBreakpoint(address, size, method, 0, TBreakpointEvent(lc.BreakpointEvent));
+          bptWrite: debuggerthread.SetOnWriteBreakpoint(address, size, method, 0, TBreakpointEvent(lc.BreakpointEvent));
+          bptExecute: debuggerthread.SetOnExecuteBreakpoint(address, method,false, 0, TBreakpointEvent(lc.BreakpointEvent));
         end;
 
         MemoryBrowser.hexview.update;
@@ -2417,6 +2475,30 @@ begin
   end;
 
   lua_pop(L, lua_gettop(L)); //clear the stack
+end;
+
+function debug_addThreadToNoBreakList(L: Plua_State): integer; cdecl;
+begin
+  result:=1;
+  if debuggerthread<>nil then
+  begin
+    CurrentDebuggerInterface.AddToNoBreakList(lua_tointeger(L,1));
+    lua_pushboolean(L, true);
+  end
+  else
+    lua_pushboolean(L, false);
+end;
+
+function debug_removeThreadFromNoBreakList(L: Plua_State): integer; cdecl;
+begin
+  result:=1;
+  if debuggerthread<>nil then
+  begin
+    CurrentDebuggerInterface.RemoveFromNoBreakList(lua_tointeger(L,1));
+    lua_pushboolean(L, true);
+  end
+  else
+    lua_pushboolean(L, false);
 end;
 
 var isclosing: boolean;
@@ -4744,6 +4826,7 @@ end;
 
 function lua_detachIfPossible(L: Plua_State): integer; cdecl;
 begin
+  result:=0;
   DetachIfPossible;
   lua_pop(L, lua_gettop(L));
 end;
@@ -4831,6 +4914,7 @@ end;
 function openLuaServer(L: PLua_State): integer; cdecl;
 var name: string;
 begin
+  result:=0;
   if lua_gettop(L)=1 then
     name:=Lua_ToString(L, 1)
   else
@@ -4880,6 +4964,7 @@ end;
 function lua_unregisterAutoAssemblerCommand(L: PLua_State): integer; cdecl;
 var command: string;
 begin
+  result:=0;
   if lua_gettop(L)=1 then
   begin
     command:=Lua_ToString(L, 1);
@@ -5275,6 +5360,8 @@ var
   ms: TMemorystream;
   playparam: dword;
 begin
+  result:=0;
+
   if lua_gettop(L)>=1 then
   begin
     if winmm=0 then
@@ -5335,6 +5422,7 @@ end;
 
 function activateProtection(L: PLua_State): integer; cdecl;
 begin
+  result:=0;
   if lua_gettop(L)=0 then
     protectme
   else
@@ -5511,10 +5599,15 @@ begin
     lua_register(LuaVM, 'debugProcess', debugProcess);
     lua_register(LuaVM, 'debug_getBreakpointList', debug_getBreakpointList);
     lua_register(LuaVM, 'debug_isDebugging', debug_isDebugging);
+    lua_register(LuaVM, 'debug_getCurrentDebuggerInterface', debug_getCurrentDebuggerInterface);
     lua_register(LuaVM, 'debug_canBreak', debug_canBreak);
     lua_register(LuaVM, 'debug_setBreakpoint', debug_setBreakpoint);
     lua_register(LuaVM, 'debug_removeBreakpoint', debug_removeBreakpoint);
     lua_register(LuaVM, 'debug_continueFromBreakpoint', debug_continueFromBreakpoint);
+
+    lua_register(LuaVM, 'debug_addThreadToNoBreakList', debug_addThreadToNoBreakList);
+    lua_register(LuaVM, 'debug_removeThreadFromNoBreakList', debug_removeThreadFromNoBreakList);
+
     lua_register(LuaVM, 'closeCE', closeCE);
     lua_register(LuaVM, 'hideAllCEWindows', hideAllCEWindows);
     lua_register(LuaVM, 'unhideMainCEwindow', unhideMainCEwindow);

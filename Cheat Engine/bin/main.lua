@@ -388,10 +388,16 @@ createProcess(path, parameters OPTIONAL, debug OPTIONAL, breakonentrypoint OPTIO
 debugProcess(interface OPT): starts the debugger for the currently opened process (won't ask the user) Optional interface: 0=default, 1=windows debug, 2=VEHDebug, 3=Kerneldebug
 
 debug_isDebugging(): Returns true if the debugger has been started
+debug_getCurrentDebuggerInterface() : Returns the current debuggerinterface used (1=windows, 2=VEH 3=Kernel, nil=no debugging active)
 debug_canBreak(): Returns true if there is a possibility the target can stop in a breakpoint. 6.4+
 debug_getBreakpointList(): Returns a lua table containing all the breakpoint addresses
 
-debug_setBreakpoint(address, size OPTIONAL, trigger OPTIONAL) : sets a breakpoint of a specific size at the given address. if trigger is bptExecute then size is ignored. If trigger is ignored then it will be of type bptExecute, which obviously also ignores the size then as well
+debug_addThreadToNoBreakList(threadid): This will cause breakpoints on the provided thread to be ignored
+debug_removeThreadFromNoBreakList(threadid): removed the threadid from the list
+
+
+debug_setBreakpoint(address, size OPTIONAL, trigger OPTIONAL, functiontocall() OPTIONAL) : sets a breakpoint of a specific size at the given address. if trigger is bptExecute then size is ignored. If trigger is ignored then it will be of type bptExecute, which obviously also ignores the size then as well
+debug_setBreakpoint(address, functiontocall() OPTIONAL)
 debug_removeBreakpoint(address) : if the given address is a part of a breakpoint it will be removed
 debug_continueFromBreakpoint(continueMethod) : if the debugger is currently waiting to continue you can continue with this. Valid parameters are :co_run (just continue), co_stepinto(when on top of a call, follow it), co_stepover (when on top of a call run till after the call)
 debug_getXMMPointer(xmmregnr) :
@@ -1076,7 +1082,7 @@ methods
   getCanvas() : Canvas - Returns the canvas object used to render the listview
 
 
-TreeNode clasS : (Inheritance: TObject)
+TreeNode class : (Inheritance: TObject)
 properties
   Text: string - The text of the treenode
   Parent: Treenode - The treenode this object is a child of. (can be nil) (ReadOnly)
@@ -1085,6 +1091,7 @@ properties
   Expanded: boolean - Set to true if it has been expanded
   Count : Integer - The number of children this node has
   Items[]: Treenode - Array to access the child nodes of this node
+  [] = Items[]
   Index: Integer - The index based on the parent
   AbsoluteIndex: Integer - The index based on the TreeView's Treenodes object (Items)
   Selected: Boolean - Set to true if currently selected
@@ -1110,7 +1117,7 @@ properties
 methods
   clear()
   getCount()
-  getItem(integer) : Return the listitem object at the given index
+  getItem(integer) : Return the TreeNode object at the given index (based on the TreeView's Treenodes)
   add(text:string): Returns a new root Treenode object
   insert(treenode, string): Returns a new treenode object that has been inserted before the given treenode
   insertBehind(treenode, string): Returns a new treenode object that has been inserted after the given treenode

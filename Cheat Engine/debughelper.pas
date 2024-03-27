@@ -21,7 +21,7 @@ type
   private
     eventhandler: TDebugEventHandler;
     ThreadList: TList; //only the debugger thread can add or remove from this list
-    BreakpointList: TBreakpointList;  //only the main thread can add or remove from this list
+    BreakpointList: TList;  //only the main thread can add or remove from this list
 
     debuggerCS: TGuiSafeCriticalSection;
     //breakpointCS: TGuiSafeCriticalSection;
@@ -50,6 +50,7 @@ type
     ResumeProcessWhenIdleCounter: dword; //suspend counter to tell the cleanup handler to resume the process
 
 
+
     function getDebugThreadHanderFromThreadID(tid: dword): TDebugThreadHandler;
 
     procedure GetBreakpointList(address: uint_ptr; size: integer; var bplist: TBreakpointSplitArray);
@@ -60,7 +61,7 @@ type
     function getCurrentThread: TDebugThreadHandler;
     procedure FindCodeByBP(address: uint_ptr; size: integer; bpt: TBreakpointTrigger);
 
-    function AddBreakpoint(owner: PBreakpoint; address: uint_ptr; size: integer; bpt: TBreakpointTrigger; bpm: TBreakpointMethod; bpa: TBreakpointAction; debugregister: integer=-1; foundcodedialog: Tfoundcodedialog=nil; threadID: dword=0; frmchangedaddresses: Tfrmchangedaddresses=nil; FrmTracer: TFrmTracer=nil; tcount: integer=0; changereg: pregistermodificationBP=nil): PBreakpoint;
+    function AddBreakpoint(owner: PBreakpoint; address: uint_ptr; size: integer; bpt: TBreakpointTrigger; bpm: TBreakpointMethod; bpa: TBreakpointAction; debugregister: integer=-1; foundcodedialog: Tfoundcodedialog=nil; threadID: dword=0; frmchangedaddresses: Tfrmchangedaddresses=nil; FrmTracer: TFrmTracer=nil; tcount: integer=0; changereg: pregistermodificationBP=nil; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
 
 
     function AdjustAccessRightsWithActiveBreakpoints(ar: TAccessRights; base: ptruint; size: integer): TAccessRights;
@@ -94,6 +95,7 @@ type
     procedure setbreakpointcondition(bp: PBreakpoint; easymode: boolean; script: string);
     function getbreakpointcondition(bp: PBreakpoint; var easymode: boolean):pchar;
 
+
     procedure getBreakpointAddresses(var AddressList: TAddressArray);
     function  isBreakpoint(address: uint_ptr; address2: uint_ptr=0; includeinactive: boolean=false): PBreakpoint;
     function  CodeFinderStop(codefinder: TFoundCodeDialog): boolean;
@@ -104,12 +106,12 @@ type
     function  FindWhatCodeAccessesStop(frmchangedaddresses: Tfrmchangedaddresses): boolean;
     procedure FindWhatAccesses(address: uint_ptr; size: integer);
     procedure FindWhatWrites(address: uint_ptr; size: integer);
-    function  SetOnWriteBreakpoint(address: ptrUint; size: integer; bpm: TBreakpointMethod; tid: dword=0): PBreakpoint; overload;
-    function  SetOnWriteBreakpoint(address: ptrUint; size: integer; tid: dword=0): PBreakpoint; overload;
-    function  SetOnAccessBreakpoint(address: ptrUint; size: integer; bpm: TBreakpointMethod; tid: dword=0): PBreakpoint; overload;
-    function  SetOnAccessBreakpoint(address: ptrUint; size: integer; tid: dword=0): PBreakpoint; overload;
-    function  SetOnExecuteBreakpoint(address: ptrUint; bpm: TBreakpointMethod; askforsoftwarebp: boolean = false; tid: dword=0): PBreakpoint; overload;
-    function  SetOnExecuteBreakpoint(address: ptrUint; askforsoftwarebp: boolean = false; tid: dword=0): PBreakpoint; overload;
+    function  SetOnWriteBreakpoint(address: ptrUint; size: integer; bpm: TBreakpointMethod; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint; overload;
+    function  SetOnWriteBreakpoint(address: ptrUint; size: integer; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint; overload;
+    function  SetOnAccessBreakpoint(address: ptrUint; size: integer; bpm: TBreakpointMethod; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint; overload;
+    function  SetOnAccessBreakpoint(address: ptrUint; size: integer; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint; overload;
+    function  SetOnExecuteBreakpoint(address: ptrUint; bpm: TBreakpointMethod; askforsoftwarebp: boolean = false; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint; overload;
+    function  SetOnExecuteBreakpoint(address: ptrUint; askforsoftwarebp: boolean = false; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint; overload;
     function  ToggleOnExecuteBreakpoint(address: ptrUint; tid: dword=0): PBreakpoint;
 
     procedure UpdateDebugRegisterBreakpointsForThread(t: TDebugThreadHandler);
@@ -154,7 +156,7 @@ implementation
 
 uses cedebugger, kerneldebugger, formsettingsunit, FormDebugStringsUnit,
      frmBreakpointlistunit, plugin, memorybrowserformunit, autoassembler,
-     pluginexports, networkInterfaceApi, processhandlerunit, Globals;
+     pluginexports, networkInterfaceApi, processhandlerunit, Globals, LuaCaller;
 
 //-----------Inside thread code---------
 
@@ -384,6 +386,9 @@ begin
 
               if bp.traceendcondition<>nil then
                 Strdispose(bp.traceendcondition);
+
+              if assigned(bp.OnBreakpoint) then
+                LuaCaller.CleanupLuaCall(TMethod(bp.OnBreakpoint));
 
               freemem(bp);
 
@@ -1158,7 +1163,7 @@ begin
     postmessage(frmBreakpointlist.handle, WM_BPUPDATE,0,0); //tell the breakpointlist that there's been an update
 end;
 
-function TDebuggerThread.AddBreakpoint(owner: PBreakpoint; address: uint_ptr; size: integer; bpt: TBreakpointTrigger; bpm: TBreakpointMethod; bpa: TBreakpointAction; debugregister: integer=-1; foundcodedialog: Tfoundcodedialog=nil; threadID: dword=0; frmchangedaddresses: Tfrmchangedaddresses=nil; FrmTracer: TFrmTracer=nil; tcount: integer=0; changereg: pregistermodificationBP=nil): PBreakpoint;
+function TDebuggerThread.AddBreakpoint(owner: PBreakpoint; address: uint_ptr; size: integer; bpt: TBreakpointTrigger; bpm: TBreakpointMethod; bpa: TBreakpointAction; debugregister: integer=-1; foundcodedialog: Tfoundcodedialog=nil; threadID: dword=0; frmchangedaddresses: Tfrmchangedaddresses=nil; FrmTracer: TFrmTracer=nil; tcount: integer=0; changereg: pregistermodificationBP=nil; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
 var
   newbp: PBreakpoint;
   originalbyte: byte;
@@ -1205,6 +1210,7 @@ begin
   newbp^.frmchangedaddresses := frmchangedaddresses;
   newbp^.frmTracer:=frmtracer;
   newbp^.tracecount:=tcount;
+  newbp^.OnBreakpoint:=OnBreakpoint;
   if changereg<>nil then
     newbp^.changereg:=changereg^;
 
@@ -1768,10 +1774,11 @@ begin
   debuggercs.enter;
   setlength(addresslist, BreakpointList.count);
   for i:=0 to BreakpointList.count-1 do
-    addresslist[i]:=BreakpointList[i].address;
+    addresslist[i]:=PBreakpoint(BreakpointList[i])^.address;
 
   debuggercs.leave;
 end;
+
 
 procedure TDebuggerthread.updatebplist(lv: TListview; showshadow: boolean);
 {
@@ -1886,12 +1893,12 @@ begin
   end;
 end;
 
-function TDebuggerthread.SetOnExecuteBreakpoint(address: ptrUint; askforsoftwarebp: boolean = false; tid: dword=0): PBreakpoint;
+function TDebuggerthread.SetOnExecuteBreakpoint(address: ptrUint; askforsoftwarebp: boolean = false; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
 begin
-  result:=SetOnExecuteBreakpoint(address, preferedBreakpointMethod, askforsoftwarebp, tid);
+  result:=SetOnExecuteBreakpoint(address, preferedBreakpointMethod, askforsoftwarebp, tid, OnBreakpoint);
 end;
 
-function TDebuggerthread.SetOnExecuteBreakpoint(address: ptrUint; bpm: TBreakpointMethod; askforsoftwarebp: boolean = false; tid: dword=0): PBreakpoint;
+function TDebuggerthread.SetOnExecuteBreakpoint(address: ptrUint; bpm: TBreakpointMethod; askforsoftwarebp: boolean = false; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
 var
   i: integer;
   found: boolean;
@@ -1948,18 +1955,18 @@ begin
       end;
     end;
 
-    result:=AddBreakpoint(nil, address, 1, bptExecute, bpm, bo_Break, usableDebugreg, nil, tid);
+    result:=AddBreakpoint(nil, address, 1, bptExecute, bpm, bo_Break, usableDebugreg, nil, tid, nil, nil, 0, nil, OnBreakpoint);
   finally
     debuggercs.leave;
   end;
 end;
 
-function TDebuggerthread.SetOnWriteBreakpoint(address: ptrUint; size: integer; tid: dword=0): PBreakpoint;
+function TDebuggerthread.SetOnWriteBreakpoint(address: ptrUint; size: integer; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
 begin
-  result:=SetOnWriteBreakpoint(address, size, preferedBreakpointMethod, tid);
+  result:=SetOnWriteBreakpoint(address, size, preferedBreakpointMethod, tid, OnBreakpoint);
 end;
 
-function TDebuggerthread.SetOnWriteBreakpoint(address: ptrUint; size: integer; bpm: TBreakpointMethod; tid: dword=0): PBreakpoint;
+function TDebuggerthread.SetOnWriteBreakpoint(address: ptrUint; size: integer; bpm: TBreakpointMethod; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
 var
   i: integer;
   found: boolean;
@@ -1990,17 +1997,17 @@ begin
       GetBreakpointList(address, size, bplist);
 
 
-      result:=AddBreakpoint(nil, bplist[0].address, bplist[0].size, bptWrite, bpm, bo_Break, usableDebugreg,  nil, tid);
+      result:=AddBreakpoint(nil, bplist[0].address, bplist[0].size, bptWrite, bpm, bo_Break, usableDebugreg,  nil, tid, nil, nil, 0, nil, OnBreakpoint);
       for i:=1 to length(bplist)-1 do
       begin
         usableDebugReg:=GetUsableDebugRegister(bptwrite);
         if usableDebugReg=-1 then exit;
-        AddBreakpoint(result, bplist[i].address, bplist[i].size, bptWrite, bpm, bo_Break, usableDebugreg,  nil, tid);
+        AddBreakpoint(result, bplist[i].address, bplist[i].size, bptWrite, bpm, bo_Break, usableDebugreg,  nil, tid, nil,nil, 0, nil, OnBreakpoint);
       end;
     end
     else
     if bpm=bpmException then
-      result:=AddBreakpoint(nil, address, size, bptWrite, bpm, bo_Break);
+      result:=AddBreakpoint(nil, address, size, bptWrite, bpm, bo_Break, -1, nil,0,nil,nil,0,nil, OnBreakpoint);
 
 
   finally
@@ -2009,12 +2016,12 @@ begin
 
 end;
 
-function TDebuggerthread.SetOnAccessBreakpoint(address: ptrUint; size: integer; tid: dword=0): PBreakpoint;
+function TDebuggerthread.SetOnAccessBreakpoint(address: ptrUint; size: integer; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
 begin
-  result:=SetOnAccessBreakpoint(address, size, preferedBreakpointMethod, tid);
+  result:=SetOnAccessBreakpoint(address, size, preferedBreakpointMethod, tid, OnBreakpoint);
 end;
 
-function TDebuggerthread.SetOnAccessBreakpoint(address: ptrUint; size: integer; bpm: TBreakpointMethod; tid: dword=0): PBreakpoint;
+function TDebuggerthread.SetOnAccessBreakpoint(address: ptrUint; size: integer; bpm: TBreakpointMethod; tid: dword=0; OnBreakpoint: TBreakpointEvent=nil): PBreakpoint;
 var
   i: integer;
   found: boolean;
@@ -2044,17 +2051,17 @@ begin
 
       GetBreakpointList(address, size, bplist);
 
-      result:=AddBreakpoint(nil, bplist[0].address, bplist[0].size, bptAccess, bpmDebugRegister, bo_Break, usableDebugreg,  nil, tid);
+      result:=AddBreakpoint(nil, bplist[0].address, bplist[0].size, bptAccess, bpmDebugRegister, bo_Break, usableDebugreg, nil, tid, nil, nil, 0, nil, OnBreakpoint);
       for i:=1 to length(bplist)-1 do
       begin
         usableDebugReg:=GetUsableDebugRegister(bptAccess);
         if usableDebugReg=-1 then exit;
-        AddBreakpoint(result, bplist[i].address,  bplist[i].size, bptAccess, bpmDebugRegister, bo_Break, usableDebugreg,nil, tid);
+        AddBreakpoint(result, bplist[i].address,  bplist[i].size, bptAccess, bpmDebugRegister, bo_Break, usableDebugreg, nil, tid, nil, nil, 0, nil, OnBreakpoint);
       end;
     end
     else
     if bpm=bpmException then
-      result:=AddBreakpoint(nil, address, size, bptAccess, bpm, bo_Break);
+      result:=AddBreakpoint(nil, address, size, bptAccess, bpm, bo_Break,-1,nil,0,nil,nil,0,nil,OnBreakpoint);
 
   finally
     debuggercs.leave;
@@ -2333,7 +2340,7 @@ begin
   OnAttachEvent := TEvent.Create(nil, True, False, '');
   OnContinueEvent := Tevent.Create(nil, true, False, '');
   threadlist := TList.Create;
-  BreakpointList := TBreakpointList.Create;
+  BreakpointList := TList.Create;
   eventhandler := TDebugEventHandler.Create(self, OnAttachEvent, OnContinueEvent, breakpointlist, threadlist, debuggerCS);
 
 

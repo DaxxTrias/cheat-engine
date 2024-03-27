@@ -18,7 +18,7 @@ resourcestring
   rsPleaseWait = 'Please Wait!';
 
 procedure UpdateToolsMenu;
-procedure LoadSettingsFromRegistry;
+procedure LoadSettingsFromRegistry(skipPlugins: boolean=false);
 procedure initcetitle;
 
 
@@ -115,7 +115,7 @@ begin
   end;
 end;
 
-procedure LoadSettingsFromRegistry;
+procedure LoadSettingsFromRegistry(skipPlugins: boolean=false);
 var reg : TRegistry;
     i,j: integer;
     temphotkeylist: array [0..30] of commontypedefs.tkeycombo;
@@ -154,11 +154,22 @@ begin
           if reg.ValueExists('Always run script') then
             cbAlwaysRunScript.Checked:=reg.ReadBool('Always run script');
 
-          if reg.ValueExists('All includes custom types') then
-          begin
-            AllIncludesCustomType:=reg.readbool('All includes custom types');
-            cbAllIncludesCustomType.checked:=AllIncludesCustomType;
-          end;
+          if reg.ValueExists('AllByte') then cgAllTypes.checked[0]:=reg.readBool('AllByte');
+          if reg.ValueExists('AllWord') then cgAllTypes.checked[1]:=reg.readBool('AllWord');
+          if reg.ValueExists('AllDWord') then cgAllTypes.checked[2]:=reg.readBool('AllDWord');
+          if reg.ValueExists('AllQWord') then cgAllTypes.checked[3]:=reg.readBool('AllQWord');
+          if reg.ValueExists('AllFloat') then cgAllTypes.checked[4]:=reg.readBool('AllFloat');
+          if reg.ValueExists('AllDouble') then cgAllTypes.checked[5]:=reg.readBool('AllDouble');
+          if reg.ValueExists('AllCustom') then cgAllTypes.checked[6]:=reg.readBool('AllCustom');
+
+          ScanAllTypes:=[];
+          if cgAllTypes.checked[0] then ScanAllTypes:=ScanAllTypes+[vtByte];
+          if cgAllTypes.checked[1] then ScanAllTypes:=ScanAllTypes+[vtWord];
+          if cgAllTypes.checked[2] then ScanAllTypes:=ScanAllTypes+[vtDword];
+          if cgAllTypes.checked[3] then ScanAllTypes:=ScanAllTypes+[vtQword];
+          if cgAllTypes.checked[4] then ScanAllTypes:=ScanAllTypes+[vtSingle];
+          if cgAllTypes.checked[5] then ScanAllTypes:=ScanAllTypes+[vtDouble];
+          if cgAllTypes.checked[6] then ScanAllTypes:=ScanAllTypes+[vtCustom];
 
 
           if reg.ValueExists('Show all windows on taskbar') then
@@ -681,12 +692,15 @@ begin
 
 
 
-      if Reg.OpenKey('\Software\............\Plugins'{$ifdef cpu64}+'64'{$else}+'32'{$endif},false) then
+
+      if (not skipPlugins) and (Reg.OpenKey('\Software\............\Plugins'{$ifdef cpu64}+'64'{$else}+'32'{$endif},false)) then
       begin
         names:=TStringList.create;
         try
           reg.GetValueNames(names);
           names.Sort;
+
+
 
           for i:=0 to names.Count-1 do
           begin
@@ -709,11 +723,13 @@ begin
 
           end;
 
-          pluginhandler.FillCheckListBox(formsettings.clbPlugins);
+
         finally
           names.Free;
         end;
       end;
+
+      pluginhandler.FillCheckListBox(formsettings.clbPlugins);
       {$endif}
 
 

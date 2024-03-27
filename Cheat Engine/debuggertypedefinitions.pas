@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Windows, FoundCodeUnit, formchangedaddresses, frmTracerUnit,
-  cefuncproc, NewKernelHandler, fgl, commonTypeDefs;
+  cefuncproc, NewKernelHandler, commonTypeDefs;
 
 type
   TNewProcedureData = record
@@ -148,7 +148,7 @@ type
 
   PBreakpoint = ^TBreakPoint;
 
-  TOnBreakpointEvent=function(bp: PBreakpoint; OnBreakpointContext: pointer):boolean of object;
+  TBreakpointEvent=function(bp: pointer; OnBreakpointContext: pointer):boolean of object;
 
   TBreakpoint = record
     {
@@ -203,7 +203,7 @@ type
       easymode: boolean;
     end;
 
-    OnBreakpoint: TOnBreakpointEvent; //method to be called by the debuggerthread when this breakpoint triggers
+    OnBreakpoint: TBreakpointEvent; //method to be called by the debuggerthread when this breakpoint triggers
     OnBreakpointContext: pointer;
   end;
 
@@ -213,7 +213,7 @@ type
     size: integer;       //1, 2 or 4
   end;
   TBreakpointSplitArray = array of TBreakpointSplit;
-  TBreakpointList=TFPGList<PBreakpoint>;
+ // TBreakpointList=TFPGList<PBreakpoint>;
 
 function BreakPointTriggerIsWatchpoint(bpt: TBreakpointTrigger): boolean; inline;
 

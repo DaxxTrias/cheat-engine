@@ -1,5 +1,7 @@
 unit debugeventhandler;
 
+//handles the debug events
+
 {$MODE Delphi}
 
 interface
@@ -21,7 +23,7 @@ type
     onContinueEvent: TEvent;
     realcontextpointer: pointer;
     threadlist: TList;
-    breakpointList: TBreakpointList;
+    breakpointList: TList;
     continueOption: TContinueOption;
 
     setInt3Back: boolean;
@@ -55,7 +57,7 @@ type
     currentBP: PBreakpoint;
 
     function CheckIfConditionIsMet(bp: PBreakpoint; script: string=''): boolean;
-
+    function InNoBreakList: boolean;
 
     function HandleAccessViolationDebugEvent(debugEvent: TDEBUGEVENT; var dwContinueStatus: dword): boolean;
     function HandleExceptionDebugEvent(debugEvent: TDEBUGEVENT; var dwContinueStatus: dword): boolean;
@@ -103,7 +105,7 @@ type
     procedure breakThread;
     procedure clearDebugRegisters;
     procedure continueDebugging(continueOption: TContinueOption);
-    constructor Create(debuggerthread: TObject; attachEvent: Tevent; continueEvent: Tevent; breakpointlist: TBreakpointlist; threadlist: Tlist; debuggerCS: TGuiSafeCriticalSection);
+    constructor Create(debuggerthread: TObject; attachEvent: Tevent; continueEvent: Tevent; breakpointlist: TList; threadlist: Tlist; debuggerCS: TGuiSafeCriticalSection);
     destructor destroy; override;
 
     property isSingleStepping: boolean read singlestepping;
@@ -116,7 +118,7 @@ type
     debuggerCS: TGuiSafeCriticalSection;
     fOnAttachEvent: TEvent;
     fOnContinueEvent: TEvent;
-    breakpointlist: TBreakpointlist;
+    breakpointlist: TList;
     threadlist: TList;
 
     currentdebugEvent: TDEBUGEVENT;
@@ -124,7 +126,7 @@ type
     procedure UpdateDebugEventWindow;
   public
     function HandleDebugEvent(debugEvent: TDEBUGEVENT; var dwContinueStatus: dword): boolean;
-    constructor Create(debuggerthread: TObject; OnAttachEvent: TEvent; OnContinueEvent: Tevent; breakpointlist: TBreakpointList; threadlist: Tlist; debuggercs: TGuiSafeCriticalSection);
+    constructor Create(debuggerthread: TObject; OnAttachEvent: TEvent; OnContinueEvent: Tevent; breakpointlist: TList; threadlist: Tlist; debuggercs: TGuiSafeCriticalSection);
   end;
 
 implementation
@@ -185,7 +187,13 @@ begin
   else
     MemoryBrowser.lastdebugcontextarm:=armcontext;
 
-  WaitingToContinue:=not lua_onBreakpoint(context);
+
+
+  if (currentbp<>nil) and (assigned(currentbp.OnBreakpoint)) then
+    WaitingToContinue:=currentbp.OnBreakpoint(currentbp, context)
+  else
+    WaitingToContinue:=not lua_onBreakpoint(context);
+
 
   if WaitingToContinue then //no lua script or it returned 0
     MemoryBrowser.UpdateDebugContext(self.Handle, self.ThreadId);
@@ -710,11 +718,18 @@ begin
   end;
 end;
 
+function TDebugThreadHandler.InNoBreakList: boolean;
+begin
+  result:=CurrentDebuggerInterface.InNoBreakList(threadid);
+end;
+
 function TDebugThreadHandler.CheckIfConditionIsMet(bp: PBreakpoint; script: string=''): boolean;
 var
   i:integer;
 begin
   TDebuggerthread(debuggerthread).execlocation:=14;
+
+
 
   result:=true;
   if (script<>'') or (bp<>nil) then
@@ -768,9 +783,6 @@ begin
 
     if InRangeX(address, bpp.address, bpp.address+bpp.size-1) then
     begin
-
-
-
       if (not (CurrentDebuggerInterface is TNetworkDebuggerInterface)) and (debugreg in [0..4]) and (bpp.breakpointMethod=bpmDebugRegister) and (bpp.debugRegister<>debugreg) then
         continue; //this is not the correct breakpoint. Skip it
 
@@ -824,7 +836,7 @@ begin
 
 
 
-    if (bpp.OneTimeOnly=false) and (((bpp.breakpointMethod<>bpmException) and (not active)) or (not CheckIfConditionIsMet(bpp) or (bpp.markedfordeletion) )) then
+    if (InNoBreakList) or ((bpp.OneTimeOnly=false) and (((bpp.breakpointMethod<>bpmException) and (not active)) or (not CheckIfConditionIsMet(bpp) or (bpp.markedfordeletion) ))) then
     begin
       TDebuggerthread(debuggerthread).execlocation:=28;
       OutputDebugString('bp was disabled or Condition was not met');
@@ -1088,11 +1100,6 @@ begin
 
     breakAddress:=address;
 
-   { if (breakAddress and $fff)=$75c then
-    begin
-      beep;
-    end;  }
-
     //freeze all threads except this one and do a single step
 
     context.EFlags:=eflags_setTF(context.EFlags,1);
@@ -1125,7 +1132,7 @@ begin
   TDebuggerthread(debuggerthread).execlocation:=16;
   bp:=nil;
 
-  OutputDebugString('HandleExceptionDebugEvent:'+inttohex(debugEvent.Exception.ExceptionRecord.ExceptionCode,8));
+  OutputDebugString(inttohex(ThreadId,1)+'('+inttohex(context.{$ifdef cpu64}Rip{$else}Eip{$endif},8)+')'+':HandleExceptionDebugEvent:'+inttohex(debugEvent.Exception.ExceptionRecord.ExceptionCode,8));
   exceptionAddress := ptrUint(debugEvent.Exception.ExceptionRecord.ExceptionAddress);
 
 
@@ -1237,18 +1244,33 @@ begin
 
 
         if (context.Dr6 and 1) = 1 then
+        begin
+          log('caused by DR0: Context.DR0='+inttohex(context.DR0,8));
           Result := DispatchBreakpoint(context.dr0, 0, dwContinueStatus)
+        end
         else
         if ((context.Dr6 shr 1) and 1) = 1 then
+        begin
+          log('caused by DR1: Context.DR1='+inttohex(context.DR1,8));
           Result := DispatchBreakpoint(context.dr1, 1, dwContinueStatus)
+        end
         else
         if ((context.Dr6 shr 2) and 1) = 1 then
+        begin
+          log('caused by DR2: Context.DR2='+inttohex(context.DR2,8));
           Result := DispatchBreakpoint(context.dr2, 2, dwContinueStatus)
+        end
         else
         if ((context.Dr6 shr 3) and 1) = 1 then
+        begin
+          log('caused by DR3: Context.DR3='+inttohex(context.DR3,8));
           Result := DispatchBreakpoint(context.dr3, 3, dwContinueStatus)
+        end
         else
+        begin
+          log('Not caused by a debugreg');
           Result := SingleStep(dwContinueStatus);
+        end;
 
         if dwContinueStatus=DBG_CONTINUE then
         begin
@@ -1484,7 +1506,7 @@ begin
   inherited destroy;
 end;
 
-constructor TDebugThreadHandler.Create(debuggerthread: TObject; attachEvent: Tevent; continueEvent: TEvent; breakpointlist: TBreakpointList; threadlist: Tlist; debuggerCS: TGuiSafeCriticalSection);
+constructor TDebugThreadHandler.Create(debuggerthread: TObject; attachEvent: Tevent; continueEvent: TEvent; breakpointlist: TList; threadlist: Tlist; debuggerCS: TGuiSafeCriticalSection);
 begin
   //because fpc's structure is not alligned on a 16 byte base I have to allocate more memory and byteshift the structure if needed
   getmem(realcontextpointer,sizeof(TCONTEXT)+15);
@@ -1505,7 +1527,7 @@ var
 
   newthread: boolean;
   i: integer;
-  ActiveBPList: TBreakpointList;
+  ActiveBPList: TList;
 begin
   //OutputDebugString('HandleDebugEvent:'+inttostr(debugEvent.dwDebugEventCode));
   //find the TDebugThreadHandler class that belongs to this thread
@@ -1612,13 +1634,13 @@ begin
       currentthread.context.dr6:=0;
 
       //get the active bp list for this thread  (unsetting the breakpoint in safe mode sets active to false, which would break setting them again otherwise)
-      ActiveBPList:=TBreakpointList.create;
+      ActiveBPList:=TList.create;
       for i:=0 to breakpointlist.count-1 do
       begin
-        if breakpointlist[i].active and          //active
-           (breakpointlist[i].breakpointMethod=bpmDebugRegister) and //it's a debug register bp
-           ((breakpointlist[i].ThreadID=0) or (breakpointlist[i].ThreadID=currentthread.ThreadId)) and //this isn't a thread specific breakpoint, or this breakpoint affects this thread
-           (not (currentthread.setInt1Back and (currentthread.Int1SetBackBP=breakpointlist[i]))) //this isn't an XP/Network hack that just disabled the bp for this thread so it can do a single step and re-enable next step
+        if PBreakpoint(breakpointlist[i])^.active and          //active
+           (PBreakpoint(breakpointlist[i])^.breakpointMethod=bpmDebugRegister) and //it's a debug register bp
+           ((PBreakpoint(breakpointlist[i])^.ThreadID=0) or (PBreakpoint(breakpointlist[i])^.ThreadID=currentthread.ThreadId)) and //this isn't a thread specific breakpoint, or this breakpoint affects this thread
+           (not (currentthread.setInt1Back and (currentthread.Int1SetBackBP=PBreakpoint(breakpointlist[i])))) //this isn't an XP/Network hack that just disabled the bp for this thread so it can do a single step and re-enable next step
         then
           ActiveBPList.add(breakpointlist[i]);
 
@@ -1711,7 +1733,7 @@ begin
 
 end;
 
-constructor TDebugEventHandler.Create(debuggerthread: TObject; OnAttachEvent: TEvent; OnContinueEvent: TEvent; breakpointlist: TBreakpointList; threadlist: Tlist; debuggerCS: TGuiSafeCriticalSection);
+constructor TDebugEventHandler.Create(debuggerthread: TObject; OnAttachEvent: TEvent; OnContinueEvent: TEvent; breakpointlist: TList; threadlist: Tlist; debuggerCS: TGuiSafeCriticalSection);
 begin
   self.debuggerthread := debuggerthread;
   fOnAttachEvent      := OnAttachEvent;
