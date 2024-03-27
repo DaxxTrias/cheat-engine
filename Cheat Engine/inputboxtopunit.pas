@@ -136,10 +136,7 @@ begin
 
     finally
       if combobox<>nil then
-      begin
         combobox.Free;
-        combobox:=nil;
-      end;
       free;
     end;
   end;
@@ -184,8 +181,7 @@ end;
 
 procedure TInputboxTop.Label1Click(Sender: TObject);
 begin
-  if combobox<>nil then
-    combobox.SelectAll;
+  combobox.SelectAll;
 end;
 
 procedure TInputboxTop.Timer1Timer(Sender: TObject);

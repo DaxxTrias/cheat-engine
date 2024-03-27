@@ -76,11 +76,7 @@ type
       skipExtraRegOnMemoryAccess: boolean;
       skipExtraReg: boolean;
       ignoreLForExtraReg: boolean;
-      extrareginstoverride: integer;
     end;
-
-
-
     inttohexs: TIntToHexS;
     RexPrefix: byte;
     riprelative: boolean;
@@ -784,15 +780,10 @@ var dwordptr: ^dword;
     operandstring: string='';
 
     showextrareg: boolean;
-    extrareginst: integer;
 begin
   modrmposition:=position;
   result:='';
   showextrareg:=hasvex and (opcodeflags.skipExtraReg=false);
-  if opcodeflags.extrareginstoverride<>-1 then
-    extrareginst:=opcodeflags.extrareginstoverride
-  else
-    extrareginst:=inst;
 
   if is64bit then
     regprefix:='r'
@@ -1260,7 +1251,7 @@ begin
     end;
     if showextrareg then
     begin
-      case extrareginst of
+      case inst of
         0: if rex_w then ep:=regnrtostr(rt64, not opcodeflags.vvvv and $f) else ep:=regnrtostr(rt32, not opcodeflags.vvvv and $f);
         1: ep:=regnrtostr(rt16, not opcodeflags.vvvv and $f);
         2: ep:=regnrtostr(rt8, not opcodeflags.vvvv and $f);
@@ -1658,7 +1649,6 @@ begin
 
   hasvsib:=false;
   ZeroMemory(@opcodeflags,sizeof(opcodeflags));
-  opcodeflags.extrareginstoverride:=-1;
 
   if (self = visibleDisassembler) and (GetCurrentThreadId<>MainThreadID) then
   begin
@@ -3057,7 +3047,6 @@ begin
                               else
                                 lastdisassembledata.opcode:='cvtsi2ss';
 
-                              opcodeflags.extrareginstoverride:=4;
                               lastdisassembledata.parameters:=xmm(memory[2])+modrm(memory,prefix2,2,0,last,mRight);
 
                               inc(offset,last-1);

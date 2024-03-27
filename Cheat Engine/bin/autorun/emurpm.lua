@@ -6,7 +6,7 @@ local function fileExists(filename)
     f:close()
     return true
   else
-    return false
+    return fale
   end
 end
 

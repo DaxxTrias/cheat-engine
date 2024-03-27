@@ -30,6 +30,7 @@ type
   TformSettings = class(TForm)
     askforreplacewithnops: TCheckBox;
     btnCancel: TButton;
+    btnExcludeProcesses: TButton;
     btnOK: TButton;
     btnSetFont: TButton;
     btnSelectLanguage: TButton;
@@ -37,10 +38,12 @@ type
     btnRestoreKernelProtection: TButton;
     cbAlwaysAutoAttach: TCheckBox;
     cbCanStepKernelcode: TCheckBox;
+    cbCenterOnPopup: TCheckBox;
     cbDontOpenHandle: TCheckBox;
     cbDontusetempdir: TCheckBox;
     cbFastscan: TCheckBox;
     cbGlobalDebug: TCheckBox;
+    cbHideAllWindows: TCheckBox;
     cbKDebug: TRadioButton;
     cbMemImage: TCheckBox;
     cbMemMapped: TCheckBox;
@@ -56,7 +59,6 @@ type
     cbShowProcesslist: TCheckBox;
     cbShowUndo: TCheckBox;
     cbsimplecopypaste: TCheckBox;
-    cbSkipPDB: TCheckBox;
     cbSkip_PAGE_NOCACHE: TCheckBox;
     cbUpdatefoundList: TCheckBox;
     cbUseVEHDebugger: TRadioButton;
@@ -91,19 +93,14 @@ type
     cbDBVMDebugTargetedProcessOnly: TCheckBox;
     cbDBVMDebugKernelmodeBreaks: TCheckBox;
     cbSaveMemoryregionScanSettings: TCheckBox;
+    cbSkipPDB: TCheckBox;
     cbUseIntelPT: TCheckBox;
     cbRecordIPTForFindWhatRoutines: TCheckBox;
     cbIPTTraceSize: TComboBox;
     cbHideIPTCapability: TCheckBox;
-    cbSynchronizeSymbols: TCheckBox;
-    cbClearSymbolsOnProcessOpen: TCheckBox;
-    cbDontDeleteSymbols: TCheckBox;
-    cbSymbolSyncInterval: TCheckBox;
-    cbAlwaysAttemptToLaunchAsAdmin: TCheckBox;
     combothreadpriority: TComboBox;
     defaultbuffer: TPopupMenu;
     Default1: TMenuItem;
-    edtSymbolSyncTimer: TEdit;
     edtRepeatDelay: TEdit;
     edtLuaCollectTimer: TEdit;
     edtLuaMinCollectSize: TEdit;
@@ -186,7 +183,6 @@ type
     spbUp: TSpeedButton;
     Languages: TTabSheet;
     TabSheet1: TTabSheet;
-    tsSymbols: TTabSheet;
     tsMacDebuggerInterface: TTabSheet;
     tsLua: TTabSheet;
     tsSigning: TTabSheet;
@@ -256,7 +252,6 @@ type
     procedure cbKernelQueryMemoryRegionChange(Sender: TObject);
     procedure cbOverrideDefaultFontChange(Sender: TObject);
     procedure cbProcessWatcherChange(Sender: TObject);
-    procedure cbSynchronizeSymbolsChange(Sender: TObject);
     procedure cbUseIntelPTChange(Sender: TObject);
     procedure cbWriteLoggingOnChange(Sender: TObject);
     procedure CheckBox1Change(Sender: TObject);
@@ -281,6 +276,7 @@ type
     procedure cbUpdatefoundListClick(Sender: TObject);
     procedure AboutLabelClick(Sender: TObject);
     procedure cbHideAllWindowsClick(Sender: TObject);
+    procedure btnExcludeProcessesClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure cbKernelQueryMemoryRegionClick(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
@@ -379,7 +375,7 @@ uses
   frmProcessWatcherUnit, CustomTypeHandler, processlist, commonTypeDefs,
   frmEditHistoryUnit, Globals, fontSaveLoadRegistry, CETranslator,
   MemoryBrowserFormUnit, DBK32functions, feces, UnexpectedExceptionsHelper,
-  cpuidUnit, DPIHelper, symbolsync;
+  cpuidUnit, DPIHelper;
 
 
 type TLanguageEntry=class
@@ -433,7 +429,6 @@ resourcestring
   rsTimeCritical = 'TimeCritical';
   rsGeneralSettings = 'General Settings';
   rsTools = 'Tools';
-  rsSymbols = 'Symbols';
   rsHotkeys = 'Hotkeys';
   rsUnrandomizer = 'Unrandomizer';
   rsScanSettings = 'Scan Settings';
@@ -480,8 +475,6 @@ resourcestring
   rsSpectreRegistryChanged = 'The registry keys has been changed accordingly. '
     +' Reboot your system to make it take effect';
   rsAllCustomTypes = 'All Custom Types';
-  rsInvalidSymbolSyncTimer = 'The provided value for the symbol sync timer is '
-    +'invalid';
 
 
 procedure TformSettings.btnOKClick(Sender: TObject);
@@ -503,8 +496,6 @@ var processhandle2: Thandle;
     cpu: string;
     WriteLogSize: integer;
     s: string;
-
-    symsynctimer: integer;
 
 begin
   try
@@ -561,12 +552,7 @@ begin
     if (error<>0) or (repeatDelay<0) then raise exception.Create(Format(rsIsNotAValidInterval, [edtRepeatDelay.text]));
 
 
-    if cbSymbolSyncInterval.Enabled and cbSymbolSyncInterval.Checked then
-    begin
-      val(edtSymbolSyncTimer.text, symsynctimer, error);
-      if error<>0 then
-        raise exception.create(rsInvalidSymbolSyncTimer);
-    end;
+
 
     buffersize:=bufsize*1024;
 
@@ -581,8 +567,6 @@ begin
       if Reg.OpenKey('\Software\'+strCheatEngine,true) then
       begin
         //write the settings
-        reg.Writebool('RunAsAdmin',cbAlwaysAttemptToLaunchAsAdmin.checked);
-
         reg.WriteInteger('Saved Stacksize', stacksize);
 
         reg.writebool('Show processlist in mainmenu', cbShowProcesslist.checked);
@@ -634,7 +618,7 @@ begin
         reg.writebool('Can Step Kernelcode',cbCanStepKernelcode.checked);
 
         reg.WriteInteger('Buffersize',bufsize);
-        reg.WriteBool('Center on popup',frameHotkeyConfig.cbCenterOnPopup.checked);
+        reg.WriteBool('Center on popup',cbCenterOnPopup.checked);
         reg.WriteInteger('Update interval',updateinterval);
         reg.WriteInteger('Freeze interval',freezeinterval);
         reg.writebool('Show values as signed',cbShowAsSigned.checked);
@@ -707,7 +691,7 @@ begin
         Globals.repeatDelay:=repeatDelay;
 
 
-        reg.WriteBool('Hide all windows',frameHotkeyConfig.cbHideAllWindows.checked);
+        reg.WriteBool('Hide all windows',cbHideAllWindows.checked);
         reg.WriteBool('Really hide all windows',temphideall);
 
 
@@ -728,27 +712,7 @@ begin
         onlyfront:=not temphideall;
 
 
-        reg.WriteBool('SymbolSync', cbSynchronizeSymbols.checked);
-        reg.WriteBool('SymbolSync_ClearSymbolsOnNewProcess', cbClearSymbolsOnProcessOpen.checked);
-        reg.WriteBool('SymbolSync_DontDeleteSymbols', cbDontDeleteSymbols.checked);
-        reg.WriteBool('SymbolSync_SynchronizePeriodically', cbSymbolSyncInterval.checked);
-        if cbSymbolSyncInterval.checked then
-          reg.WriteInteger('SymbolSync_SynchronizeInterval', symsynctimer);
 
-        syncsymbols:=cbSynchronizeSymbols.checked;
-        symsync_ClearSymbolListWhenOpeningADifferentProcess:=cbClearSymbolsOnProcessOpen.checked;
-        symsync_DontDeleteSymbolsWhenSynchronizing:=cbDontDeleteSymbols.checked;
-
-        if cbSymbolSyncInterval.checked then
-        begin
-          symsync_Interval:=symsynctimer;
-          if syncsymbols then
-            EnableSymbolSyncThread
-          else
-            DisableSymbolSyncThread;
-        end
-        else
-          DisableSymbolSyncThread;
 
         //check the module list
 
@@ -1037,7 +1001,6 @@ begin
       end;
       mainform.tLuaGCActive.enabled:=cbLuaGarbageCollectAll.checked;
       mainform.tLuaGCPassive.enabled:=cbLuaPassiveGarbageCollection.checked;
-
 
   {$ifndef net}
 
@@ -1329,13 +1292,6 @@ end;
 procedure TformSettings.cbProcessWatcherChange(Sender: TObject);
 begin
   cbProcessWatcherOpensHandles.enabled:=cbProcessWatcher.Checked;
-end;
-
-procedure TformSettings.cbSynchronizeSymbolsChange(Sender: TObject);
-begin
-  cbSymbolSyncInterval.enabled:=cbSynchronizeSymbols.checked;
-  cbClearSymbolsOnProcessOpen.enabled:=cbSynchronizeSymbols.checked;
-  cbDontDeleteSymbols.enabled:=cbSynchronizeSymbols.checked;
 end;
 
 procedure TformSettings.cbUseIntelPTChange(Sender: TObject);
@@ -1649,9 +1605,20 @@ end;
 
 procedure TformSettings.cbHideAllWindowsClick(Sender: TObject);
 begin
-  frameHotkeyConfig.btnExcludeProcesses.enabled:=frameHotkeyConfig.cbHideallWindows.Checked;
+  btnExcludeProcesses.enabled:=cbHideallWindows.Checked;
 end;
 
+procedure TformSettings.btnExcludeProcessesClick(Sender: TObject);
+begin
+  {$ifndef net}
+
+  with tfrmExcludeHide.create(self) do
+  begin
+    showmodal;
+    free;
+  end;
+  {$endif}
+end;
 
 procedure TformSettings.cleanupLanguageList;
 var
@@ -1790,22 +1757,21 @@ var i: integer;
 begin
   tvMenuSelection.Items[0].Data:=GeneralSettings;
   tvMenuSelection.Items[1].Data:=tsTools;
-  tvMenuSelection.Items[2].Data:=tsSymbols;
-  tvMenuSelection.Items[3].Data:=tsHotkeys;
-  tvMenuSelection.Items[4].Data:=Unrandomizer;
-  tvMenuSelection.Items[5].Data:=ScanSettings;
-  tvMenuSelection.Items[6].Data:=Plugins;
-  tvMenuSelection.Items[7].Data:=Languages;
-  tvMenuSelection.Items[8].Data:=self.Assembler;
-  tvMenuSelection.Items[9].Data:=tsLua;
-  tvMenuSelection.Items[10].Data:=Extra;
-  tvMenuSelection.Items[11].Data:=tsSigning;
+  tvMenuSelection.Items[2].Data:=tsHotkeys;
+  tvMenuSelection.Items[3].Data:=Unrandomizer;
+  tvMenuSelection.Items[4].Data:=ScanSettings;
+  tvMenuSelection.Items[5].Data:=Plugins;
+  tvMenuSelection.Items[6].Data:=Languages;
+  tvMenuSelection.Items[7].Data:=self.Assembler;
+  tvMenuSelection.Items[8].Data:=tsLua;
+  tvMenuSelection.Items[9].Data:=Extra;
+  tvMenuSelection.Items[10].Data:=tsSigning;
 
-  tvMenuSelection.Items[7].Visible:=false;
-  tvMenuSelection.Items[11].Visible:={$ifdef windows}cansigntables{$else}false{$endif};
+  tvMenuSelection.Items[6].Visible:=false;
+  tvMenuSelection.Items[10].Visible:={$ifdef windows}cansigntables{$else}false{$endif};
 
   {$ifdef altname}
-  tvMenuSelection.Items[10].Visible:=false; //the pussy version does not have kernelmode tools
+  tvMenuSelection.Items[9].Visible:=false; //the pussy version does not have kernelmode tools
   {$endif}
 
   pcSetting.ShowTabs:=false;
@@ -1869,16 +1835,15 @@ begin
 
   tvMenuSelection.Items[0].Text:=rsGeneralSettings;
   tvMenuSelection.Items[1].Text:=rsTools;
-  tvMenuSelection.Items[2].Text:=rsSymbols;
-  tvMenuSelection.Items[3].Text:=rsHotkeys;
-  tvMenuSelection.Items[4].Text:=rsUnrandomizer;
-  tvMenuSelection.Items[5].Text:=rsScanSettings;
-  tvMenuSelection.Items[6].Text:=rsPlugins;
-  tvMenuSelection.Items[7].Text:=rsLanguages;
-  tvMenuSelection.Items[8].Text:=rsDebuggerOptions;
-  tvMenuSelection.Items[9].Text:=rsLuaOptions;
-  tvMenuSelection.Items[10].Text:=rsExtra;
-  tvMenuSelection.Items[11].Text:=rsSigning;
+  tvMenuSelection.Items[2].Text:=rsHotkeys;
+  tvMenuSelection.Items[3].Text:=rsUnrandomizer;
+  tvMenuSelection.Items[4].Text:=rsScanSettings;
+  tvMenuSelection.Items[5].Text:=rsPlugins;
+  tvMenuSelection.Items[6].Text:=rsLanguages;
+  tvMenuSelection.Items[7].Text:=rsDebuggerOptions;
+  tvMenuSelection.Items[8].Text:=rsLuaOptions;
+  tvMenuSelection.Items[9].Text:=rsExtra;
+  tvMenuSelection.Items[10].Text:=rsSigning;
 
 
 

@@ -32,7 +32,7 @@ type
     property Count: integer read getCount;
   end;
 
-function luaclass_createMetaTable(L: Plua_State;garbagecollectable: boolean=false): integer;
+function luaclass_createMetaTable(L: Plua_State): integer;
 
 procedure luaclass_addClassFunctionToTable(L: PLua_State; metatable: integer; userdata: integer; functionname: string; f: lua_CFunction);
 procedure luaclass_addPropertyToTable(L: PLua_State; metatable: integer; userdata: integer; propertyname: string; getfunction: lua_CFunction; setfunction: lua_CFunction);
@@ -48,12 +48,10 @@ procedure luaclass_setAutoDestroy(L: PLua_State; metatable: integer; state: bool
 
 function luaclass_getClassObject(L: PLua_state; paramstart: pinteger=nil; paramcount: pinteger=nil): pointer; //inline;
 
-procedure luaclass_newClass(L: PLua_State; o: TObject; garbagecollectable: boolean=false); overload;
-procedure luaclass_newClass(L: PLua_State; o: pointer; InitialAddMetaDataFunction: TAddMetaDataFunction; garbagecollectable: boolean=false); overload;
-procedure luaclass_newClass(L: PLua_State; o: TObject; InitialAddMetaDataFunction: TAddMetaDataFunction; garbagecollectable: boolean=false); overload;
-procedure luaclass_newClassFunction(L: PLua_State; InitialAddMetaDataFunction: TAddMetaDataFunction; garbagecollectable: boolean=false);
-
-
+procedure luaclass_newClass(L: PLua_State; o: TObject); overload;
+procedure luaclass_newClass(L: PLua_State; o: pointer; InitialAddMetaDataFunction: TAddMetaDataFunction); overload;
+procedure luaclass_newClass(L: PLua_State; o: TObject; InitialAddMetaDataFunction: TAddMetaDataFunction); overload;
+procedure luaclass_newClassFunction(L: PLua_State; InitialAddMetaDataFunction: TAddMetaDataFunction);
 
 procedure luaclass_register(c: TClass; InitialAddMetaDataFunction: TAddMetaDataFunction);
 
@@ -169,7 +167,7 @@ begin
   end;
 end;
 
-procedure luaclass_newClassFunction(L: PLua_State; InitialAddMetaDataFunction: TAddMetaDataFunction; garbagecollectable: boolean=false);
+procedure luaclass_newClassFunction(L: PLua_State; InitialAddMetaDataFunction: TAddMetaDataFunction);
 //converts the item at the top of the stack to a class object
 var userdata, metatable: integer;
 begin
@@ -178,15 +176,14 @@ begin
   begin
     userdata:=lua_gettop(L);
 
-    metatable:=luaclass_createMetaTable(L, garbagecollectable);
+    metatable:=luaclass_createMetaTable(L);
     InitialAddMetaDataFunction(L, metatable, userdata);
-
     lua_setmetatable(L, userdata);
   end;
 end;
 
 
-procedure luaclass_newClass(L: PLua_State; o: pointer; InitialAddMetaDataFunction: TAddMetaDataFunction; garbagecollectable: boolean=false);
+procedure luaclass_newClass(L: PLua_State; o: pointer; InitialAddMetaDataFunction: TAddMetaDataFunction);
 begin
   if (o<>nil) and (Assigned(InitialAddMetaDataFunction)) then
   begin
@@ -197,21 +194,21 @@ begin
     lua_pushnil(L);
 end;
 
-procedure luaclass_newClass(L: PLua_State; o: TObject; InitialAddMetaDataFunction: TAddMetaDataFunction; garbagecollectable: boolean=false);
+procedure luaclass_newClass(L: PLua_State; o: TObject; InitialAddMetaDataFunction: TAddMetaDataFunction);
 begin
-  luaclass_newClass(L, pointer(o), InitialAddMetaDataFunction, garbagecollectable);
+  luaclass_newClass(L, pointer(o), InitialAddMetaDataFunction);
 end;
 
 
 
 
-procedure luaclass_newClass(L: PLua_State; o: TObject; garbagecollectable: boolean=false); overload;
+procedure luaclass_newClass(L: PLua_State; o: TObject); overload;
 var InitialAddMetaDataFunction: TAddMetaDataFunction;
 begin
   if o<>nil then
   begin
     InitialAddMetaDataFunction:=findBestClassForObject(o);
-    luaclass_newClass(L, o, InitialAddMetaDataFunction, garbagecollectable);
+    luaclass_newClass(L, o, InitialAddMetaDataFunction);
   end
   else
     lua_pushnil(L);
@@ -660,14 +657,14 @@ begin
   lua_settable(L, metatable);
 end;
 
-function luaclass_createMetaTable(L: Plua_State; garbagecollectable: boolean=false): integer;
+function luaclass_createMetaTable(L: Plua_State): integer;
 //creates a table to be used as a metatable
 //returns the stack index of the table
 begin
   lua_newtable(L);
   result:=lua_gettop(L);
 
-  luaclass_setAutoDestroy(L, result, garbagecollectable); //default do not destroy when garbage collected. Let the user do it
+  luaclass_setAutoDestroy(L, result, false); //default do not destroy when garbage collected. Let the user do it
 
   //set the index method
   lua_pushstring(L, '__index');

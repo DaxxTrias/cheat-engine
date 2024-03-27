@@ -21,7 +21,6 @@ uses
 
   {$endif}
 
-const TH32CS_SNAPFIRSTMODULE=$40000000;
 
 procedure InitializeNetworkInterface;
 function getConnection: TCEConnection;
@@ -404,7 +403,7 @@ begin
 
   OutputDebugString('InitializeNetworkInterface');
 
-  if NetworkVersion(versionname)<6 then
+  if NetworkVersion(versionname)<2 then
   begin
     if MainThreadID=GetCurrentThreadId then
       messageDlg(format(rsInvalidCeserverVersion, [versionname]), mterror, [mbok], 0);

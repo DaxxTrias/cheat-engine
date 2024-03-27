@@ -993,134 +993,131 @@ begin
   end;
 
 
-  try
-    if lua_getinfo(L,'nSl', ar)<>0 then
+
+  if lua_getinfo(L,'nSl', ar)<>0 then
+  begin
+    if LuaDebugSource=nil then
+      LuaDebugSource:=ar.source;
+
+    if (ar.source=LuaDebugSource) and (hasLuaBreakpoint(ar.currentline)) then
     begin
-      if LuaDebugSource=nil then
-        LuaDebugSource:=ar.source;
+      //break
+     // frmLuaEngine.visible:=false;
+     // frmLuaEngine.ShowModal;
+     // frmLuaEngine.show;
 
-      if (ar.source=LuaDebugSource) and (hasLuaBreakpoint(ar.currentline)) then
+      LuaDebugForm.show;
+      LuaDebugForm.SetFocus;
+
+
+      if LuaDebugForm.mScript.Marks.Line[ar.currentline]<>nil then
       begin
-        //break
-       // frmLuaEngine.visible:=false;
-       // frmLuaEngine.ShowModal;
-       // frmLuaEngine.show;
+        //update the icon for the current line
+        if LuaDebugForm.mScript.Marks.Line[ar.currentline][0].ImageIndex = 0 then
+          LuaDebugForm.mScript.Marks.Line[ar.currentline][0].ImageIndex:=2;
+      end
+      else
+      begin
+        mark:=TSynEditMark.Create(LuaDebugForm.mscript);
+        mark.line:=ar.currentline;
+        mark.ImageList:=LuaDebugForm.ilSyneditDebug;
+        mark.ImageIndex:=1;
+        mark.Visible:=true;
+        LuaDebugForm.mscript.Marks.Add(mark);
+      end;
 
-        LuaDebugForm.show;
-        LuaDebugForm.SetFocus;
 
 
-        if LuaDebugForm.mScript.Marks.Line[ar.currentline]<>nil then
+      LuaDebugForm.show;
+      //activate the debug gui
+      LuaDebugForm.tbDebug.Visible:=true;
+      LuaDebugForm.tbDebug.enabled:=true;
+      LuaDebugForm.tbRun.enabled:=true;
+      LuaDebugForm.tbSingleStep.enabled:=true;
+      LuaDebugForm.tbStopDebug.enabled:=true;
+      LuaDebugForm.mScript.ReadOnly:=true;
+
+
+      LuaDebugForm.mScript.CaretY:=ar.currentline;
+      LuaDebugForm.mScript.EnsureCursorPosVisible;
+
+      LuaDebugForm.continuemethod:=0;
+
+      LuaDebugInfo:=ar;
+      LuaDebugVariables:=TStringToStringTree.Create(true);
+
+      i:=1;
+
+      repeat
+        name:=lua_getlocal(L, ar, i);
+        if name<>nil then
         begin
-          //update the icon for the current line
-          if LuaDebugForm.mScript.Marks.Line[ar.currentline][0].ImageIndex = 0 then
-            LuaDebugForm.mScript.Marks.Line[ar.currentline][0].ImageIndex:=2;
-        end
-        else
-        begin
-          mark:=TSynEditMark.Create(LuaDebugForm.mscript);
-          mark.line:=ar.currentline;
-          mark.ImageList:=LuaDebugForm.ilSyneditDebug;
-          mark.ImageIndex:=1;
-          mark.Visible:=true;
-          LuaDebugForm.mscript.Marks.Add(mark);
-        end;
-
-
-
-        LuaDebugForm.show;
-        //activate the debug gui
-        LuaDebugForm.tbDebug.Visible:=true;
-        LuaDebugForm.tbDebug.enabled:=true;
-        LuaDebugForm.tbRun.enabled:=true;
-        LuaDebugForm.tbSingleStep.enabled:=true;
-        LuaDebugForm.tbStopDebug.enabled:=true;
-        LuaDebugForm.mScript.ReadOnly:=true;
-
-
-        LuaDebugForm.mScript.CaretY:=ar.currentline;
-        LuaDebugForm.mScript.EnsureCursorPosVisible;
-
-        LuaDebugForm.continuemethod:=0;
-
-        LuaDebugInfo:=ar;
-        LuaDebugVariables:=TStringToStringTree.Create(true);
-
-        i:=1;
-
-        repeat
-          name:=lua_getlocal(L, ar, i);
-          if name<>nil then
+          if copy(name,1,1)<>'(' then  //(*temporary)
           begin
-            if copy(name,1,1)<>'(' then  //(*temporary)
-            begin
-              value:=LuaValueToDescription(L, -1)+' (local)';
-              LuaDebugVariables.Add(name, value);
-            end;
-
-            lua_pop(L, 1);
-            inc(i);
-
+            value:=LuaValueToDescription(L, -1)+' (local)';
+            LuaDebugVariables.Add(name, value);
           end;
 
-        until name=nil;
+          lua_pop(L, 1);
+          inc(i);
 
-
-
-
-        while LuaDebugForm.continuemethod=0 do
-        begin
-          try
-            application.ProcessMessages;
-          except
-            if Application.CaptureExceptions then
-              Application.HandleException(LuaDebugForm)
-            else
-              raise;
-          end;
-
-
-          if application.Terminated or (LuaDebugForm.Visible=false) then break;
-          application.Idle(true);
         end;
 
-        if application.Terminated then
-        begin
-          {$ifdef windows}
-          ExitProcess(UINT(-1)); //there's nothing to return to...
-          {$endif}
-          {$ifdef darwin}
-          KillThread(GetCurrentThreadId);
-          {$endif}
-        end;
-
-        LuaDebugForm.mScript.ReadOnly:=false;
+      until name=nil;
 
 
-        //clear the current instruction pointer
-        if LuaDebugForm.mScript.Marks.Line[ar.currentline]<>nil then
-        begin
-          if LuaDebugForm.mScript.Marks.Line[ar.currentline][0].ImageIndex = 2 then  //bp with the current bp set
-            LuaDebugForm.mScript.Marks.Line[ar.currentline][0].ImageIndex:=0  //set back to normal bp
+
+
+      while LuaDebugForm.continuemethod=0 do
+      begin
+        try
+          application.ProcessMessages;
+        except
+          if Application.CaptureExceptions then
+            Application.HandleException(LuaDebugForm)
           else
-            LuaDebugForm.mScript.Marks.Line[ar.currentline][0].Free; //clear bp
-
-
+            raise;
         end;
 
-        LuaDebugSingleStepping:=false;
+
+        if application.Terminated or (LuaDebugForm.Visible=false) then break;
+        application.Idle(true);
+      end;
+
+      if application.Terminated then
+      begin
+        {$ifdef windows}
+        ExitProcess(UINT(-1)); //there's nothing to return to...
+        {$endif}
+        {$ifdef darwin}
+        KillThread(GetCurrentThreadId);
+        {$endif}
+      end;
+
+      LuaDebugForm.mScript.ReadOnly:=false;
 
 
+      //clear the current instruction pointer
+      if LuaDebugForm.mScript.Marks.Line[ar.currentline]<>nil then
+      begin
+        if LuaDebugForm.mScript.Marks.Line[ar.currentline][0].ImageIndex = 2 then  //bp with the current bp set
+          LuaDebugForm.mScript.Marks.Line[ar.currentline][0].ImageIndex:=0  //set back to normal bp
+        else
+          LuaDebugForm.mScript.Marks.Line[ar.currentline][0].Free; //clear bp
 
 
       end;
-  //    frmLuaEngine.moutput.lines.add('called:'+ar.what+' ('+inttostr(ar.currentline)+')');
+
+      LuaDebugSingleStepping:=false;
+
+
+
 
     end;
-  except
-    on e:exception do //e.g accessing a local variable to a ce object that got freed
-      outputdebugstring(pchar('LineHook_Handler exception:'+e.message));
+//    frmLuaEngine.moutput.lines.add('called:'+ar.what+' ('+inttostr(ar.currentline)+')');
+
   end;
+
 
 end;
 

@@ -11,7 +11,6 @@ type TLuafile=class
   private
     fname: string;
     filedata: TMemorystream;
-    fdonotsave: boolean;
   public
 
     constructor create(name: string; stream: TStream);
@@ -23,7 +22,6 @@ type TLuafile=class
   published
     property name: string read fname write fname;
     property stream: TMemoryStream read filedata;
-    property doNotSave: boolean read fdonotsave write fdonotsave;
   end;
 
   TLuaFileList =  TFPGList<TLuafile>;
@@ -52,11 +50,8 @@ begin
   begin
     a:=node.Attributes.GetNamedItem('Encoding');
     useascii85:=(a<>nil) and (a.TextContent='Ascii85');
-
-    a:=node.Attributes.GetNamedItem('Name');
-    if a<>nil then
-      name:=a.TextContent;
   end;
+
 
   if useascii85 then
   begin
@@ -73,6 +68,9 @@ begin
     getmem(b, maxsize);
     HexToBin(pchar(s), b, size);
   end;
+
+
+
 
   try
     m:=tmemorystream.create;
@@ -113,12 +111,7 @@ var
   n: TDOMNode;
   a: TDOMAttr;
   s: string;
-  xmlname: boolean;
-  i: integer;
-  namecount: integer;
 begin
-  if donotsave then exit;
-
   outputastext:=nil;
   //compress the file
   m:=tmemorystream.create;
@@ -134,14 +127,9 @@ begin
   BinToBase85(pchar(m.memory), outputastext, m.size);
 
   doc:=node.OwnerDocument;
-
-  n:=Node.AppendChild(doc.CreateElement('File'+node.ChildNodes.Count.ToString));
-
+  n:=Node.AppendChild(doc.CreateElement(name));
   n.TextContent:=outputastext;
 
-  a:=doc.createAttribute('Name');
-  a.TextContent:=name;
-  n.Attributes.SetNamedItem(a);
 
   a:=doc.CreateAttribute('Encoding');
   a.TextContent:='Ascii85';
@@ -153,6 +141,10 @@ end;
 
 constructor TLuafile.create(name: string; stream: tstream);
 begin
+  if not IsXmlName(name, true) then
+    name:='_'+name;
+
+
   self.name:=name;
 
   filedata:=tmemorystream.create;

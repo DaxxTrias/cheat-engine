@@ -15,7 +15,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <zlib.h>
-#include <errno.h>
 
 #include "api.h"
 #include "symbols.h"
@@ -35,12 +34,12 @@ typedef struct
 #define TEMPBUFSIZE 64*1024
 
 
-void loadStringTable64(int f, unsigned int fileoffset, Elf64_Shdr *sectionHeaders, unsigned char **stringTable, int index)
+void loadStringTable64(int f, Elf64_Shdr *sectionHeaders, unsigned char **stringTable, int index)
 {
   if ((stringTable[index]==NULL) && (sectionHeaders[index].sh_type==SHT_STRTAB))
   {
     stringTable[index]=malloc(sectionHeaders[index].sh_size);
-    if (pread(f, stringTable[index], sectionHeaders[index].sh_size, sectionHeaders[index].sh_offset+fileoffset)==-1)
+    if (pread(f, stringTable[index], sectionHeaders[index].sh_size, sectionHeaders[index].sh_offset)==-1)
     {
       debug_log("Failure loading the stringtable\n");
       free(stringTable[index]);
@@ -52,12 +51,12 @@ void loadStringTable64(int f, unsigned int fileoffset, Elf64_Shdr *sectionHeader
     debug_log("Not a string table\n");
 }
 
-void loadStringTable32(int f, unsigned int fileoffset, Elf32_Shdr *sectionHeaders, unsigned char **stringTable, int index)
+void loadStringTable32(int f, Elf32_Shdr *sectionHeaders, unsigned char **stringTable, int index)
 {
   if ((stringTable[index]==NULL) && (sectionHeaders[index].sh_type==SHT_STRTAB))
   {
     stringTable[index]=malloc(sectionHeaders[index].sh_size);
-    if (pread(f, stringTable[index], sectionHeaders[index].sh_size, sectionHeaders[index].sh_offset+fileoffset)==-1)
+    if (pread(f, stringTable[index], sectionHeaders[index].sh_size, sectionHeaders[index].sh_offset)==-1)
     {
       debug_log("Failure loading the stringtable\n");
       free(stringTable[index]);
@@ -70,7 +69,7 @@ void loadStringTable32(int f, unsigned int fileoffset, Elf32_Shdr *sectionHeader
 }
 
 
-BOOL ELF32_scan(int f, unsigned int fileoffset, Elf32_Ehdr *b, char *searchedsymbolname, symcallback cb, void* context)
+BOOL ELF32_scan(int f, Elf32_Ehdr *b, char *searchedsymbolname, symcallback cb, void* context)
 /*
 Caller must free output manually
 */
@@ -79,7 +78,7 @@ Caller must free output manually
 
   Elf32_Shdr *sectionHeaders=malloc(b->e_shentsize*b->e_shnum);
 
-  if (pread(f, sectionHeaders, b->e_shentsize*b->e_shnum, b->e_shoff+fileoffset)==-1)
+  if (pread(f, sectionHeaders, b->e_shentsize*b->e_shnum, b->e_shoff)==-1)
   {
     if (sectionHeaders)
       free(sectionHeaders);
@@ -89,7 +88,7 @@ Caller must free output manually
 
   unsigned char **stringTable=calloc(b->e_shnum, sizeof(unsigned char*) );
 
-  loadStringTable32(f, fileoffset, sectionHeaders, stringTable, b->e_shstrndx);
+  loadStringTable32(f, sectionHeaders, stringTable, b->e_shstrndx);
 
 
   for (i=0; i<b->e_shnum; i++)
@@ -97,7 +96,7 @@ Caller must free output manually
     if ((sectionHeaders[i].sh_type==SHT_SYMTAB) || (sectionHeaders[i].sh_type==SHT_DYNSYM))
     {
       Elf32_Sym *symbolTable=malloc(sectionHeaders[i].sh_size);
-      if (pread(f, symbolTable, sectionHeaders[i].sh_size, sectionHeaders[i].sh_offset+fileoffset)==-1)
+      if (pread(f, symbolTable, sectionHeaders[i].sh_size, sectionHeaders[i].sh_offset)==-1)
       {
         free(symbolTable);
         symbolTable=NULL;
@@ -107,7 +106,7 @@ Caller must free output manually
       {
         int maxindex=sectionHeaders[i].sh_size / sizeof(Elf32_Sym);
 
-        loadStringTable32(f, fileoffset, sectionHeaders, stringTable, sectionHeaders[i].sh_link);
+        loadStringTable32(f, sectionHeaders, stringTable, sectionHeaders[i].sh_link);
 
         for (j=0; j<maxindex; j++)
         {
@@ -142,7 +141,7 @@ Caller must free output manually
 }
 
 
-int ELF64_scan(int f, unsigned int fileoffset, Elf64_Ehdr *b, char *searchedsymbolname, symcallback cb, void* context)
+int ELF64_scan(int f, Elf64_Ehdr *b, char *searchedsymbolname, symcallback cb, void* context)
 /*
 Caller must free output manually
 */
@@ -151,7 +150,7 @@ Caller must free output manually
 
   Elf64_Shdr *sectionHeaders=malloc(b->e_shentsize*b->e_shnum);
 
-  if (pread(f, sectionHeaders, b->e_shentsize*b->e_shnum, b->e_shoff+fileoffset)==-1)
+  if (pread(f, sectionHeaders, b->e_shentsize*b->e_shnum, b->e_shoff)==-1)
   {
     if (sectionHeaders)
       free(sectionHeaders);
@@ -161,7 +160,7 @@ Caller must free output manually
 
   unsigned char **stringTable=calloc(b->e_shnum, sizeof(unsigned char*) );
 
-  loadStringTable64(f, fileoffset, sectionHeaders, stringTable, b->e_shstrndx);
+  loadStringTable64(f, sectionHeaders, stringTable, b->e_shstrndx);
 
 
   for (i=0; i<b->e_shnum; i++)
@@ -169,7 +168,7 @@ Caller must free output manually
     if ((sectionHeaders[i].sh_type==SHT_SYMTAB) || (sectionHeaders[i].sh_type==SHT_DYNSYM))
     {
       Elf64_Sym *symbolTable=malloc(sectionHeaders[i].sh_size);
-      if (pread(f, symbolTable, sectionHeaders[i].sh_size, sectionHeaders[i].sh_offset+fileoffset)==-1)
+      if (pread(f, symbolTable, sectionHeaders[i].sh_size, sectionHeaders[i].sh_offset)==-1)
       {
         free(symbolTable);
         symbolTable=NULL;
@@ -179,7 +178,7 @@ Caller must free output manually
       {
         int maxindex=sectionHeaders[i].sh_size / sizeof(Elf64_Sym);
 
-        loadStringTable64(f, fileoffset, sectionHeaders, stringTable, sectionHeaders[i].sh_link);
+        loadStringTable64(f, sectionHeaders, stringTable, sectionHeaders[i].sh_link);
 
         for (j=0; j<maxindex; j++)
         {
@@ -215,7 +214,7 @@ Caller must free output manually
 }
 
 
-int ELF32(int f, unsigned int fileoffset, Elf32_Ehdr *b, unsigned char **output)
+int ELF32(int f, Elf32_Ehdr *b, unsigned char **output)
 /*
 Caller must free output manually
 */
@@ -226,25 +225,6 @@ Caller must free output manually
   int tempbufferpos=0;
   int maxoutputsize=TEMPBUFSIZE;
   tempbuffer=malloc(TEMPBUFSIZE);
-  int offset=0;
-
-  Elf64_Phdr *programHeaders=malloc(b->e_phentsize*b->e_phnum);
-  if (pread(f, programHeaders, b->e_phentsize*b->e_phnum, b->e_phoff+fileoffset)==-1)
-  {
-    if (programHeaders)
-      free(programHeaders);
-
-    return 0;
-  }
-
-  for (i=0; i<b->e_phnum; i++)
-  {
-    if (programHeaders[i].p_type==PT_LOAD)
-    {
-      offset=programHeaders[i].p_vaddr;
-      break;
-    }
-  }
 
   //setup zlib
   z_stream strm;
@@ -263,7 +243,7 @@ Caller must free output manually
 
   Elf32_Shdr *sectionHeaders=malloc(b->e_shentsize*b->e_shnum);
 
-  if (pread(f, sectionHeaders, b->e_shentsize*b->e_shnum, b->e_shoff+fileoffset)==-1)
+  if (pread(f, sectionHeaders, b->e_shentsize*b->e_shnum, b->e_shoff)==-1)
   {
     //printf("Failure to read sectionHeaders\n");
     deflateEnd(&strm);
@@ -279,15 +259,12 @@ Caller must free output manually
     if (tempbuffer)
       free(tempbuffer);
 
-    if (programHeaders)
-      free(programHeaders);
-
     return -1;
   }
 
   unsigned char **stringTable=calloc(b->e_shnum, sizeof(unsigned char*) );
 
-  loadStringTable32(f, fileoffset, sectionHeaders, stringTable, b->e_shstrndx);
+  loadStringTable32(f, sectionHeaders, stringTable, b->e_shstrndx);
 
 
   for (i=0; i<b->e_shnum; i++)
@@ -295,7 +272,7 @@ Caller must free output manually
     if ((sectionHeaders[i].sh_type==SHT_SYMTAB) || (sectionHeaders[i].sh_type==SHT_DYNSYM))
     {
       Elf32_Sym *symbolTable=malloc(sectionHeaders[i].sh_size);
-      if (pread(f, symbolTable, sectionHeaders[i].sh_size, sectionHeaders[i].sh_offset+fileoffset)==-1)
+      if (pread(f, symbolTable, sectionHeaders[i].sh_size, sectionHeaders[i].sh_offset)==-1)
       {
         free(symbolTable);
         symbolTable=NULL;
@@ -305,7 +282,7 @@ Caller must free output manually
       {
         int maxindex=sectionHeaders[i].sh_size / sizeof(Elf32_Sym);
 
-        loadStringTable32(f, fileoffset, sectionHeaders, stringTable, sectionHeaders[i].sh_link);
+        loadStringTable32(f, sectionHeaders, stringTable, sectionHeaders[i].sh_link);
 
         //printf("maxindex=%d\n", maxindex);
         for (j=0; j<maxindex; j++)
@@ -328,20 +305,6 @@ Caller must free output manually
                  if (deflate(&strm, Z_NO_FLUSH)!=Z_OK)
                  {
                    //printf("FAILURE TO COMPRESS!\n");
-                   if (sectionHeaders)
-                     free(sectionHeaders);
-
-                   if (*output)
-                   {
-                     free(*output);
-                     *output=NULL;
-                   }
-
-                   if (tempbuffer)
-                     free(tempbuffer);
-
-                   if (programHeaders)
-                     free(programHeaders);
                    return -1;
                  }
                  //printf("strm.avail_out=%d\n", strm.avail_out);
@@ -387,9 +350,6 @@ Caller must free output manually
   free(stringTable);
 
   free(sectionHeaders);
-
-  if (programHeaders)
-    free(programHeaders);
 
 
  // debug_log("end:\n");
@@ -442,7 +402,7 @@ Caller must free output manually
   return 0;
 }
 
-int ELF64(int f, unsigned int fileoffset, Elf64_Ehdr *b, unsigned char **output)
+int ELF64(int f, Elf64_Ehdr *b, unsigned char **output)
 /*
 Caller must free output manually
 */
@@ -454,26 +414,6 @@ Caller must free output manually
   int tempbufferpos=0;
   int maxoutputsize=TEMPBUFSIZE;
   tempbuffer=malloc(TEMPBUFSIZE);
-  int offset=0;
-
-  Elf64_Phdr *programHeaders=malloc(b->e_phentsize*b->e_phnum);
-  if (pread(f, programHeaders, b->e_phentsize*b->e_phnum, b->e_phoff+fileoffset)==-1)
-  {
-    if (programHeaders)
-      free(programHeaders);
-
-    return 0;
-  }
-
-  for (i=0; i<b->e_phnum; i++)
-  {
-    if (programHeaders[i].p_type==PT_LOAD)
-    {
-      offset=programHeaders[i].p_vaddr;
-      break;
-    }
-  }
-
 
   //setup zlib
   z_stream strm;
@@ -492,7 +432,7 @@ Caller must free output manually
 
   Elf64_Shdr *sectionHeaders=malloc(b->e_shentsize*b->e_shnum);
 
-  if (pread(f, sectionHeaders, b->e_shentsize*b->e_shnum, b->e_shoff+fileoffset)==-1)
+  if (pread(f, sectionHeaders, b->e_shentsize*b->e_shnum, b->e_shoff)==-1)
   {
     //printf("Failure to read sectionHeaders\n");
     deflateEnd(&strm);
@@ -508,15 +448,12 @@ Caller must free output manually
     if (tempbuffer)
       free(tempbuffer);
 
-    if (programHeaders)
-      free(programHeaders);
-
     return -1;
   }
 
   unsigned char **stringTable=calloc(b->e_shnum, sizeof(unsigned char*) );
 
-  loadStringTable64(f, fileoffset, sectionHeaders, stringTable, b->e_shstrndx);
+  loadStringTable64(f, sectionHeaders, stringTable, b->e_shstrndx);
 
 
   for (i=0; i<b->e_shnum; i++)
@@ -526,7 +463,7 @@ Caller must free output manually
     if ((sectionHeaders[i].sh_type==SHT_SYMTAB) || (sectionHeaders[i].sh_type==SHT_DYNSYM))
     {
       Elf64_Sym *symbolTable=malloc(sectionHeaders[i].sh_size);
-      if (pread(f, symbolTable, sectionHeaders[i].sh_size, sectionHeaders[i].sh_offset+fileoffset)==-1)
+      if (pread(f, symbolTable, sectionHeaders[i].sh_size, sectionHeaders[i].sh_offset)==-1)
       {
         //printf("Failure reading symbol table\n");
         free(symbolTable);
@@ -537,7 +474,7 @@ Caller must free output manually
       {
         int maxindex=sectionHeaders[i].sh_size / sizeof(Elf64_Sym);
 
-        loadStringTable64(f, fileoffset, sectionHeaders, stringTable, sectionHeaders[i].sh_link);
+        loadStringTable64(f, sectionHeaders, stringTable, sectionHeaders[i].sh_link);
 
 
         for (j=0; j<maxindex; j++)
@@ -547,7 +484,6 @@ Caller must free output manually
           {
             //add it to the tempbuffer
             char *symbolname=(char *)&stringTable[sectionHeaders[i].sh_link][symbolTable[j].st_name];
-
             size_t namelength=strlen(symbolname);
             int entrysize=sizeof(symbolinfo)+namelength;
             if (tempbufferpos+entrysize>=TEMPBUFSIZE)
@@ -584,7 +520,7 @@ Caller must free output manually
 
 
             psymbolinfo si=(psymbolinfo)&tempbuffer[tempbufferpos];
-            si->address=symbolTable[j].st_value-offset;
+            si->address=symbolTable[j].st_value;
             si->size=symbolTable[j].st_size;
             si->type=symbolTable[j].st_info;
             si->namelength=namelength;
@@ -609,8 +545,6 @@ Caller must free output manually
   free(stringTable);
 
   free(sectionHeaders);
-
-  free(programHeaders);
 
 
  // debug_log("end:\n");
@@ -693,10 +627,8 @@ int FindSymbol(HANDLE hProcess, char *symbolname, symcallback cb, void* context)
       {
         int i,f;
         unsigned char *b=NULL;
-        unsigned int fileoffset=mle.fileOffset;
 
         c.modulebase=mle.baseAddress;
-
 
         f=open(mle.moduleName, O_RDONLY);
         if (f==-1)
@@ -705,13 +637,13 @@ int FindSymbol(HANDLE hProcess, char *symbolname, symcallback cb, void* context)
         b=malloc(sizeof(Elf64_Ehdr));
         if (b)
         {
-          i=pread(f, b, sizeof(Elf64_Ehdr), fileoffset);
+          i=pread(f, b, sizeof(Elf64_Ehdr), 0);
           if (*(uint32_t *)b==0x464c457f)
           {
             if (b[EI_CLASS]==ELFCLASS32)
-              i=ELF32_scan(f, fileoffset, (Elf32_Ehdr *)b, symbolname, (symcallback)FindSymbol_internal, (void*)&c);
+              i=ELF32_scan(f, (Elf32_Ehdr *)b, symbolname, (symcallback)FindSymbol_internal, (void*)&c);
             else
-              i=ELF64_scan(f, fileoffset, (Elf64_Ehdr *)b, symbolname, (symcallback)FindSymbol_internal, (void*)&c);
+              i=ELF64_scan(f, (Elf64_Ehdr *)b, symbolname, (symcallback)FindSymbol_internal, (void*)&c);
           }
 
           free(b);
@@ -730,7 +662,7 @@ int FindSymbol(HANDLE hProcess, char *symbolname, symcallback cb, void* context)
   return 0;
 }
 
-int GetSymbolListFromFile(char *filename, uint32_t fileoffset, unsigned char **output)
+int GetSymbolListFromFile(char *filename, unsigned char **output)
 /*
  * Returns a pointer to a compressed stream. The caller needs to free it
  */
@@ -738,49 +670,28 @@ int GetSymbolListFromFile(char *filename, uint32_t fileoffset, unsigned char **o
   int i, f;
   unsigned char *b=NULL;
 
-  if (fileoffset)
-    debug_log("GetSymbolListFromFile(%s, %x)\n", filename, fileoffset);
+ // debug_log("GetSymbolListFromFile(%s)\n", filename);
 
   *output=NULL;
   f=open(filename, O_RDONLY);
   if (f==-1)
-  {
-    if (fileoffset)
-      debug_log("open(%s) failed: %s\n", strerror(errno));
     return -1;
-  }
 
   b=malloc(sizeof(Elf64_Ehdr));
   if (b)
   {
-    i=pread(f, b, sizeof(Elf64_Ehdr), fileoffset);
-    if (i==-1)
-    {
-      debug_log("Failure reading %d bytes from %s at 0x%x\n (%s)", sizeof(Elf64_Ehdr), filename, fileoffset, strerror(errno));
-      return -1;
-    }
-
-    if (fileoffset)
-      debug_log("b[0..3]=%.2x %.2x %.2x %.2x\n", b[0],b[1],b[2],b[3]);
-
+    i=pread(f, b, sizeof(Elf64_Ehdr), 0);
 
     if (*(uint32_t *)b!=0x464c457f)
-    {
-      if (fileoffset)
-        debug_log("Not an ELF file\n");
-
       return -1; //not an ELF file
-    }
 
     if (b[EI_CLASS]==ELFCLASS32)
-      i=ELF32(f, fileoffset, (Elf32_Ehdr *)b, output);
+      i=ELF32(f, (Elf32_Ehdr *)b, output);
     else
-      i=ELF64(f, fileoffset, (Elf64_Ehdr *)b, output);
+      i=ELF64(f, (Elf64_Ehdr *)b, output);
 
     free(b);
   }
-  else
-    i=-1;
 
   close(f);
 
@@ -788,7 +699,7 @@ int GetSymbolListFromFile(char *filename, uint32_t fileoffset, unsigned char **o
 }
 
 
-int GetModuleSize32(int f, uint32_t fileoffset, Elf32_Ehdr *b)
+int GetModuleSize32(int f, Elf32_Ehdr *b)
 {
  /* debug_log("32 bit\n");
   debug_log("b->e_ehsize=%d  (%d)\n", (int)b->e_ehsize, (int)sizeof(Elf32_Ehdr));*/
@@ -804,7 +715,7 @@ int GetModuleSize32(int f, uint32_t fileoffset, Elf32_Ehdr *b)
   debug_log("e_phentsize=%d\n", b->e_phentsize);
   debug_log("e_phnum=%d\n", b->e_phnum); */
 
-  if (pread(f, programHeaders, b->e_phentsize*b->e_phnum, b->e_phoff+fileoffset)==-1)
+  if (pread(f, programHeaders, b->e_phentsize*b->e_phnum, b->e_phoff)==-1)
   {
     if (programHeaders)
       free(programHeaders);
@@ -814,72 +725,12 @@ int GetModuleSize32(int f, uint32_t fileoffset, Elf32_Ehdr *b)
 
 
   int i;
-  unsigned long long lowest=0x1000;//programHeaders[0].p_vaddr;
-  unsigned long long highest=0x1000;//programHeaders[0].p_vaddr+programHeaders[0].p_memsz;
+  unsigned long long lowest=0;//programHeaders[0].p_vaddr;
+  unsigned long long highest=0;//programHeaders[0].p_vaddr+programHeaders[0].p_memsz;
 
   for (i=0; i<b->e_phnum; i++)
   {
-
-    if ((programHeaders[i].p_type==PT_LOAD) && (programHeaders[i].p_memsz>0))
-    {
-      if ((i==0) || (programHeaders[i].p_vaddr<lowest))
-         lowest=programHeaders[i].p_vaddr;
-
-      if ((i==0) || (programHeaders[i].p_vaddr+programHeaders[i].p_memsz>highest))
-         highest=programHeaders[i].p_vaddr+programHeaders[i].p_memsz;
-
-
-/*
-       debug_log("%d: %x\n", i, programHeaders[i].p_type);
-       debug_log("Virtual Address: %llx-%llx:\n", (long long unsigned int)programHeaders[i].p_vaddr,(long long unsigned int)programHeaders[i].p_vaddr+(long long unsigned int)programHeaders[i].p_memsz);
-       debug_log("Size: %d (%x)\n", (int)programHeaders[i].p_memsz, (int)programHeaders[i].p_memsz);
-       */
-    }
-  }
-
-  if (programHeaders)
-    free(programHeaders);
-
- // debug_log("lowest=%llx highest=%llx\n", lowest, highest);
- // debug_log("size=%llx\n", highest-lowest);
-  if (lowest) //lowest is not 0, error
-    return -1;
-  else
-    return highest;
-}
-
-int GetModuleSize64(int f, uint32_t fileoffset, Elf64_Ehdr *b)
-{
-  /*printf("64 bit\n");
-  debug_log("b->e_ehsize=%d  (%d)\n", (int)b->e_ehsize, (int)sizeof(Elf32_Ehdr));*/
-
-  Elf64_Phdr *programHeaders=malloc(b->e_phentsize*b->e_phnum);
-/*  debug_log("e_shoff=%x\n", (int)b->e_shoff);
-  debug_log("e_shentsize=%d\n", b->e_shentsize);
-  debug_log("e_shnum=%d\n", b->e_shnum);
-  debug_log("e_shstrndx=%d\n", b->e_shstrndx);
-
-  debug_log("e_phoff=%x\n", (int)b->e_phoff);
-  debug_log("e_phentsize=%d\n", b->e_phentsize);
-  debug_log("e_phnum=%d\n", b->e_phnum);
-  */
-
-  if (pread(f, programHeaders, b->e_phentsize*b->e_phnum, b->e_phoff+fileoffset)==-1)
-  {
-    if (programHeaders)
-      free(programHeaders);
-
-    return 0;
-  }
-
-
-  int i;
-  unsigned long long lowest=0x1000;//programHeaders[0].p_vaddr;
-  unsigned long long highest=0x1000;//programHeaders[0].p_vaddr+programHeaders[0].p_memsz;
-
-  for (i=0; i<b->e_phnum; i++)
-  {
-     if ((programHeaders[i].p_type==PT_LOAD) && (programHeaders[i].p_memsz>0))
+     if (programHeaders[i].p_memsz>0)
      {
        if ((i==0) || (programHeaders[i].p_vaddr<lowest))
           lowest=programHeaders[i].p_vaddr;
@@ -901,21 +752,74 @@ int GetModuleSize64(int f, uint32_t fileoffset, Elf64_Ehdr *b)
 
  // debug_log("lowest=%llx highest=%llx\n", lowest, highest);
  // debug_log("size=%llx\n", highest-lowest);
+   return highest-lowest;
+}
 
-   if (lowest) //lowest is not 0, error
-     return -1;
-   else
-     return highest;
+int GetModuleSize64(int f, Elf64_Ehdr *b)
+{
+  /*printf("64 bit\n");
+  debug_log("b->e_ehsize=%d  (%d)\n", (int)b->e_ehsize, (int)sizeof(Elf32_Ehdr));*/
+
+  Elf64_Phdr *programHeaders=malloc(b->e_phentsize*b->e_phnum);
+/*  debug_log("e_shoff=%x\n", (int)b->e_shoff);
+  debug_log("e_shentsize=%d\n", b->e_shentsize);
+  debug_log("e_shnum=%d\n", b->e_shnum);
+  debug_log("e_shstrndx=%d\n", b->e_shstrndx);
+
+  debug_log("e_phoff=%x\n", (int)b->e_phoff);
+  debug_log("e_phentsize=%d\n", b->e_phentsize);
+  debug_log("e_phnum=%d\n", b->e_phnum);
+  */
+
+  if (pread(f, programHeaders, b->e_phentsize*b->e_phnum, b->e_phoff)==-1)
+  {
+    if (programHeaders)
+      free(programHeaders);
+
+    return 0;
+  }
+
+
+  int i;
+  unsigned long long lowest=0;//programHeaders[0].p_vaddr;
+  unsigned long long highest=0;//programHeaders[0].p_vaddr+programHeaders[0].p_memsz;
+
+  for (i=0; i<b->e_phnum; i++)
+  {
+     if (programHeaders[i].p_memsz>0)
+     {
+       if ((i==0) || (programHeaders[i].p_vaddr<lowest))
+          lowest=programHeaders[i].p_vaddr;
+
+       if ((i==0) || (programHeaders[i].p_vaddr+programHeaders[i].p_memsz>highest))
+          highest=programHeaders[i].p_vaddr+programHeaders[i].p_memsz;
+
+
+/*
+       debug_log("%d: %x\n", i, programHeaders[i].p_type);
+       debug_log("Virtual Address: %llx-%llx:\n", (long long unsigned int)programHeaders[i].p_vaddr,(long long unsigned int)programHeaders[i].p_vaddr+(long long unsigned int)programHeaders[i].p_memsz);
+       debug_log("Size: %d (%x)\n", (int)programHeaders[i].p_memsz, (int)programHeaders[i].p_memsz);
+       */
+     }
+  }
+
+    if (programHeaders)
+      free(programHeaders);
+
+ // debug_log("lowest=%llx highest=%llx\n", lowest, highest);
+ // debug_log("size=%llx\n", highest-lowest);
+   return highest-lowest;
 }
 
 
-unsigned long long GetModuleSize(char *filename, uint32_t fileoffset, unsigned long long defaultsize)
+unsigned long long GetModuleSize(char *filename, unsigned long long defaultsize)
 /*
  * Returns size the module will take in memory
  */
 {
   int i,f;
   unsigned char *b=NULL;
+  int result=defaultsize;
 
 //  debug_log("GetModuleSize(\"%s\")=",filename);
 
@@ -930,7 +834,7 @@ unsigned long long GetModuleSize(char *filename, uint32_t fileoffset, unsigned l
     b=malloc(sizeof(Elf64_Ehdr));
     if (b)
     {
-      i=pread(f, b, sizeof(Elf64_Ehdr), fileoffset);
+      i=pread(f, b, sizeof(Elf64_Ehdr), 0);
 
       if (*(uint32_t *)b!=0x464c457f)
       {
@@ -941,9 +845,9 @@ unsigned long long GetModuleSize(char *filename, uint32_t fileoffset, unsigned l
       }
 
       if (b[EI_CLASS]==ELFCLASS32)
-        i=GetModuleSize32(f, fileoffset, (Elf32_Ehdr *)b);
+        i=GetModuleSize32(f, (Elf32_Ehdr *)b);
       else
-        i=GetModuleSize64(f, fileoffset, (Elf64_Ehdr *)b);
+        i=GetModuleSize64(f, (Elf64_Ehdr *)b);
 
       free(b);
       close(f);

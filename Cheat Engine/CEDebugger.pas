@@ -209,22 +209,10 @@ var mes: string;
     i: integer;
 begin
   result:=false;
-  if processid=GetCurrentProcessId then
-  begin
-    if MainThreadID=GetCurrentThreadId then
-      MessageDlg(rsPleaseTargetAnotherProcess,mtError,[mbOK],0);
-
-    exit(false);
-  end;
+  if processid=GetCurrentProcessId then raise exception.create(rsPleaseTargetAnotherProcess);
 
 
-  if processhandle=0 then
-  begin
-    if MainThreadID=GetCurrentThreadId then
-      MessageDlg(rsYouMustFirstOpenAProcess,mtError,[mbOK],0);
-
-    exit(false);
-  end;
+  if processhandle=0 then raise exception.create(rsYouMustFirstOpenAProcess);
 
   if (debuggerthread=nil) then
   begin

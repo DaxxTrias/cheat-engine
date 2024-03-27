@@ -174,7 +174,6 @@ begin
      or (memrec.vartype = vtSingle)
      or (memrec.vartype = vtDouble)
      or (memrec.vartype = vtByteArray)
-     or ((memrec.VarType = vtCustom) and (memrec.CustomType.scriptUsesString=false))
      then
   begin
     cbHex.checked:=memrec.ShowAsHex;

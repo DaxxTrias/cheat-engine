@@ -1,7 +1,7 @@
 object MemoryBrowser: TMemoryBrowser
-  Left = 670
+  Left = 668
   Height = 530
-  Top = 193
+  Top = 191
   Width = 801
   HelpContext = 12
   Caption = 'Memory Viewer'
@@ -174,7 +174,6 @@ object MemoryBrowser: TMemoryBrowser
           Caption = 'Run Unhandled'
           Enabled = False
           ImageIndex = 78
-          OnClick = miRunUnhandledClick
           ParentShowHint = False
           ShowHint = True
           Visible = False
@@ -1423,7 +1422,6 @@ object MemoryBrowser: TMemoryBrowser
     object miUserdefinedComment: TMenuItem
       Caption = 'Set/Change comment'
       ImageIndex = 6
-      ShortCut = 16397
       OnClick = miUserdefinedCommentClick
     end
     object miUserDefinedHeader: TMenuItem

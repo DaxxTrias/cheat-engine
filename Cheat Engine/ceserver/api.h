@@ -47,7 +47,6 @@
 typedef struct
 {
   unsigned long long baseAddress;
-  uint32_t fileOffset;
   int part;
   int is64bit;
   int moduleSize;

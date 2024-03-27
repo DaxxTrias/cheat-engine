@@ -14,14 +14,12 @@ uses jwawindows, windows,LCLIntf,sysutils, dialogs, classes, controls,
 const dbkdll='DBK32.dll';
 
 
+{$ifdef windows}
+
 const
   VQE_PAGEDONLY=1;
   VQE_DIRTYONLY=2;
   VQE_NOSHARED=4 ;
-
-
-{$ifdef windows}
-
 
 
 type
@@ -2301,46 +2299,36 @@ var cpuidr: TCPUIDResult;
 iswow: BOOL;
 begin
   cpuidr:=CPUID($80000008,0);
+  MAXPHYADDR:=cpuidr.eax and $ff;
+  MAXPHYADDRMASK:=qword($ffffffffffffffff);
+  MAXPHYADDRMASK:=MAXPHYADDRMASK shr MAXPHYADDR;
+  MAXPHYADDRMASK:=not (MAXPHYADDRMASK shl MAXPHYADDR);
+  MAXPHYADDRMASKPB:=MAXPHYADDRMASK and qword($fffffffffffff000);
+
+  MAXLINEARADDR:=(cpuidr.eax shr 8) and $ff;
+  MAXLINEARADDRMASK:=qword($ffffffffffffffff);
+  MAXLINEARADDRMASK:=MAXLINEARADDRMASK shr MAXLINEARADDR;
+  MAXLINEARADDRMASK:=MAXLINEARADDRMASK shl MAXLINEARADDR;
+
+  MAXLINEARADDRTEST:=qword(1) shl (MAXLINEARADDR-1);
   outputdebugstring(format('cpuid $80000008=%x, %x, %x, %x',[cpuidr.eax, cpuidr.ebx, cpuidr.ecx, cpuidr.edx]));
 
 
-  if cpuidr.eax<>0 then
+  {$ifdef cpu64}
+  MAXPHYADDRMASKPBBIG:=MAXPHYADDRMASK and qword($ffffffffffe00000);
+  {$else}
+  MAXPHYADDRMASKPBBIG:=MAXPHYADDRMASK and qword($ffffffffffc00000);
+
+  if assigned(IsWow64Process) then
   begin
-    MAXPHYADDR:=cpuidr.eax and $ff;
-    MAXPHYADDRMASK:=qword($ffffffffffffffff);
-    MAXPHYADDRMASK:=MAXPHYADDRMASK shr MAXPHYADDR;
-    MAXPHYADDRMASK:=not (MAXPHYADDRMASK shl MAXPHYADDR);
-    MAXPHYADDRMASKPB:=MAXPHYADDRMASK and qword($fffffffffffff000);
-
-    MAXLINEARADDR:=(cpuidr.eax shr 8) and $ff;
-    MAXLINEARADDRMASK:=qword($ffffffffffffffff);
-    MAXLINEARADDRMASK:=MAXLINEARADDRMASK shr MAXLINEARADDR;
-    MAXLINEARADDRMASK:=MAXLINEARADDRMASK shl MAXLINEARADDR;
-
-    MAXLINEARADDRTEST:=qword(1) shl (MAXLINEARADDR-1);
-
-
-    {$ifdef cpu64}
-    MAXPHYADDRMASKPBBIG:=MAXPHYADDRMASK and qword($ffffffffffe00000);
-    {$else}
-    MAXPHYADDRMASKPBBIG:=MAXPHYADDRMASK and qword($ffffffffffc00000);
-
-    if assigned(IsWow64Process) then
+    if IsWow64Process(GetCurrentProcess,iswow) then
     begin
-      if IsWow64Process(GetCurrentProcess,iswow) then
-      begin
-        if iswow then
-          MAXPHYADDRMASKPBBIG:=MAXPHYADDRMASK and qword($ffffffffffe00000);
-      end;
+      if iswow then
+        MAXPHYADDRMASKPBBIG:=MAXPHYADDRMASK and qword($ffffffffffe00000);
     end;
-
-    {$endif}
-  end
-  else
-  begin
-    MAXPHYADDRMASK:=qword($ffffffffffffffff);
-    MAXLINEARADDRMASK:=qword($ffffffffffffffff);
   end;
+
+  {$endif}
 end;
 {$endif}
 

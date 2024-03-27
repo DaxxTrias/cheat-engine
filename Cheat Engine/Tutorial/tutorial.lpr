@@ -18,7 +18,6 @@ uses
 {$R *.res}
 
 begin
-  Application.Title:='';
   Application.Initialize;
 
   doTranslation;

@@ -1111,7 +1111,6 @@ var
   temps: string;
 
   rewritten: boolean;
-  commapos: integer;
 begin
   d:=TDisassembler.create;
   if skipsymbols then
@@ -1124,7 +1123,6 @@ begin
   d.disassemble(address);
 
   addressSpecifierIndexPos:=d.LastDisassembleData.parameters.IndexOf('[');
-  commapos:=d.LastDisassembleData.parameters.IndexOf(',');
 
   if (processhandler.SystemArchitecture=archX86) and (farjmp) and (d.LastDisassembleData.riprelative>0) and (addressSpecifierIndexPos<>-1 ) then
   begin
@@ -1162,25 +1160,17 @@ begin
       end;
     end;
 
+
     if rewritten=false then
     begin
       //not a write, or formatted in a way not handled
+
       usedReg:='';
       usedReg2:='';
-      if not (d.LastDisassembleData.parameters.Contains('rax') or
-         d.LastDisassembleData.parameters.Contains('eax') or
-         d.LastDisassembleData.parameters.Contains('ax') or
-         d.LastDisassembleData.parameters.Contains('ah') or
-         d.LastDisassembleData.parameters.Contains('al'))
-      then
+      if d.LastDisassembleData.parameters.Contains('rax')=false then
         usedReg:='rax'
       else
-      if not (d.LastDisassembleData.parameters.Contains('rbx') or
-         d.LastDisassembleData.parameters.Contains('ebx') or
-         d.LastDisassembleData.parameters.Contains('bx') or
-         d.LastDisassembleData.parameters.Contains('bh') or
-         d.LastDisassembleData.parameters.Contains('bl'))
-      then
+      if d.LastDisassembleData.parameters.Contains('rbx')=false then
       begin
         if usedReg='' then
           usedreg:='rbx'
@@ -1188,12 +1178,7 @@ begin
           usedreg2:='rbx';
       end
       else
-      if not (d.LastDisassembleData.parameters.Contains('rcx') or
-         d.LastDisassembleData.parameters.Contains('ecx') or
-         d.LastDisassembleData.parameters.Contains('cx') or
-         d.LastDisassembleData.parameters.Contains('ch') or
-         d.LastDisassembleData.parameters.Contains('cl'))
-      then
+      if d.LastDisassembleData.parameters.Contains('rcx')=false then
       begin
         if usedReg='' then
           usedreg:='rcx'
@@ -1201,12 +1186,7 @@ begin
           usedreg2:='rcx';
       end
       else
-      if not (d.LastDisassembleData.parameters.Contains('rdx') or
-         d.LastDisassembleData.parameters.Contains('edx') or
-         d.LastDisassembleData.parameters.Contains('dx') or
-         d.LastDisassembleData.parameters.Contains('dh') or
-         d.LastDisassembleData.parameters.Contains('dl'))
-      then
+      if d.LastDisassembleData.parameters.Contains('rdx')=false then
       begin
         if usedReg='' then
           usedreg:='rdx'
@@ -1214,7 +1194,7 @@ begin
           usedreg2:='rdx';
       end
       else
-      if not d.LastDisassembleData.parameters.Contains('r8') then
+      if d.LastDisassembleData.parameters.Contains('r8')=false then
       begin
         if usedReg='' then   //impossible...
           usedreg:='r8'
@@ -1489,26 +1469,16 @@ var
 begin
 
   getenableanddisablepos(assemblescreen.Lines,a,b);
-  if (a=-1) and (b=-1) then
-  begin
-    MessageDlg(rsCodeNeedsEnableAndDisable,mtError,[mbok],0);
-    exit;
-  end;
+  if (a=-1) and (b=-1) then raise exception.create(rsCodeNeedsEnableAndDisable);
 
   di:=TDisableInfo.create;
-  try
-    if autoassemble(assemblescreen.lines,true,true,true,false,di) and
-       autoassemble(assemblescreen.lines,true,false,true,false,di) then
-    begin
-      //add a entry with type 255
-      mainform.AddAutoAssembleScript(assemblescreen.text);
-    end
-    else showmessage(rsFailedToAddToTableNotAllCodeIsInjectable);
-
-  except
-    on e:exception do
-      MessageDlg(e.Message,mtError, [mbok],0);
-  end;
+  if autoassemble(assemblescreen.lines,true,true,true,false,di) and
+     autoassemble(assemblescreen.lines,true,false,true,false,di) then
+  begin
+    //add a entry with type 255
+    mainform.AddAutoAssembleScript(assemblescreen.text);
+  end
+  else showmessage(rsFailedToAddToTableNotAllCodeIsInjectable);
 
   di.free;
 

@@ -13,7 +13,7 @@ uses
   newScrollBox, {$ifndef bc_skipsynedit}newSynEdit,{$endif}
   newPageControl, newtabcontrol, newStatusBar,
   newCheckListBox, newCheckGroup, newColorBox, newDirectoryEdit, NewHintwindow,
-  newToggleBox, {$ifndef bc_skipvirtualstringtree}newvirtualstringtree,{$endif}
+  newToggleBox, newvirtualstringtree,
   Graphics, Themes, UxTheme, bettercontrolColorSet;
 {$else}
 uses {macport,} graphics,math, bettercontrolColorSet;
@@ -53,9 +53,7 @@ type
   THintWindowClass =class of TNewHintwindow;
 
   TToggleBox=class(TNewToggleBox);
-  {$ifndef bc_skipvirtualstringtree}
   TLazVirtualStringTree=class(TNewLazVirtualStringTree);
-  {$endif}
 
 {$endif}
 var

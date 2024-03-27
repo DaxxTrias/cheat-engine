@@ -115,7 +115,6 @@ typedef struct {
     int64_t modulebase;
     int32_t modulepart;
     int32_t modulesize;
-    uint32_t modulefileoffset;
     int32_t modulenamesize;
 } CeModuleEntry, *PCeModuleEntry;
 

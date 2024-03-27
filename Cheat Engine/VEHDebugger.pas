@@ -625,7 +625,6 @@ begin
     debuggerAttachStatus:='Waiting for kernel32';
     symhandler.waitforsymbolsloaded(true,'kernel32.dll');
 
-    debuggerAttachStatus:='fetching InitializeVEH symbol';
     testptr:=symhandler.getAddressFromName('"vehdebug'+prefix+'.InitializeVEH"',false,err);
     if err or (testptr=0) then
     begin

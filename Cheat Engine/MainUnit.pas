@@ -23,8 +23,7 @@ uses
   {$endif}
 
   {$ifdef windows}
-  jwaWindows, Windows, LCLIntf, LCLProc, Messages, SysUtils, Classes, SyncObjs,
-  SyncObjs2, Graphics,
+  jwaWindows, Windows, LCLIntf, LCLProc, Messages, SysUtils, Classes, Graphics,
   Controls, Forms, ComCtrls, StdCtrls, Menus, Buttons, shellapi,
   imagehlp, ExtCtrls, Dialogs, Clipbrd, CEDebugger, kerneldebugger, assemblerunit,
   hotkeyhandler, registry, Math, ImgList, commctrl, NewKernelHandler,
@@ -315,8 +314,6 @@ type
     FromAddress: TEdit;
     andlabel: TLabel;
     lblcompareToSavedScan: TLabel;
-    miTestAccessViolationThread: TMenuItem;
-    miTriggerAccessViolation: TMenuItem;
     MenuItem16: TMenuItem;
     MenuItem17: TMenuItem;
     MenuItem18: TMenuItem;
@@ -595,8 +592,6 @@ type
     procedure CreateGroupClick(Sender: TObject);
     procedure gbScanOptionsChangeBounds(Sender: TObject);
     procedure Label3Click(Sender: TObject);
-    procedure miTestAccessViolationThreadClick(Sender: TObject);
-    procedure miTriggerAccessViolationClick(Sender: TObject);
     procedure miTutorial64Click(Sender: TObject);
     procedure MenuItem15Click(Sender: TObject);
     procedure MenuItem16Click(Sender: TObject);
@@ -863,12 +858,6 @@ type
 
     InsideSetActivePreviousResult: boolean;
 
-    exceptionerrorcs: TCriticalSection;
-    currentexceptionerror: string;
-    showingException: boolean;
-
-    TraceExceptions: boolean;
-
     procedure updateNetworkOption(sender: TObject);
     procedure updateNetworkOptions;
 
@@ -886,7 +875,7 @@ type
     procedure MemScanStart(sender: TObject);
     procedure MemScanDone(sender: TObject);
     procedure PluginSync(var m: TMessage); message wm_pluginsync;
-    procedure ShowError;
+    procedure ShowError(var message: TMessage); message wm_showerror;
     procedure Edit;
     procedure paste(simplecopypaste: boolean);
     procedure CopySelectedRecords;
@@ -1123,7 +1112,7 @@ uses cefuncproc, MainUnit2, ProcessWindowUnit, MemoryBrowserFormUnit, TypePopup,
   multilineinputqueryunit {$ifdef windows},winsapi{$endif} ,LuaClass, Filehandler{$ifdef windows}, feces{$endif}
   {$ifdef windows},frmDBVMWatchConfigUnit, frmDotNetObjectListUnit{$endif} ,ceregistry ,UnexpectedExceptionsHelper
   ,frmFoundlistPreferencesUnit, fontSaveLoadRegistry{$ifdef windows}, cheatecoins{$endif},strutils, iptlogdisplay,
-  libcepack, symbolsync;
+  libcepack;
 
 resourcestring
   rsInvalidStartAddress = 'Invalid start address: %s';
@@ -1612,11 +1601,11 @@ begin
 
         beep;
 
-        if formsettings.frameHotkeyConfig.cbHideAllWindows.Checked then
+        if formsettings.cbHideAllWindows.Checked then
         begin
           ToggleWindow;
 
-          if formsettings.frameHotkeyConfig.cbCenterOnPopup.Checked then
+          if formsettings.cbCenterOnPopup.Checked then
             if not allwindowsareback then
               setwindowpos(mainform.Handle, HWND_NOTOPMOST, (screen.Width div 2) -
                 (mainform.Width div 2), (screen.Height div 2) -
@@ -1650,7 +1639,7 @@ begin
           AttachThreadInput( CurrentThreadID, OtherThreadID, false );
         end;
 
-        if formsettings.frameHotkeyConfig.cbCenterOnPopup.Checked then
+        if formsettings.cbCenterOnPopup.Checked then
           setwindowpos(mainform.Handle, HWND_NOTOPMOST, (screen.Width div 2) -
             (mainform.Width div 2), (screen.Height div 2) -
             (mainform.Height div 2), mainform.Width, mainform.Height,
@@ -2096,13 +2085,13 @@ begin
 
       beep;
 
-      if formsettings.frameHotkeyConfig.cbHideAllWindows.Checked then
+      if formsettings.cbHideAllWindows.Checked then
       begin
         ToggleWindow;
 
         //      ToggleOtherWindows;
 
-        if formsettings.frameHotkeyConfig.cbCenterOnPopup.Checked then
+        if formsettings.cbCenterOnPopup.Checked then
           if not allwindowsareback then
             setwindowpos(mainform.Handle, HWND_NOTOPMOST, (screen.Width div 2) -
               (mainform.Width div 2), (screen.Height div 2) - (mainform.Height div
@@ -2124,7 +2113,7 @@ begin
       // if length(windowlist)<>0 then
       application.BringToFront;
 
-      if formsettings.frameHotkeyConfig.cbCenterOnPopup.Checked then
+      if formsettings.cbCenterOnPopup.Checked then
         setwindowpos(mainform.Handle, HWND_NOTOPMOST, (screen.Width div 2) -
           (mainform.Width div 2), (screen.Height div 2) - (mainform.Height div
           2), mainform.Width, mainform.Height, SWP_NOZORDER or SWP_NOACTIVATE);
@@ -2170,48 +2159,27 @@ begin
   m.Result := ptruint(func(params));
 end;
 
-procedure TMainForm.ShowError;
-var fn: string;
-  nosaveerror: boolean;
-  s: string;
-  path: string;
+procedure TMainForm.ShowError(var message: TMessage);
+var
+  err: pchar;
+  errs: string;
 begin
+  err:=pchar(message.lParam);
 
-  try
-    nosaveerror:=false;
-    fn:=ExtractFileName(SaveDialog1.filename);
-    if fn='' then
-    begin
-      fn:='noname.ct';
-      path:=opendialog1.InitialDir;
-    end
-    else
-    begin
-      if lowercase(ExtractFileExt(fn))<>'.ct' then
-        fn:=fn+'.ct';
-
-      path:=ExtractFilePath(SaveDialog1.filename);
-    end;
-
-
-
-    fn:='ExceptionAutoSave_'+fn;
-    fn:=path+fn;
-    SaveTable(fn);
-    nosaveerror:=true;
-  except
-  end;
-
-  if nosaveerror then
+  if err<>nil then
   begin
-    s:=currentexceptionerror+#13#10+'The current table has been saved to '+fn;
-    MessageDlg(s, mterror,[mbok],0);
+    errs:=err;
+
+    if (errs='Access violation') and (miEnableLCLDebug.checked) then
+      errs:=errs+#13#10'Please send the cedebug.txt file to Dark Byte. Thanks';
+
+    if MainThreadID=GetCurrentThreadId then
+      MessageDlg(errs, mtError, [mbOK], 0);
+
+    freememandnil(err);
   end
   else
-  begin
-    MessageDlg(currentexceptionerror, mterror,[mbok],0);
-  end;
-
+    MessageDlg(rsUnspecifiedError, mtError, [mbOK], 0);
 end;
 
 //----------------------------------
@@ -2455,58 +2423,25 @@ begin
   end;
 end;
 
+
 procedure TMainForm.exceptionhandler(Sender: TObject; E: Exception);
-var
-  s: string;
-  op: string;
+var err: pchar;
 begin
   //unhandled exeption. Also clean lua stack
-  s:={$ifdef THREADNAMESUPPORT}GetThreadName+': '+{$endif}'Unhandled exception: '+e.message;
 
-  {$ifdef windows}
-  if e is EAccessViolation then
+  getmem(err, length(e.Message)+1);
+  strcopy(err, pchar(e.message));
+  err[length(e.message)]:=#0;
+
+
+  if miEnableLCLDebug.checked then
   begin
-    case EAccessViolation(e).ExceptionRecord.ExceptionInformation[0] of
-      0: op:='read';
-      1: op:='write to';
-      8: op:='execute';
-      else op:='do something weird with';
-    end;
-
-    s:=s+' (tried to '+op+' address '+inttohex(qword(EAccessViolation(e).ExceptionRecord.ExceptionInformation[1]),8)+')';
-  end;
-  {$endif}
-
-
-  if TraceExceptions then
-  begin
-    DebugLn(s);
-
-
+    DebugLn('Exception '+e.Message);
     DumpExceptionBackTrace;
 
-    s:=s+#13#10'Please send the cedebug.txt file to Dark Byte. Thanks';
   end;
 
-  if showingException then exit; //don't bother showing another one. Just read the log
-
-  if exceptionerrorcs.TryEnter then //it's not important if it's already showing another error
-  begin
-    if showingException=false then //should be the case, but check anyhow
-    begin
-      currentexceptionerror:=s;
-
-      showingException:=true;
-      if MainThreadID=GetCurrentThreadId then
-        showerror
-      else
-        tthread.Synchronize(nil, showerror);
-
-      showingException:=false;
-    end;
-
-    exceptionerrorcs.leave;
-  end;
+  PostMessage(handle, wm_showerror, 0, ptruint(err));
 end;
 
 
@@ -2975,8 +2910,6 @@ end;
 
 function TMainForm.openprocessPrologue: boolean;
 begin
-  if (processid<>0) and Globals.SyncSymbols then
-    SyncSymbolsNow;
 
   Result := False;
 
@@ -3012,11 +2945,6 @@ begin
 
   outputdebugstring('openProcessEpilogue called');
 
-  if (oldprocess<>processid) and SyncSymbols and symsync_ClearSymbolListWhenOpeningADifferentProcess then
-    symhandler.DeleteAllUserdefinedSymbols;
-
-  if SyncSymbols then
-    SyncSymbolsNow(true); //get the latest symbols
 
   symhandler.reinitialize(true);
 //  symhandler.waitforsymbolsloaded;
@@ -3107,8 +3035,7 @@ begin
     if processid <> $FFFFFFFF then
     begin
       processlabel.Caption := strError;
-      MessageDlg(strErrorWhileOpeningProcess{$ifdef darwin}+strErrorwhileOpeningProcessMac{$endif}, mtError,[mbok],0);
-      exit;
+      raise Exception.Create(strErrorWhileOpeningProcess{$ifdef darwin}+strErrorwhileOpeningProcessMac{$endif});
     end
     else
     begin
@@ -3575,10 +3502,6 @@ begin
       llf.Finish;
   end;
 
-  TraceExceptions:=miEnableLCLDebug.checked;
-
-  miTriggerAccessViolation.visible:=TraceExceptions;
-  miTestAccessViolationThread.visible:=TraceExceptions;
 
 end;
 
@@ -3685,57 +3608,6 @@ end;
 procedure TMainForm.Label3Click(Sender: TObject);
 begin
 
-end;
-
-
-procedure triggerAV(AData : Pointer);
-var p: pbyte;
-begin
-  p:=pbyte($ce);
-  p^:=p^+$ce;
-
-  beep;
-
-end;
-
-type TTestThread=class(tthread)
-  procedure Execute; override;
-end;
-
-
-procedure TTestThread.Execute;
-begin
-  SetThreadDebugName(ThreadID,'Crashy thread');
-  triggerav(nil);
-
-end;
-
-procedure TMainForm.miTestAccessViolationThreadClick(Sender: TObject);
-var m: Tmethod;
-
-  t: TTestthread;
-begin
-  t:=ttestthread.Create(true);
-
-
-  //t.FreeOnTerminate:=true;
-  t.Start;
-  {
-  while t.Finished=false do
-    sleep(100);
-
-  if t.FatalException=nil then
-    showmessage('all ok')
-  else
-    showmessage('error');  }
-
-
-end;
-
-procedure TMainForm.miTriggerAccessViolationClick(Sender: TObject);
-begin
-  triggerAV(nil);
-  showmessage('Weeee! Fuck You!');
 end;
 
 
@@ -5901,7 +5773,6 @@ var
   createlog: boolean;
   s: string;
 begin
-  exceptionerrorcs:=TCriticalSection.Create;
   mtid:=MainThreadID;
 
   tthread.NameThreadForDebugging('Main GUI Thread', GetCurrentThreadId);
@@ -6025,7 +5896,6 @@ begin
   frmLuaTableScript.Caption := rsLuaScriptCheatTable;
   frmLuaTableScript.Save1.OnClick := miSave.onclick;
   frmLuaTableScript.SaveAs1.OnClick:= save1.OnClick;
-  frmLuaTableScript.Name := 'frmLuaTableScript';
 
 
   hotkeypressed := -1;
@@ -7663,9 +7533,6 @@ var
 
 
 begin
-  if SyncSymbols and (processid<>0) then
-    SyncSymbolsNow;
-
   i:=0;
   while i<screen.CustomFormCount do
   begin
@@ -8337,7 +8204,7 @@ var
   reg: TRegistry;
 
 begin
-  if formsettings.frameHotkeyConfig.cbHideAllWindows.Checked then
+  if formsettings.cbHideAllWindows.Checked then
   begin
     if allwindowsareback then
     begin
@@ -8902,11 +8769,6 @@ begin
   end;
 
   ActivePreviousResultColumn:=2;
-
-  if runningAsAdmin then
-    caption:=caption+' (Admin)';
-
-  askAboutRunningAsAdmin:=true;
 
 end;
 
@@ -10758,8 +10620,6 @@ var
   x: array of integer;
   reg: tregistry;
 begin
-
-
   if flashprocessbutton<>nil then
   begin
     flashprocessbutton.Terminate;
@@ -10893,25 +10753,24 @@ begin
       if speedhack <> nil then
         FreeAndNil(speedhack);
 
+      ss:=GetKeyShiftState;
+
+
       speedhack := TSpeedhack.Create;
     except
       on e: Exception do
       begin
-       { outputdebugstring('Normal speedhack activation failed. Checking for :"activateAlternateSpeedhack"');
+        outputdebugstring('Normal speedhack activation failed. Checking for :"activateAlternateSpeedhack"');
         lua_getglobal(luavm, 'activateAlternateSpeedhack');//failure. check if there is an alternative in lua
         if lua_isfunction(luavm,-1) then
         begin
           OutputDebugString('Calling activateAlternateSpeedhack');
           lua_pushboolean(luavm,true);
-          lua_pcall(luavm, 1,1,0);
-          if lua_toboolean(luavm,-1)<>true then
-            cbSpeedhack.Checked:=false;
-
+          lua_pcall(luavm, 1,0,0);
           exit;
         end
         else
           lua_pop(luavm,1);
-           }
 
         cbSpeedhack.Checked := False;
         MessageDlg(e.message,mtError,[mbok],0);

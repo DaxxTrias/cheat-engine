@@ -20,7 +20,6 @@
 #define _LARGEFILE64_SOURCE
 #endif
 
-
 #include <stdio.h>
 #include <pthread.h>
 
@@ -152,26 +151,11 @@ pthread_mutex_t debugsocketmutex;
 
 int VerboseLevel=0;
 
-int MEMORY_SEARCH_OPTION = 2; //0=file, 1=ptrace, 2=use process_vm_readv, 3=use process_vm_readv2
+int MEMORY_SEARCH_OPTION = 2; //0=file, 1=ptrace, 2=use process_vm_readv
 int ATTACH_PID = 0;
 int ATTACH_TO_ACCESS_MEMORY = 0;
 int ATTACH_TO_WRITE_MEMORY = 1;
 unsigned char SPECIFIED_ARCH = 9;
-
-#ifdef SYS_process_vm_readv
-//BEcause of comment: "Please implement this version of process_vm_readv as the original is detected"  I doubt this would work better, but whatever, here it is
-ssize_t process_vm_readv2(pid_t process_id, struct iovec *io_local, struct iovec *io_remote, int len, int flags) {
-    if (process_id < 0) return FALSE;
-    return syscall(SYS_process_vm_readv, process_id, io_local, len, io_remote, len, 0);
-}
-
-ssize_t process_vm_writev2(pid_t process_id, struct iovec *io_local, struct iovec *io_remote, int len, int flags) {
-    if (process_id < 0) return FALSE;
-    return syscall(SYS_process_vm_writev, process_id, io_local, len, io_remote, len, 0);
-}
-#endif
-
-
 
 //Implementation for shared library version ceserver.
 int debug_log(const char * format , ...)
@@ -206,7 +190,6 @@ char *PTraceToString(int request)
     case PTRACE_SINGLESTEP: return "PTRACE_SINGLESTEP";
     case PTRACE_SETREGS: return "PTRACE_SETREGS";
     case PTRACE_GETREGS: return "PTRACE_GETREGS";
-    case PTRACE_GETFPREGS: return "PTRACE_GETFPREGS";
 #ifdef PT_GETFPXREGS
     case PTRACE_GETFPXREGS: return "PTRACE_GETFPXREGS";
 #endif
@@ -2857,7 +2840,7 @@ int WriteProcessMemory(HANDLE hProcess, void *lpAddress, void *buffer, int size)
     }
 
 
-    if (((MEMORY_SEARCH_OPTION == 2) && (process_vm_writev)) || (MEMORY_SEARCH_OPTION == 3))
+    if ((MEMORY_SEARCH_OPTION == 2) && (process_vm_writev))
     {
       struct iovec local;
       struct iovec remote;
@@ -2877,14 +2860,7 @@ int WriteProcessMemory(HANDLE hProcess, void *lpAddress, void *buffer, int size)
       remote.iov_base=lpAddress;
       remote.iov_len=size;
 
-      PROCESS_VM_WRITEV write_v;
-      if (MEMORY_SEARCH_OPTION==2)
-        write_v=process_vm_writev;
-      else
-        write_v=process_vm_writev2;
-
-
-      written=write_v(p->pid,&local,1,&remote,1,0);
+      written=process_vm_writev(p->pid,&local,1,&remote,1,0);
       if (written==-1)
       {
        debug_log("process_vm_writev(%p, %d) failed: %s\n", lpAddress, size, strerror(errno));
@@ -3309,16 +3285,9 @@ int ReadProcessMemory(HANDLE hProcess, void *lpAddress, void *buffer, int size)
 
   //  debug_log("hProcess=%d, lpAddress=%p, buffer=%p, size=%d\n", hProcess, lpAddress, buffer, size);
 
-    if ((MEMORY_SEARCH_OPTION == 2) || (MEMORY_SEARCH_OPTION == 3))
+    if (MEMORY_SEARCH_OPTION == 2)
     {
-
-      PROCESS_VM_READV readv=NULL;
-      if (MEMORY_SEARCH_OPTION == 2)
-        readv=process_vm_readv;
-      else
-        readv=process_vm_readv2;
-
-      if (readv)
+      if (process_vm_readv)
       {
         struct iovec local;
         struct iovec remote;
@@ -3329,30 +3298,13 @@ int ReadProcessMemory(HANDLE hProcess, void *lpAddress, void *buffer, int size)
         remote.iov_base=lpAddress;
         remote.iov_len=size;
 
-        int canreadnow=1;
-        pid_t pid;
 
-        if (ATTACH_TO_ACCESS_MEMORY)
+        bread=process_vm_readv(p->pid,&local,1,&remote,1,0);
+        if (bread==-1)
         {
-          canreadnow=0;
-          pid=ptrace_attach_andwait(p->pid);
-          if (pid>0)
-            canreadnow=1;
-
+         // debug_log("process_vm_readv(%x, %d) failed: %s\n", lpAddress, size, strerror(errno));
+          bread=0;
         }
-
-        if (canreadnow)
-        {
-          bread=readv(p->pid,&local,1,&remote,1,0);
-          if (bread==-1)
-          {
-           // debug_log("process_vm_readv(%x, %d) failed: %s\n", lpAddress, size, strerror(errno));
-            bread=0;
-          }
-        }
-
-        if (ATTACH_TO_ACCESS_MEMORY)
-          safe_ptrace(PTRACE_DETACH, pid,0,0);
 
         return bread;
       }
@@ -3465,7 +3417,7 @@ int ReadProcessMemory(HANDLE hProcess, void *lpAddress, void *buffer, int size)
           if (ATTACH_TO_ACCESS_MEMORY)
           {
             int r=safe_ptrace(PTRACE_DETACH, pid,0,0);
-            //debug_log("PTRACE_DETACH returned %d\n", r);
+            debug_log("PTRACE_DETACH returned %d\n", r);
 
           }
 
@@ -3989,7 +3941,7 @@ int ReadPipe(HANDLE ph, void* destination, int size, int timeout) //todo: implem
   if (pd)
   {
     //debug_log("ReadPipe on socket %s\n", pd->pipename);
-    return recvall(pd->socket, destination, size,MSG_NOSIGNAL);
+    return recvall(pd->socket, destination, size,0);
   }
   else
     return -1;
@@ -3997,19 +3949,14 @@ int ReadPipe(HANDLE ph, void* destination, int size, int timeout) //todo: implem
 
 int WritePipe(HANDLE ph, void* source, int size, int timeout) //todo: implement timeout
 {
- // debug_log("WritePipe %d, %p, %d, %d\n", ph, source, size, timeout);
-
   PPipeData pd=(PPipeData)GetPointerFromHandle(ph);
   if (pd)
   {
-   // debug_log("WritePipe on socket %s\n", pd->pipename);
-    return sendall(pd->socket, source, size,MSG_NOSIGNAL);
+    //debug_log("WritePipe on socket %s\n", pd->pipename);
+    return sendall(pd->socket, source, size,0);
   }
   else
-  {
-    debug_log("WritePipe: invalid handle\n");
     return -1;
-  }
 }
 
 HANDLE OpenProcess(DWORD pid)
@@ -4148,10 +4095,7 @@ HANDLE OpenProcess(DWORD pid)
     return result;
   }
   else
-  {
-    debug_log("Failure opening the process");
     return 0; //could not find the process
-  }
 
 }
 
@@ -4216,7 +4160,6 @@ BOOL Module32Next(HANDLE hSnapshot, PModuleListEntry moduleentry)
       moduleentry->moduleName=ml->moduleList[ml->moduleListIterator].moduleName;
       moduleentry->moduleSize=ml->moduleList[ml->moduleListIterator].moduleSize;
       moduleentry->part=ml->moduleList[ml->moduleListIterator].part;
-      moduleentry->fileOffset=ml->moduleList[ml->moduleListIterator].fileOffset;
       moduleentry->is64bit=ml->moduleList[ml->moduleListIterator].is64bit;
 
       ml->moduleListIterator++;
@@ -4233,7 +4176,7 @@ BOOL Module32Next(HANDLE hSnapshot, PModuleListEntry moduleentry)
   }
   else
   {
-    debug_log("Module32First/Next failed: Handle is not a htHTSModule handle: %d\n",GetHandleType(hSnapshot));
+    //debug_log("Module32First/Next: GetHandleType(hSnapshot)=%d\n",GetHandleType(hSnapshot));
     return FALSE;
   }
 }
@@ -4387,7 +4330,7 @@ HANDLE CreateToolhelp32Snapshot(DWORD dwFlags, DWORD th32ProcessID)
     PModuleList ml=(PModuleList)malloc(sizeof(ModuleList));
 
     if (dwFlags & TH32CS_SNAPFIRSTMODULE)
-      debug_log("Creating 1-entry module list for process %d\n", th32ProcessID);
+      debug_log("Creating module list for process %d\n", th32ProcessID);
 
 
     ml->ReferenceCount=1;
@@ -4411,7 +4354,6 @@ HANDLE CreateToolhelp32Snapshot(DWORD dwFlags, DWORD th32ProcessID)
       while (fgets(s, 511, f)) //read a line into s
       {
         unsigned long long start, stop;
-        uint32_t fileoffset;
         char protectionstring[32],modulepath[511];
         unsigned char elfident[8];
 
@@ -4419,10 +4361,10 @@ HANDLE CreateToolhelp32Snapshot(DWORD dwFlags, DWORD th32ProcessID)
         memset(modulepath, 0, 255);
 
 
-        sscanf(s, "%llx-%llx %s %x %*s %*s %[^\t\n]\n", &start, &stop, protectionstring, &fileoffset, modulepath);
+        sscanf(s, "%llx-%llx %s %*s %*s %*s %[^\t\n]\n", &start, &stop, protectionstring, modulepath);
 
-        //if (ProtectionStringToType(protectionstring)==MEM_MAPPED)
-        //  continue;
+        if (ProtectionStringToType(protectionstring)==MEM_MAPPED)
+          continue;
 
         if (modulepath[0]) //it's something
         {
@@ -4430,11 +4372,7 @@ HANDLE CreateToolhelp32Snapshot(DWORD dwFlags, DWORD th32ProcessID)
           if (strcmp(modulepath, "[heap]")==0)  //not static enough to mark as a 'module'
             continue;
 
-          if ((modulepath[0]=='/') && (modulepath[1]=='d') && (modulepath[2]=='e') && (modulepath[3]=='v') && (modulepath[4]=='/'))
-            continue; //no /dev/
-
-
-        //  debug_log("Checking if %s is a module\n", modulepath);
+         // debug_log("%s\n", modulepath);
 
           if (strcmp(modulepath, "[vdso]")!=0)  //temporary patch as to not rename vdso, because it is treated differently by the ce symbol loader
           {
@@ -4451,20 +4389,12 @@ HANDLE CreateToolhelp32Snapshot(DWORD dwFlags, DWORD th32ProcessID)
 
 
           //check if it's readable
-
-          if (start==0x7f9f9144e000)
-          {
-            debug_log("break");
-          }
-
           i=ReadProcessMemory(phandle, (void *)start, elfident, 8); //only the first few bytes
           if (i==0)
           {
-            //debug_log("thread %d (%s): Failed to read the start of %s (address %llx)\n", getpid(), threadname, modulepath, start);
+            //printf("%s is unreadable(%llx)\n", modulepath, start);
             continue; //unreadable
           }
-          //else
-          //  debug_log("thread %d (%s): Successfully read the start of %s (address %llx)\n", getpid(), threadname, modulepath, start);
 
           //check if this module is in the list. If so, mark it with a part tag
           int part=0;
@@ -4480,28 +4410,21 @@ HANDLE CreateToolhelp32Snapshot(DWORD dwFlags, DWORD th32ProcessID)
             }
           }
 
-          if (((elfident[0]!=ELFMAG0) || (elfident[1]!=ELFMAG1) || (elfident[2]!=ELFMAG2) || (elfident[3]!=ELFMAG3) ) )  //  7f 45 4c 46 , not yet in the list, and not an ELF
+          if ((part==0) && ((elfident[0]!=ELFMAG0) || (elfident[1]!=ELFMAG1) || (elfident[2]!=ELFMAG2) || (elfident[3]!=ELFMAG3) ) )  //  7f 45 4c 46 , not yet in the list, and not an ELF
           {
-         //   debug_log("%s is not an ELF (%p = %.2x %.2x %.2x %.2x)\n", modulepath, start, elfident[0], elfident[1], elfident[2], elfident[3] );
+            //printf("%s is not an ELF(%llx).  tempbuf=%s\n", modulepath, start, tempbuf);
             continue; //not an ELF
           }
 
           //it's either an ELF, or there is another entry with this name in the list that is an ELF
 
-          //e.g:
-          //71e8f0f86000-71e8f0fb5000 r-xp 00001000 08:13 5488717                    /data/app/com.unciv.app-8m-YznaBZ84t5VpB6J6Stg==/split_config.x86_64.apk
-
-
-          //if (dwFlags & TH32CS_SNAPFIRSTMODULE)
-         // debug_log("Adding %s as a module\n", modulepath);
+          if (dwFlags & TH32CS_SNAPFIRSTMODULE)
+            debug_log("Adding %s as a module\n", modulepath);
 
           mle=&ml->moduleList[ml->moduleCount];
           mle->moduleName=strdup(modulepath);
           mle->baseAddress=start;
-          mle->fileOffset=fileoffset;
-          mle->moduleSize=/*stop-start;*/GetModuleSize(modulepath, fileoffset,0);
-          if (mle->moduleSize==-1)
-            mle->moduleSize=stop-start;
+          mle->moduleSize=stop-start; //GetModuleSize(modulepath, 0); GetModuleSize is not a good idea as some modules have gaps in them, and alloc will use those gaps (e.g ld*.so)
           mle->part=part;
 
           if (part==0)
@@ -4709,7 +4632,6 @@ uint64_t getTickCount()
   return r;
 }
 
-
 void initAPI()
 {
   pthread_mutex_init(&memorymutex, NULL);
@@ -4723,13 +4645,6 @@ void initAPI()
   {
     process_vm_readv=dlsym(libc,"process_vm_readv");
     process_vm_writev=dlsym(libc,"process_vm_writev");
-  }
-
-
-  if (!process_vm_readv)
-  {
-    process_vm_readv=dlsym(0, "process_vm_readv");
-    process_vm_writev=dlsym(0, "process_vm_writev");
   }
 
   debug_log("process_vm_readv=%p\n",process_vm_readv);

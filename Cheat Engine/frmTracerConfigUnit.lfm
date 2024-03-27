@@ -1,7 +1,7 @@
 object frmTracerConfig: TfrmTracerConfig
-  Left = 559
+  Left = 557
   Height = 399
-  Top = 117
+  Top = 115
   Width = 288
   AutoSize = True
   BorderIcons = []

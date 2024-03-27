@@ -231,7 +231,7 @@ type
     fshowsymbols: boolean;   ///
     fshowsections: boolean;   ///
 
-    UserdefinedSymbolCallback: TUserdefinedSymbolCallback; //warning: called from other threads
+    UserdefinedSymbolCallback: TUserdefinedSymbolCallback;
     searchpath: string;
 
     globalalloc: pointer; //if set it hold a pointer to the last free memory that was allocated.
@@ -364,9 +364,6 @@ type
     procedure setsearchpath(path:string);
 
     //userdefined symbols
-
-    function SyncSymbols(var symbols: TUserdefinedSymbolsList; var newsymbollists: TSymbolListHandlerArray; dontdelete: boolean; applychanges: boolean): boolean;
-
     function DeleteUserdefinedSymbol(symbolname:string):boolean;
     procedure DeleteAllUserdefinedSymbols;
     function GetUserdefinedSymbolByName(symbolname:string):ptrUint;
@@ -403,10 +400,6 @@ type
     function getMainSymbolList: TSymbolListHandler;
 
     function getLastModuleListUpdateTime: qword; //poll this when using async modulelist updates if you do wish to know when it finishes
-
-
-    procedure refreshGUI;
-
 
     procedure StopSymbolLoaderThread;
 
@@ -2563,10 +2556,7 @@ procedure TSymbolloaderthread.execute;
 type
   TModInfo=record
     baseaddress: qword;
-    fileoffset: dword;
     size: qword;
-    path: pchar;
-    part: integer;
   end;
   PModInfo=^TModInfo;
 var sp: pchar;
@@ -2593,7 +2583,6 @@ var sp: pchar;
 begin
   NameThreadForDebugging('SymbolLoaderThread', GetCurrentThreadId);
   debugpart:=0;
-  if targetself then skippdb:=true;
 
 
   try
@@ -2723,7 +2712,7 @@ begin
 
         if thisprocesshandle<>0 then
         begin
-          symbolloaderthreadcs.Enter;  //needed so selfsymbolhandler doesn't cause issues
+          symbolloaderthreadcs.Enter;  //needed so selfsymbolhandlerdoesnb't cause issues
           try
             //get the export symbols first
 
@@ -2803,107 +2792,103 @@ begin
 
             if terminated then exit;
 
-            if skippdb=false then
+            d:=symgetoptions;
+            d:=d or SYMOPT_CASE_INSENSITIVE or SYMOPT_INCLUDE_32BIT_MODULES;
+            d:=d or SYMOPT_DEFERRED_LOADS;
+            symsetoptions(d);
+
+            SymbolsLoaded:=false; //SymInitialize(thisprocesshandle, sp, true);
+            if symbolsloaded=false then
             begin
-              d:=symgetoptions;
-              d:=d or SYMOPT_CASE_INSENSITIVE or SYMOPT_INCLUDE_32BIT_MODULES;
-              d:=d or SYMOPT_DEFERRED_LOADS;
-              symsetoptions(d);
+              SymbolsLoaded:=SymInitialize(thisprocesshandle, sp, false);
+              needstoenumodules:=true;
+            end
+            else
+              needstoenumodules:=false;
+
+            if terminated then exit;
+
+            if symbolsloaded then
+            begin
+              symbolscleaned:=false;
+
+             // NameThreadForDebugging('Symbolhandler');
 
 
-              SymbolsLoaded:=false; //SymInitialize(thisprocesshandle, sp, true);
-              if symbolsloaded=false then
+              debugpart:=2;
+              //symsetoptions(symgetoptions or SYMOPT_CASE_INSENSITIVE);
+
+              if kernelsymbols then LoadDriverSymbols(true);
+              LoadDLLSymbols(true, needstoenumodules);
+              //debugpart:=20001;
+
+              processThreadEvents;
+
+              if skippdb=false then
               begin
-                SymbolsLoaded:=SymInitialize(thisprocesshandle, sp, false);
-                needstoenumodules:=true;
-              end
-              else
-                needstoenumodules:=false;
+                //enumerate the basic data from the symbols
+                //enumeratedModules:=0;
+                pdbonly:=true;
 
-              if terminated then exit;
+                if assigned(SymEnumerateModules64) then
+                  SymEnumerateModules64(thisprocesshandle, @EM, self );
 
-              if symbolsloaded then
-              begin
-                symbolscleaned:=false;
-
-               // NameThreadForDebugging('Symbolhandler');
+                pdbsymbolsloaded:=true;
 
 
-                debugpart:=2;
-                //symsetoptions(symgetoptions or SYMOPT_CASE_INSENSITIVE);
+                if terminated then exit;
 
-                if kernelsymbols then LoadDriverSymbols(true);
-                LoadDLLSymbols(true, needstoenumodules);
-                //debugpart:=20001;
 
                 processThreadEvents;
 
-                if (skippdb=false) and (not targetself) then
-                begin
-                  //enumerate the basic data from the symbols
-                  //enumeratedModules:=0;
-                  pdbonly:=true;
+                debugpart:=3;
 
-                  if assigned(SymEnumerateModules64) then
-                    SymEnumerateModules64(thisprocesshandle, @EM, self );
+                isloading:=false;
 
-                  pdbsymbolsloaded:=true;
-
-
-                  if terminated then exit;
-
-
+                while symbolloaderthreadeventqueue.Count>0 do
                   processThreadEvents;
 
-                  debugpart:=3;
 
-                  isloading:=false;
-
-                  while symbolloaderthreadeventqueue.Count>0 do
-                    processThreadEvents;
-
-
-                  OutputDebugString('loadingExtendedDebugSymbols'+#13#10);
-                  loadingExtendedDebugSymbols:=true;
-                  if not terminated then
-                    EnumerateExtendedDebugSymbols;
-                  loadingExtendedDebugSymbols:=false;
+                OutputDebugString('loadingExtendedDebugSymbols'+#13#10);
+                loadingExtendedDebugSymbols:=true;
+                if not terminated then
+                  EnumerateExtendedDebugSymbols;
+                loadingExtendedDebugSymbols:=false;
 
 
-                  OutputDebugString('after loadingExtendedDebugSymbols'+#13#10);
+                OutputDebugString('after loadingExtendedDebugSymbols'+#13#10);
 
-                  if not terminated then
+                if not terminated then
+                begin
+                  parsingstructures:=true;
+                  OutputDebugString('parsingstructures'+#13#10);
+                  EnumerateStructures;
+                  parsingstructures:=false;
+                end;
+
+                if (targetself=false) and (length(modulelist.withdebuginfo)>0) then
+                begin
+                  while not terminated do
                   begin
-                    parsingstructures:=true;
-                    OutputDebugString('parsingstructures'+#13#10);
-                    EnumerateStructures;
-                    parsingstructures:=false;
-                  end;
+                    symbolloaderthreadeventevent.waitfor(100);
 
-                  if (targetself=false) and (length(modulelist.withdebuginfo)>0) then
-                  begin
-                    while not terminated do
+                    while symbolloaderthreadeventqueue.Count>0 do
+                      processThreadEvents;
+
+                    if ReadProcessMemory(processhandle, amodulebase, @b,1,ar)=false then       //release the debug symbols when the process terminates
                     begin
-                      symbolloaderthreadeventevent.waitfor(100);
-
-                      while symbolloaderthreadeventqueue.Count>0 do
-                        processThreadEvents;
-
-                      if ReadProcessMemory(processhandle, amodulebase, @b,1,ar)=false then       //release the debug symbols when the process terminates
-                      begin
-                        break;
-                      end;
+                      break;
                     end;
                   end;
-                end; //skippdb=false
-                debugpart:=7;
-                Symcleanup(thisprocesshandle);
-                symbolscleaned:=true;
-                debugpart:=8;
-              end
-              else
-                error:=true;
-            end;
+                end;
+              end; //skippdb=false
+              debugpart:=7;
+              Symcleanup(thisprocesshandle);
+              symbolscleaned:=true;
+              debugpart:=8;
+            end
+            else
+              error:=true;
           finally
             symbolloaderthreadcs.Leave;
           end;
@@ -2949,10 +2934,7 @@ begin
           begin
             getmem(modinfo, sizeof(TModInfo));
             modinfo^.baseaddress:=self.owner.modulelist[i].baseaddress;
-            modinfo^.fileoffset:=self.owner.modulelist[i].elffileoffset;
             modinfo^.size:=self.owner.modulelist[i].basesize;
-            modinfo^.path:=strnew(pchar(self.owner.modulelist[i].modulepath));
-            modinfo^.part:=self.owner.modulelist[i].elfpart;
             mpl.AddObject(self.owner.modulelist[i].modulepath, tobject(modinfo));
           end;
         finally
@@ -2966,23 +2948,12 @@ begin
         begin
           modinfo:=pmodinfo(mpl.Objects[i]);
 
-          //if self.owner.modulelist[i].elfpart=0 then
-          if string(modinfo^.path).EndsWith('.apk') then
-          asm
-          nop
-          end;
-
-          if modinfo^.part=0 then
-            s:=''
-          else
-            s:='.'+inttostr(modinfo.part);
-
-          c.enumSymbolsFromFile(modinfo^.path, modinfo^.fileoffset, modinfo^.baseaddress, NetworkES,s);
+          if self.owner.modulelist[i].elfpart=0 then
+            c.enumSymbolsFromFile(self.owner.modulelist[i].modulepath, modinfo^.baseaddress, NetworkES);
 
           inc(enumeratedModules);
           fprogress:=ceil((i/modulecount)*100);
 
-          strdispose(modinfo^.path);
           freememandnil(modinfo);
 
         end;
@@ -3706,213 +3677,10 @@ begin
 end;
 
 procedure TSymhandler.DeleteAllUserdefinedSymbols;
-var i: integer;
- l: array of TSymbolListHandler;
 begin
   userdefinedsymbolsCS.enter;
   userdefinedsymbolspos:=0;
   userdefinedsymbolsCS.leave;
-
-  symbollistsMREW.Beginwrite;
-  setlength(l, length(symbollists));
-  for i:=0 to length(symbollists)-1 do
-    l[i]:=symbollists[i];
-
-  for i:=0 to length(l)-1 do
-  begin
-    l[i].unregisterList;
-    if l[i].refcount=0 then
-      l[i].free;
-  end;
-
-  setlength(symbollists,0);
-  symbollistsMREW.Endwrite;
-end;
-
-function TSymhandler.SyncSymbols(var symbols: TUserdefinedSymbolsList; var newsymbollists: TSymbolListHandlerArray; dontdelete: boolean; applychanges: boolean): boolean;
-var
-  i,j: integer;
-  updated: boolean=false;
-  found: boolean;
-
-  newe: TUserdefinedsymbol;
-  newsl: TSymbolListHandler;
-
-  deleteSymbollists, addSymbollists: Tlist;
-begin
-  result:=false;
-
-  //first userdefined symbols
-
-  userdefinedsymbolsCS.enter;
-  try
-
-    //add the missing entries to the symbols list (can also be used to just get the symbols themselves)
-    i:=0;
-    for i:=0 to userdefinedsymbolspos-1 do
-    begin
-      found:=false;
-      for j:=0 to length(symbols)-1 do
-      begin
-        if symbols[j].symbolname=userdefinedsymbols[i].symbolname then
-        begin
-          found:=true;
-          if symbols[j].address<>userdefinedsymbols[j].address then result:=true; //address changes
-          break;
-        end;
-      end;
-
-      if (not found) and dontdelete then
-      begin
-        setlength(symbols, length(symbols)+1);
-        symbols[length(symbols)-1]:=userdefinedsymbols[i];
-        result:=true;  //added a new entry to the xml file
-      end;
-    end;
-
-    //check for newly added symbols (just to notify the ui for changes)
-    for i:=0 to length(symbols)-1 do
-    begin
-      found:=false;
-      for j:=0 to userdefinedsymbolspos-1 do
-        if symbols[i].symbolname=userdefinedsymbols[i].symbolname then
-        begin
-          found:=true;
-          break;
-        end;
-
-      if not found then
-      begin
-        result:=true;
-        break;
-      end;
-    end;
-
-
-    if applychanges then
-    begin
-      if length(userdefinedsymbols)<length(symbols) then
-        setlength(userdefinedsymbols, length(symbols));
-
-      for i:=0 to length(symbols)-1 do
-        userdefinedsymbols[i]:=symbols[i];
-
-      userdefinedsymbolspos:=length(symbols);
-
-    end;
-  finally
-    userdefinedsymbolsCS.Leave;
-  end;
-
-  //now the symbollists
-  if applychanges then
-  begin
-    deleteSymbollists:=tlist.Create;
-    addSymbollists:=tlist.create;
-    symbollistsMREW.Beginwrite;
-
-  end
-  else
-    symbollistsMREW.Beginread;
-
-  try
-    i:=0;
-
-    //first check for entries that are not in the new list
-    for i:=0 to length(symbollists)-1 do
-    begin
-      found:=false;
-      for j:=0 to length(newsymbollists)-1 do
-      begin
-        if symbollists[i].internalname=newsymbollists[j].internalname then
-        begin
-          found:=true;
-          break;
-        end;
-      end;
-
-      if not found then
-      begin
-        result:=true;
-
-        if dontdelete then
-        begin
-          //copy the contents to newsl
-          newsl:=TSymbolListHandler.create(symbollists[i].name, symbollists[i].internalname);
-          newsl.PID:=symbollists[i].pid;
-          newsl.SyncSymbols(symbollists[i], false, true);
-
-          //and add it to the newsymbollists list (so it gets into the xml file)
-          setlength(newsymbollists, length(newsymbollists)+1);
-          newsymbollists[length(newsymbollists)-1]:=newsl;
-        end
-        else
-        begin
-          //delete it
-          if applychanges then
-            deleteSymbollists.Add(symbollists[i]);
-
-        end;
-      end;
-    end;
-
-
-    //create new entries in the symbollists list that matches newsymbollists if needed, and update existing ones
-    for i:=0 to length(newsymbollists)-1 do
-    begin
-      found:=false;
-      for j:=0 to length(symbollists)-1 do
-      begin
-        if symbollists[j].internalname=newsymbollists[i].internalname then  //found a match
-        begin
-          found:=true;
-          if symbollists[j].SyncSymbols(newsymbollists[i], dontdelete, applychanges) then //sync the list itself
-            result:=true;
-          break;
-        end;
-      end;
-
-      if not found then
-      begin
-        result:=true;  //change happened
-
-        if applychanges then //not yet in the list
-        begin
-          //create a new list owned by the symhandler (so refcount=0)
-          newsl:=TSymbolListHandler.create(newsymbollists[i].name, newsymbollists[i].internalname);
-          newsl.PID:=newsymbollists[i].pid;
-          newsl.SyncSymbols(newsymbollists[i], false, true);
-          newsl.refcount:=0;
-          AddSymbolLists.Add(newsl);
-        end;
-      end;
-    end;
-
-
-
-  finally
-    if applychanges then
-    begin
-      for i:=0 to deleteSymbollists.Count-1 do
-      begin
-        TSymbolListHandler(deleteSymbollists[i]).unregisterList;
-        if TSymbolListHandler(deleteSymbollists[i]).refcount<=0 then
-          TSymbolListHandler(deleteSymbollists[i]).Free;
-      end;
-
-      deleteSymbollists.free;
-
-      for i:=0 to addSymbollists.count-1 do
-        AddSymbolList(TSymbolListHandler(AddSymbolLists[i]));
-
-      addSymbollists.Free;
-
-
-      symbollistsMREW.Endwrite;
-    end
-    else
-      symbollistsMREW.Endread;
-  end;
 end;
 
 
@@ -4608,7 +4376,7 @@ begin
 
 
     symbollistsMREW.Beginread;
-    for i:=length(symbollists)-1 downto 0 do
+    for i:=0 to length(symbollists)-1 do
     begin
       si:=symbollists[i].FindFirstSymbolFromBase(mi.baseaddress);
       while (si<>nil) and inrangeq(si.address, mi.baseaddress, mi.baseaddress+mi.basesize) do
@@ -4680,7 +4448,7 @@ begin
 
 
   symbollistsMREW.BeginRead;
-  for i:=length(symbollists)-1 downto 0 do
+  for i:=0 to length(symbollists)-1 do
   begin
     setlength(list2,0);
     symbollists[i].GetModuleList(list2);
@@ -4778,7 +4546,7 @@ begin
 
 
       symbollistsMREW.beginread;
-      for i:=length(symbollists)-1 downto 0 do
+      for i:=0 to length(symbollists)-1 do
       begin
         result:=symbollists[i].getModuleByAddress(address, mi);
         if result then break;
@@ -4821,7 +4589,7 @@ begin
   if not result then
   begin
     symbollistsMREW.beginread;
-    for i:=length(symbollists)-1 downto 0 do
+    for i:=0 to length(symbollists)-1 do
     begin
       result:=symbollists[i].getModuleByName(moduleNameToFind,mi);
       if result then break;
@@ -4933,7 +4701,7 @@ begin
           begin
             //check the symbollists registered by the user
             symbollistsMREW.Beginread;
-            for i:=length(symbollists)-1 downto 0 do
+            for i:=0 to length(symbollists)-1 do
             begin
               si:=symbollists[i].FindAddress(address);
               if si<>nil then break;
@@ -5449,7 +5217,7 @@ begin
                 if si=nil then
                 begin
                   symbollistsMREW.Beginread;
-                  for j:=length(symbollists)-1 downto 0 do
+                  for j:=0 to length(symbollists)-1 do
                   begin
                     if (symbollists[j].PID=0) or (processid=symbollists[j].PID) then
                     begin
@@ -5979,12 +5747,8 @@ begin
           try
             if module32first(ths,me32) then
             repeat
-              if me32.GlblcntUsage>0 then
-              asm
-              nop
-              end;
-              s:=WinCPToUTF8(pchar(@me32.szModule[0]));
-              x:=WinCPToUTF8(pchar(@me32.szExePath[0]));
+              s:=WinCPToUTF8(pchar(@me32.szExePath[0]));
+              x:=s;
               if (s[1]<>'[') then //do not extract the filename if it's a 'special' marker
                 modulename:=extractfilename(s)
               else
@@ -6081,7 +5845,6 @@ begin
                     newmodulelist[newmodulelistpos].isSystemModule:=true;
 
                   newmodulelist[newmodulelistpos].elfpart:=me32.GlblcntUsage;
-                  newmodulelist[newmodulelistpos].elffileoffset:=me32.ProccntUsage;
                 end;
 
                 if (not newmodulelist[newmodulelistpos].isSystemModule) and (commonModuleList<>nil) then //check if it's a common module (e.g nvidia physx dll's)
@@ -6484,8 +6247,7 @@ begin
     symbollists[length(symbollists)-1]:=sl;
 
     if assigned(UserdefinedSymbolCallback) then
-      UserdefinedSymbolCallback(suSymbolList)
-
+      UserdefinedSymbolCallback(suSymbolList);
   finally
     symbollistsMREW.Endwrite;
   end;
@@ -6493,23 +6255,19 @@ end;
 
 procedure TSymhandler.RemoveSymbolList(sl: TSymbolListHandler);
 var i,j: integer;
-  found: boolean;
 begin
   symbollistsMREW.Beginwrite;
   try
-    found:=false;
     for i:=0 to length(symbollists)-1 do
       if symbollists[i]=sl then
       begin
-        found:=true;
         for j:=i to length(symbollists)-2 do
           symbollists[i]:=symbollists[i+1];
 
         setlength(symbollists, length(symbollists)-1);
       end;
 
-
-    if assigned(UserdefinedSymbolCallback) and found then
+    if assigned(UserdefinedSymbolCallback) then
       UserdefinedSymbolCallback(suSymbolList);
   finally
     symbollistsMREW.Endwrite;
@@ -6557,14 +6315,6 @@ begin
   end;
 end;
 
-procedure TSymhandler.refreshGUI;
-begin
-  if assigned(UserdefinedSymbolCallback) then
-  begin
-    UserdefinedSymbolCallback(suUserdefinedSymbol);
-    UserdefinedSymbolCallback(suSymbolList);
-  end;
-end;
 
 destructor TSymhandler.destroy;
 begin

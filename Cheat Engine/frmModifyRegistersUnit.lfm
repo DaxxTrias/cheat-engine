@@ -1,7 +1,7 @@
 object frmModifyRegisters: TfrmModifyRegisters
-  Left = 773
+  Left = 771
   Height = 545
-  Top = 138
+  Top = 135
   Width = 697
   Anchors = [akTop]
   AutoSize = True

@@ -63,8 +63,7 @@ begin
 
       if (maxtimeout<>INFINITE) and (deadlockprevention>maxtimeout) then
       begin
-        raise exception.create('Pipe lock timeout. Still in use by thread '+inttostr(lockedthreadid){$ifdef THREADNAMESUPPORT} +' ('+GetThreadName(lockedthreadid)+')'{$endif});
-
+        raise exception.create('Pipe lock timeout. Still in use by thread '+inttostr(lockedthreadid)+' ('+GetThreadName(lockedthreadid)+')');
       end;
     end;
   end

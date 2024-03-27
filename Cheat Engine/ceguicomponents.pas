@@ -1643,7 +1643,6 @@ initialization
   registerclass(TFlowPanel);
   registerclass(TApplicationProperties); //might be usefull...
   registerclass(TColorListBox);
-  registerclass(TLazVirtualStringTree);
 
 
 
