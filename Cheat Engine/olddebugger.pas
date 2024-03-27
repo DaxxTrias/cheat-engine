@@ -456,9 +456,9 @@ begin
   if (debuggerthread=nil) then
   begin
     if @DebugActiveProcessStop=@DebugActiveProcessStopProstitute then
-      mes:='This will attach the debugger of Cheat Engine to the current process. If you close Cheat Engine while the game is running, the game will close too. Are you sure you want to do this?'
+      mes:='This will attach the debugger of ............ to the current process. If you close ............ while the game is running, the game will close too. Are you sure you want to do this?'
     else
-      mes:='This will attach the debugger of Cheat Engine to the current process. Continue?';
+      mes:='This will attach the debugger of ............ to the current process. Continue?';
 
     {$ifndef net}
     if ask then

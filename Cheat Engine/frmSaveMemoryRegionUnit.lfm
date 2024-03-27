@@ -135,7 +135,7 @@ object frmSaveMemoryRegion: TfrmSaveMemoryRegion
       Height = 19
       Top = 27
       Width = 235
-      Caption = 'Don''t include Cheat Engine header in file'
+      Caption = 'Don''t include ............ header in file'
       OnClick = DontIncludeClick
       TabOrder = 0
     end
