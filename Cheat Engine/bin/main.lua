@@ -1,4 +1,4 @@
---This lua script gets loaded when Cheat Engine loads
+--This lua script gets loaded when ............ loads
 --You can use this to define some often used functions and libraries you'd like to use
 
 require("defines")
@@ -9,11 +9,11 @@ require("defines")
 
 List of CE specific functions and variables:
 
-TrainerOrigin : A variable that contains the path of the trainer that launched cheat engine (Only set when launched as a trainer)
-getCEVersion(): Returns a floating point value specifying the version of cheat engine
+TrainerOrigin : A variable that contains the path of the trainer that launched ............ (Only set when launched as a trainer)
+getCEVersion(): Returns a floating point value specifying the version of ............
 
 
-activateProtection(): Prevents basic memory scanners from opening the cheat engine process
+activateProtection(): Prevents basic memory scanners from opening the ............ process
 fullAccess(address,size): Changes the protection of a block of memory to writable and executable
 
 loadTable(filename, merge OPTIONAL): Loads a .ct or .cetrainer. If merge is provided and set to true it will not clear the old table
@@ -40,10 +40,10 @@ writeFloat(address,value) : Writes a single precision floating point to the spec
 writeDouble(address,value) : Writes a double precision floating point to the specified address. Returns true on success
 writeString(address,text, widechar OPTIONAL) : Write a string to the specified address. Returns true on success
 
-readBytesLocal(address,bytecount, ReturnAsTable) : See readBytes but then it's for Cheat engine's memory
+readBytesLocal(address,bytecount, ReturnAsTable) : See readBytes but then it's for ............'s memory
 readIntegerLocal(address) : Reads an integer from the specified address in CE's memory
 readQwordLocal(address) : Reads a 64-bit integer from the specified address in CE's memory
-readPointerLocal(address) : ReadQwordLocal/ReadIntegerLocal depending on the cheat engine build
+readPointerLocal(address) : ReadQwordLocal/ReadIntegerLocal depending on the ............ build
 readFloatLocal(address) : Reads a single precision floating point value from the specified address in CE's memory
 readDoubleLocal(address) : Reads a double precision floating point value from the specified address in CE's memory
 readStringLocal(address, maxlength, widechar OPTIONAL)
@@ -52,8 +52,8 @@ writeQwordLocal(address,value) : Writes a 64-bit integer to the specified addres
 writeFloatLocal(address,value) : Writes a single precision floating point to the specified address in CE's memory. Returns true on success
 writeDoubleLocal(address,value) : Writes a double precision floating point to the specified address in CE's memory. Returns true on success
 writeStringLocal(address,string, widechar OPTIONAL)
-writeBytesLocal(address, x,x,x,x,...) : See writeBytes but then it's for Cheat Engine's memory
-writeBytesLocal(address, table, , count) : See writeBytes but then it's for Cheat Engine's memory
+writeBytesLocal(address, x,x,x,x,...) : See writeBytes but then it's for ............'s memory
+writeBytesLocal(address, table, , count) : See writeBytes but then it's for ............'s memory
 
 
 wordToByteTable(number): {}          - Converts a word to a bytetable
@@ -89,7 +89,7 @@ createRef(...): integer - Returns an integer reference that you can use with get
 getRef(integer): ... - Returns whatever the reference points out
 destroyRef(integer) - Removes the reference
 
-reloadSettingsFromRegistry(): This will cause cheat engine to reload the settings from the registry and apply them
+reloadSettingsFromRegistry(): This will cause ............ to reload the settings from the registry and apply them
 
 
 ansiToUtf8(string): Converts a string in Ansi encoding to UTF8
@@ -115,7 +115,7 @@ errorOnLookupFailure(state): If set to true (default) address lookups in stringf
 6.4+:Returns the original state
 
 generateAPIHookScript(address, addresstojumpto, addresstogetnewcalladdress OPT) : Generates an auto assembler script which will hook the given address when executed
-autoAssemble(text, targetself OPTIONAL) : runs the auto assembler with the given text. Returns true on success (if targetself is set it will assemble into Cheat Engine itself)
+autoAssemble(text, targetself OPTIONAL) : runs the auto assembler with the given text. Returns true on success (if targetself is set it will assemble into ............ itself)
 
 registerAutoAssemblerCommand(command, function(parameters, syntaxcheckonly)): Registers an auto assembler command to call the specified function. The command will be replaced by the string this function returns when executed. The function can be called twice. Once for syntax check and symbol lookup(1), and the second time for actual execution by the assembler(2) if it has not been removed in phase1.
   Note: The callback function can return multiple values
@@ -154,7 +154,7 @@ unregisterAddressLookupCallback(ID): Removes the callback
 
 
 registerStructureDissectOverride(function(structure, baseaddress): table):
-  same as onAutoGuess, but is called by the structure dissect window when the user chooses to let cheat engine guess the structure for him.
+  same as onAutoGuess, but is called by the structure dissect window when the user chooses to let ............ guess the structure for him.
   Use the structure object to fill it in
   Return true if you have filled it in, or false or nil if you did not
 
@@ -192,15 +192,15 @@ getThreadlist(List): fills a List object with the threadlist of the currently op
 
 
 function onOpenProcess(processid):
-  If this function is defined it will be called whenever cheat engine opens a process.
+  If this function is defined it will be called whenever ............ opens a process.
   Note: The the same process might be opened multiple times in a row internally
   Note 2: This function is called before attachment is fully done. You can call reinitializeSymbolhandler() to force the open to complete, but it will slow down process opens. Alternatively, you could launch a timer which will run when the opening has finished
 
 
 getOpenedProcessID() : Returns the currently opened process. If none is open, returns 0
 getProcessIDFromProcessName(name) : returns a processid
-openProcess(processid) : causes cheat engine to open the given processid
-openProcess(processname): causes cheat engine to find and open the given process
+openProcess(processid) : causes ............ to open the given processid
+openProcess(processname): causes ............ to find and open the given process
 pause() : pauses the current opened process
 unpause(): resumes the current opened process
 
@@ -262,7 +262,7 @@ onAutoGuess(function) :
 
 closeCE() : just closes ce
 hideAllCEWindows() : makes all normal ce windows invisible (e.g trainer table)
-unhideMainCEwindow() : shows the main cheat engine window
+unhideMainCEwindow() : shows the main ............ window
 
 getAutoAttachList(): returns the AutoAttach StringList object. It can be controlled with the stringlist_ routines (it's not recommended to destroy this list object)
 
@@ -289,7 +289,7 @@ cheatEngineIs64Bit(): Returns true if CE is 64-bit, false if 32-bit
 targetIs64Bit(): Returns true if the target process is 64-bit, false if 32-bit
 
 
-getCheatEngineDir(): Returns the folder Cheat Engine is located at
+getCheatEngineDir(): Returns the folder ............ is located at
 
 disassemble(address): Disassembles the given address and returns a string in the format of "address - bytes - opcode : extra"
 splitDisassembledString(disassembledstring): Returns 4 strings. The address, bytes, opcode and extra field
@@ -301,7 +301,7 @@ getPreviousOpcode(address): Returns the address of the previous opcode (this is 
 beep() : Plays the fabulous beep/ping sound!
 playSound(stream, waittilldone OPTIONAL): Plays the given memorystream containing a .WAV formatted memory object. If waittilldone is true the script will stop executing till the sound has stopped
 playSound(tablefile, waittilldone OPTIONAL) : Takes the memorystream from the tablefile and plays it.
-  There are two tablefiles predeclared inside cheat engine "Activate" and "Deactivate" . You are free to use or override them
+  There are two tablefiles predeclared inside ............ "Activate" and "Deactivate" . You are free to use or override them
 
 getUserRegistryEnvironmentVariable(name): string - Returns the environment variable stored in the user registry environment
 setUserRegistryEnvironmentVariable(name, string) - Sets the environment variable stored in the user registry environment
@@ -396,7 +396,7 @@ debug_removeBreakpoint(address) : if the given address is a part of a breakpoint
 debug_continueFromBreakpoint(continueMethod) : if the debugger is currently waiting to continue you can continue with this. Valid parameters are :co_run (just continue), co_stepinto(when on top of a call, follow it), co_stepover (when on top of a call run till after the call)
 debug_getXMMPointer(xmmregnr) :
   Returns the address of the specified xmm register of the thread that is currently broken
-  This is a LOCAL Cheat Engine address. Use Local memory access functions to read and modify
+  This is a LOCAL ............ address. Use Local memory access functions to read and modify
   xmmregnr can be 0 to 15 (0 to 7 on 32-bit)
 
 
@@ -644,10 +644,10 @@ methods
 
 Application Class: (Inheritance: CustomApplication->Component->Object)
 properties
-  Title: The title of cheat engine in the bar
+  Title: The title of ............ in the bar
 
 methods
-  bringToFront(): Shows the cheat engine app
+  bringToFront(): Shows the ............ app
 
 
 Form Class: (Inheritance: ScrollingWinControl->CustomControl->WinControl->Control->Component->Object)
@@ -1035,7 +1035,7 @@ methods
   getChecked() : Returns true if the listitem is checked
   setChecked(boolean): Sets the checkbox of the listbox to the given state
   getSubItems(): Returns a Strings object
-  makeVisible(partial): Scrolls the listview so this item becomes visible (Cheat Engine 6.4 and later)
+  makeVisible(partial): Scrolls the listview so this item becomes visible (............ 6.4 and later)
 
 
 ListItems class : (Inheritance: TObject)
@@ -1398,7 +1398,7 @@ MemoryStream Class (Inheritance: Stream->Object)
 createMemoryStream()
 
 properties
-  Memory: Integer - The address in Cheat Engine's memory this stream is loaded (READONLY, tends to change)
+  Memory: Integer - The address in ............'s memory this stream is loaded (READONLY, tends to change)
 
 methods
   loadFromFile(filename) : Replaces the contents in the memory stream with the contents of a file on disk
@@ -1438,7 +1438,7 @@ methods
 
 
 CheatComponent Class: (Inheritance: WinControl->Control->Component->Object)
-The cheatcomponent class is the component used in Cheat Engine 5.x trainers
+The cheatcomponent class is the component used in ............ 5.x trainers
 Most people will probably want to design their own components but for those that don't know much coding and use the autogenerated trainer this will be used
 
 properties
@@ -1820,7 +1820,7 @@ Methods:
 
 
 supportCheatEngine(attachwindow, hasclosebutton, width, height, position ,yoururl OPTIONAL, extraparameters OPTIONAL, percentageshown OPTIONAL):
-  Will show an advertising window which will help keep the development of Cheat Engine going.
+  Will show an advertising window which will help keep the development of ............ going.
   If you provide your own url it will be shown Up to 75% of the time.
 
   attachwindow: Type=Form : The form that the ad is attached to
@@ -1843,7 +1843,7 @@ supportCheatEngine(attachwindow, hasclosebutton, width, height, position ,yourur
 fuckCheatEngine() : Removes the ad window if it was showing
 
 
-Following are some more internal functions for Cheat Engine
+Following are some more internal functions for ............
 
 dbk_initialize() : Returns true if the dbk driver is loaded in memory. False if it failed for whatever reason (e.g 64-bit and not booted with unsigned driver support)
 dbk_useKernelmodeOpenProcess() : Switches the internal pointer of the OpenProcess api to dbk_OpenProcess
@@ -1867,7 +1867,7 @@ dbvm_writeMSR(msr, value): See dbk_writeMSR
 onAPIPointerChange(function): Registers a callback when an api pointer is changed (can happen when the user clicks ok in settings, or when dbk_use*** is used. Does NOT happen when setAPIPointer is called)
 
 
-setAPIPointer(functionid, address): Sets the pointer of the given api to the given address. The address can be a predefined address set at initialization by Cheat Engine, or an address you got from an autoassembler script or injected dll (When Cheat Engine itself was targeted)
+setAPIPointer(functionid, address): Sets the pointer of the given api to the given address. The address can be a predefined address set at initialization by ............, or an address you got from an autoassembler script or injected dll (When ............ itself was targeted)
 
 functionid:
   0: OpenProcess
@@ -1900,7 +1900,7 @@ Extra variables defined:
 dbk_NtOpenProcess : Address of the NtOpenProcess implementation in DBK32
 
 
-The dbvm_ addresses should only be used with auto assembler scripts injected into Cheat Engine
+The dbvm_ addresses should only be used with auto assembler scripts injected into ............
 dbvm_block_interrupts  : Address of function dbvm_block_interrupts : DWORD; stdcall;
 dbvm_raise_privilege   : Address of function dbvm_raise_privilege : DWORD; stdcall;
 dbvm_restore_interrupts: Address of function dbvm_restore_interrupts : DWORD; stdcall;
@@ -2157,10 +2157,10 @@ openLuaServer(Name):
 
 
 Settings class
-  This class can be used to read out and set settings of cheat engine and of plugins, and store your own data
+  This class can be used to read out and set settings of ............ and of plugins, and store your own data
 
 global functions
-  getSettings(path Optional): Settings - Returns a settings object. If path is nil it will points to the Cheat Engine main settings (Registry) . If name is provides the settings currently accessed will be the one at the subkey provided
+  getSettings(path Optional): Settings - Returns a settings object. If path is nil it will points to the ............ main settings (Registry) . If name is provides the settings currently accessed will be the one at the subkey provided
   Note: Keep in mind that it returns a new object each call, even if he same name is used multiple times
 
 
@@ -2175,7 +2175,7 @@ methods
 
 SymbolList class
   This class can be used to look up an address to a symbolname, and a symbolname to an address
-  It can also be registered with the internal symbol handler of cheat engine
+  It can also be registered with the internal symbol handler of ............
 
   This class makes use of a special "Symbol" table construction that contains size and optionally other data
     Symbol Table:

@@ -1,4 +1,4 @@
-Cheat Engine 6.4
+............ 6.4
 
 Fixes:
 Network: Network server can now handle multiple incoming connections at the same time
@@ -61,7 +61,7 @@ Lua engine window: Some extra customization options
 Trainer Generator: Replaced the beepOnAction with playSoundOnAction and added 2 build in activate/deativate sounds. (You can override them)
 Trainer Generator: The XM file field now has a play button
 Lua/Trainer Generator/Designer: Added several new components , propertes and methods.
-Lua: Added a dll search path to cedir\clibs32 or cedir\clibs64 depending on which cheat engine version is used. Use it for lua extentions
+Lua: Added a dll search path to cedir\clibs32 or cedir\clibs64 depending on which ............ version is used. Use it for lua extentions
 Lua: Made it more forgiving about method and property names
 Lua: Added some threading helper functions
 Lua: You can now override the disassembler/assembler
@@ -70,8 +70,8 @@ Lua: Lots of other new features. Check out main.lua
 
 
 How to use:
-There's a tutorial program included with Cheat Engine,
-it teaches how to use the basics of Cheat Engine, also the helpfile may be of use.
+There's a tutorial program included with ............,
+it teaches how to use the basics of ............, also the helpfile may be of use.
 
 
 
@@ -79,6 +79,6 @@ For comments or suggestions and such, contact me at:
 e-mail(msn) = dark_byte@hotmail.com
 
 
-For more information about Cheat Engine or tables for it 
+For more information about ............ or tables for it 
 and other things, goto this url:
 http://www.cheatengine.org/

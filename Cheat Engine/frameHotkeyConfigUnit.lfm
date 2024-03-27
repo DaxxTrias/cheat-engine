@@ -35,7 +35,7 @@ object frameHotkeyConfig: TframeHotkeyConfig
       Align = alClient
       ExtendedSelect = False
       Items.Strings = (
-        'Popup/Hide cheat engine'
+        'Popup/Hide ............'
         'Pause the selected process'
         'Toggle the speedhack'
         'Speedhack speed 1'

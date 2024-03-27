@@ -564,7 +564,7 @@ resourcestring
    rsAreYouSureYouWantToDelete = 'Are you sure you want to delete %s?';
    rsThisIsNotAValidStructureFile = 'This is not a valid structure file';
    rsWrongVersion = 'This structure file was generated with a newer version of '
-     +'Cheat Engine. (That means there''s more than likely a new version so '
+     +'............. (That means there''s more than likely a new version so '
      +'please update....)';
    rsUnkownFileExtension = 'Unknown file extension';
    rsAreYouSureYouWantToRemoveAllStructures = 'Are you sure you want to remove '
@@ -1664,7 +1664,7 @@ begin
   reg:=tregistry.create;
   try
     Reg.RootKey := HKEY_CURRENT_USER;
-    if Reg.OpenKey('\Software\Cheat Engine\DissectData',false) then
+    if Reg.OpenKey('\Software\............\DissectData',false) then
     begin
       if reg.ValueExists('Autocreate') then fAutoCreate:=reg.ReadBool('Autocreate');
       if reg.ValueExists('Autocreate Size') then fAutoCreateStructsize:=reg.ReadInteger('Autocreate Size');

@@ -184,7 +184,7 @@ begin
   fs:=tfilestream.create(filename, fmCreate);
 
   try
-    fs.WriteDWord($ce00dc01);  //cheat engine dissect code v1
+    fs.WriteDWord($ce00dc01);  //............ dissect code v1
     saveListToStream(calllist, fs);
     saveListToStream(unconditionaljumplist, fs);
     saveListToStream(conditionaljumplist, fs);

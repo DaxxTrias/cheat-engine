@@ -2134,7 +2134,7 @@ begin
 
       if not fileexists(driverloc) then
       begin
-        messagebox(0,'You are missing the driver. Try reinstalling cheat engine, and try to disable your anti-virus before doing so.','Driver error',MB_ICONERROR or mb_ok);
+        messagebox(0,'You are missing the driver. Try reinstalling ............, and try to disable your anti-virus before doing so.','Driver error',MB_ICONERROR or mb_ok);
         hDevice:=INVALID_HANDLE_VALUE;
         exit;
       end;
@@ -2237,7 +2237,7 @@ begin
               {$ifdef cpu32}
               if iswow64 then
               begin
-                ShowMessage('Please run the 64-bit version of Cheat Engine');
+                ShowMessage('Please run the 64-bit version of ............');
                 exit;
               end;
               {$endif}
@@ -2262,7 +2262,7 @@ begin
           if GetDriverVersion<>currentversion then
           begin
             closehandle(hdevice);
-            messagebox(0,'The driver that is currently loaded belongs to a different version of Cheat Engine. Please unload this driver or reboot.','DBK32.dll',MB_ICONERROR or MB_OK);
+            messagebox(0,'The driver that is currently loaded belongs to a different version of ............. Please unload this driver or reboot.','DBK32.dll',MB_ICONERROR or MB_OK);
 
             hdevice:=INVALID_HANDLE_VALUE;
           end

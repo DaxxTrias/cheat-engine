@@ -193,7 +193,7 @@ begin
 end;
 
 begin
-  Application.Title:='Cheat Engine 6.4';
+  Application.Title:='............ 6.4';
   Application.Initialize;
   getcedir;
 

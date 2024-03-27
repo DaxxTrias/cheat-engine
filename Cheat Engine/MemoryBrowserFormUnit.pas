@@ -585,7 +585,7 @@ resourcestring
   rsGotoAddress = 'Goto Address';
   rsFillInTheAddressYouWantToGoTo = 'Fill in the address you want to go to';
   rsMemoryViewerRunning = 'Memory Viewer - Running';
-  rsCheatEngineSingleLingeAssembler = 'Cheat Engine single-line assembler';
+  rsCheatEngineSingleLingeAssembler = '............ single-line assembler';
   rsTypeYourAssemblerCodeHereAddress = 'Type your assembler code here: (address=%s)';
   rsTheGeneratedCodeIsByteSLongButTheSelectedOpcodeIsB = 'The generated code is %s byte(s) long, but the selected opcode is %s byte(s) long! Do you want to replace the '
     +'incomplete opcode(s) with NOP''s?';
@@ -605,7 +605,7 @@ resourcestring
   rsYouWantToGiveAnAdditional32BitParameterWillShowUpI = 'You want to give an additional 32-bit parameter? (Will show up in (R)/(E)BX)';
   rsPleaseEnterAValidHexadecimalValue = 'Please enter a valid hexadecimal value';
   rsPleaseTargetAProcessFirst = 'Please target a process first';
-  rsPleaseTargetAnotherProcess = 'Start another version of Cheat Engine and attach to that instead';
+  rsPleaseTargetAnotherProcess = 'Start another version of ............ and attach to that instead';
   rsDoYouWantToExecuteAFunctionOfTheDll = 'Do you want to execute a function of the dll?';
   rsInjectDll = 'Inject dll';
   rsSelectTheFunctionYouWantToExecute = 'Select the function you want to execute';
@@ -1485,7 +1485,7 @@ begin
   //save to the registry
   reg:=Tregistry.Create;
   try
-    if reg.OpenKey('\Software\Cheat Engine\Disassemblerview\',true) then
+    if reg.OpenKey('\Software\............\Disassemblerview\',true) then
     begin
       reg.WriteBinaryData('colors', disassemblerview.colors, sizeof(disassemblerview.colors));
       reg.WriteString('font.name', disassemblerview.font.name);
@@ -1558,7 +1558,7 @@ begin
   //save to the registry
   reg:=Tregistry.Create;
   try
-    if reg.OpenKey('\Software\Cheat Engine\Disassemblerview\',false) then
+    if reg.OpenKey('\Software\............\Disassemblerview\',false) then
     begin
       if reg.ValueExists('colors') then
         reg.ReadBinaryData('colors', disassemblerview.colors, sizeof(disassemblerview.colors));
@@ -2093,7 +2093,7 @@ begin
   begin
     if debuggerthread.isBreakpoint(disassemblerview.SelectedAddress)<>nil then
     begin
-      beep; //Best sound effect cheat engine has
+      beep; //Best sound effect ............ has
       exit;
     end;
   end;
@@ -2493,7 +2493,7 @@ begin
 end;
 
 procedure TMemoryBrowser.Savememoryregion1Click(Sender: TObject);
-{will save a cheat engine memory region file .CEM}
+{will save a ............ memory region file .CEM}
 begin
   if frmSaveMemoryRegion=nil then
     frmSaveMemoryRegion:=TFrmSaveMemoryRegion.create(self);

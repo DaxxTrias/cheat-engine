@@ -187,9 +187,9 @@ uses MainUnit, mainunit2, symbolhandler, LuaHandler, formsettingsunit,
 
 resourcestring
   strCorruptIcon='The icon has been corrupted';
-  strCantLoadFilepatcher='The file patcher can''t be loaded by Cheat Engine!';
-  strNotACETrainer='This is not a trainer made by Cheat Engine (If it is a trainer at all!)';
-  strUnknownTrainerVersion='This version of Cheat Engine doesn''t know how to read this trainer! Trainerversion=';
+  strCantLoadFilepatcher='The file patcher can''t be loaded by ............!';
+  strNotACETrainer='This is not a trainer made by ............ (If it is a trainer at all!)';
+  strUnknownTrainerVersion='This version of ............ doesn''t know how to read this trainer! Trainerversion=';
   strCantLoadProtectedfile='This trainer is protected from being opened by CE. Now go away!!!';
   rsThisTableContainsALuaScriptDoYouWantToRunIt = 'This table contains a lua script. Do you want to run it?';
   rsErrorExecutingThisTableSLuaScript = 'Error executing this table''s lua script: %s';
@@ -368,7 +368,7 @@ begin
         try
           version:=strtoint(tempnode.TextContent);
           if (version>CurrentTableVersion) then
-            showmessage('There is a newer version of Cheat Engine out. It''s recommended to use that version instead');
+            showmessage('There is a newer version of ............ out. It''s recommended to use that version instead');
         except
           showmessage('This cheat table is corrupt');
         end;
@@ -678,7 +678,7 @@ begin
             reg:=TRegistry.Create;
             try
               Reg.RootKey := HKEY_CURRENT_USER;
-              if Reg.OpenKey('\Software\Cheat Engine',true) then
+              if Reg.OpenKey('\Software\............',true) then
               begin
                 reg.WriteBool('Ask if table has lua script',formsettings.cbAskIfTableHasLuascript.Checked);
                 reg.WriteBool('Always run script',formsettings.cbAlwaysRunScript.Checked);

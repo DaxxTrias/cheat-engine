@@ -1,7 +1,7 @@
 object frmSaveMemoryRegion: TfrmSaveMemoryRegion
-  Left = 846
+  Left = 1535
   Height = 280
-  Top = 349
+  Top = 728
   Width = 274
   BorderIcons = [biSystemMenu]
   Caption = 'Save memoryregion'
@@ -108,7 +108,7 @@ object frmSaveMemoryRegion: TfrmSaveMemoryRegion
       Height = 19
       Top = 31
       Width = 212
-      Caption = 'Don''t include Cheat Engine header in file'
+      Caption = 'Don''t include ............ header in file'
       OnClick = DontIncludeClick
       TabOrder = 0
     end
@@ -146,7 +146,7 @@ object frmSaveMemoryRegion: TfrmSaveMemoryRegion
   end
   object SaveDialog1: TSaveDialog
     DefaultExt = '.CEM'
-    Filter = 'Cheat Engine Memory file(*.CEM)|*.CEM|All files(*.*)|*.*'
+    Filter = '............ Memory file(*.CEM)|*.CEM|All files(*.*)|*.*'
     FilterIndex = 0
     Options = [ofOverwritePrompt, ofHideReadOnly, ofEnableSizing]
     left = 72

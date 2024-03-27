@@ -5872,7 +5872,7 @@ begin
       if lastwait=wrTimeout then
       begin
         TerminateThread(scancontroller.Handle, $dead);
-        messagedlg('The scan was forced to terminate. Subsequent scans may not function properly. It''s recommended to restart Cheat Engine', mtWarning, [mbok], 0);
+        messagedlg('The scan was forced to terminate. Subsequent scans may not function properly. It''s recommended to restart ............', mtWarning, [mbok], 0);
 
         scanController.isDoneEvent.SetEvent;
         if notifywindow<>0 then
@@ -6310,7 +6310,7 @@ begin
 
   usedtempdir:=IncludeTrailingPathDelimiter(usedtempdir);
 
-  fScanResultFolder:=usedtempdir+'Cheat Engine'+pathdelim;
+  fScanResultFolder:=usedtempdir+'............'+pathdelim;
 
 
   if DirectoryExistsUTF8(usedtempdir) then
@@ -6369,7 +6369,7 @@ begin
         usedtempdir:=GetTempDir;
 
 
-      if FindFirst(usedtempdir+'Cheat Engine\{*}',  faDirectory , info)=0 then
+      if FindFirst(usedtempdir+'............\{*}',  faDirectory , info)=0 then
       begin
         repeat
           if (info.Attr and faDirectory) = faDirectory then
@@ -6377,7 +6377,7 @@ begin
             if length(info.Name)>5 then
             begin
               //if found, delete them if older than 2 days
-              f:=usedtempdir+'Cheat Engine\'+info.name;
+              f:=usedtempdir+'............\'+info.name;
 
 
               age:=info.time; //FileAge('"'+f+'"');

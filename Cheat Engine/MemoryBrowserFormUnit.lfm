@@ -4,9 +4,9 @@ object MemoryBrowser: TMemoryBrowser
   Top = 246
   Width = 716
   HelpContext = 12
-  Caption = 'Memory Viewer'
-  ClientHeight = 567
-  ClientWidth = 716
+  Caption = 'MemView'
+  ClientHeight = 0
+  ClientWidth = 0
   Font.Height = -11
   Font.Name = 'MS Sans Serif'
   Menu = MainMenu1
@@ -1264,7 +1264,7 @@ object MemoryBrowser: TMemoryBrowser
   end
   object OpenMemory: TOpenDialog
     DefaultExt = '.CEM'
-    Filter = 'Cheat Engine Memory file|*.CEM|All Files (*.*)|*.*'
+    Filter = '............ Memory file|*.CEM|All Files (*.*)|*.*'
     FilterIndex = 0
     left = 152
     top = 80

@@ -150,7 +150,7 @@ resourcestring
   stralreadyinthelist = 'This byte is already part of another opcode already present in the list';
   strPartOfOpcodeInTheList='At least one of these bytes is already in the list';
   strAddressAlreadyInTheList='This address is already in the list';
-  strCECode='Cheat Engine code:';
+  strCECode='............ code:';
   strNameCECode='What name do you want to give this code?';
   strChangeOf='Change of ';
   strCode='Code :';
@@ -791,7 +791,7 @@ begin
     if keys=nil then
     begin
       closehandle(KeysFileMapping);
-      raise exception.Create('Cheat Engine failed to get into the config of the selected program.');
+      raise exception.Create('............ failed to get into the config of the selected program.');
     end;
 
     keys.configured:=false;

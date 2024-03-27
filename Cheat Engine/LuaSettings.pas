@@ -14,7 +14,7 @@ implementation
 uses luahandler, LuaClass, LuaObject;
 
 type
-  TLuaSettings=class    //A wrapper for the registry object to make access to the cheat engine settings easier and uniform
+  TLuaSettings=class    //A wrapper for the registry object to make access to the ............ settings easier and uniform
   private
     freg: Tregistry;
     fpath: string;
@@ -33,7 +33,7 @@ begin
   if pos('..',v)>0 then
     exit;
 
-  if freg.OpenKey('\Software\Cheat Engine\'+v, true) then
+  if freg.OpenKey('\Software\............\'+v, true) then
     fpath:=v;
 end;
 
@@ -72,7 +72,7 @@ constructor TLuaSettings.create(initialpath: pchar);
 begin
   freg:=TRegistry.Create;
   freg.RootKey:=HKEY_CURRENT_USER;
-  freg.OpenKey('\Software\Cheat Engine',true);
+  freg.OpenKey('\Software\............',true);
 
   if initialpath<>nil then
     path:=initialpath;

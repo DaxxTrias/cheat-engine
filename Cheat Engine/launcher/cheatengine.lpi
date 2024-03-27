@@ -9,7 +9,7 @@
         <MainUnitHasTitleStatement Value="False"/>
       </Flags>
       <MainUnit Value="0"/>
-      <Title Value="Cheat Engine launcher"/>
+      <Title Value="............ launcher"/>
       <ResourceType Value="res"/>
       <Icon Value="0"/>
       <ActiveWindowIndexAtStart Value="0"/>
@@ -30,7 +30,7 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="..\bin\Cheat Engine.exe" ApplyConventions="False"/>
+            <Filename Value="..\bin\.............exe" ApplyConventions="False"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -237,7 +237,7 @@
     <Version Value="11"/>
     <PathDelim Value="\"/>
     <Target>
-      <Filename Value="..\bin\Cheat Engine.exe"/>
+      <Filename Value="..\bin\.............exe"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
