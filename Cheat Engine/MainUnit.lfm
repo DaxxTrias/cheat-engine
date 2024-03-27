@@ -66,7 +66,7 @@ object MainForm: TMainForm
       Width = 102
       Align = alLeft
       AutoSize = True
-      Caption = 'Advanced Options'
+      Caption = 'Adv Ops'
       Flat = True
       OnClick = advancedbuttonClick
       ShowHint = True
@@ -79,7 +79,7 @@ object MainForm: TMainForm
       Width = 65
       Align = alRight
       AutoSize = True
-      Caption = 'Table Extras'
+      Caption = 'Tab Ex'
       Flat = True
       OnClick = CommentButtonClick
       ParentShowHint = False
@@ -237,6 +237,8 @@ object MainForm: TMainForm
       Images = mfImageList
       ImageIndex = 0
       ImageWidth = 21
+      Enabled = False
+      Visible = False
       OnClick = SpeedButton2Click
       ShowHint = True
       ParentFont = False
@@ -256,6 +258,8 @@ object MainForm: TMainForm
       Images = mfImageList
       ImageIndex = 1
       ImageWidth = 21
+      Enabled = False
+      Visible = False
       OnClick = SpeedButton3Click
       ShowHint = True
       ParentFont = False
@@ -617,7 +621,7 @@ object MainForm: TMainForm
       Width = 79
       AutoSize = True
       BorderSpacing.Left = 10
-      Caption = 'Next Scan'
+      Caption = 'NScan'
       Constraints.MinWidth = 75
       Enabled = False
       OnClick = btnNextScanClick
@@ -722,7 +726,7 @@ object MainForm: TMainForm
       Anchors = [akTop, akRight]
       AutoSize = True
       BorderSpacing.Right = 5
-      Caption = 'Undo Scan'
+      Caption = 'UnScan'
       Enabled = False
       OnClick = UndoScanClick
       TabOrder = 3
@@ -777,7 +781,7 @@ object MainForm: TMainForm
       Height = 25
       Top = 8
       Width = 75
-      Caption = 'First Scan2'
+      Caption = 'FScan2'
       OnClick = btnFirstClick
       ParentFont = False
       TabOrder = 11
@@ -788,7 +792,7 @@ object MainForm: TMainForm
       Height = 25
       Top = 8
       Width = 75
-      Caption = 'Next scan 2'
+      Caption = 'NScan2'
       OnClick = btnNextClick
       ParentFont = False
       TabOrder = 12
@@ -823,6 +827,8 @@ object MainForm: TMainForm
         AntialiasingMode = amOn
         Anchors = [akTop, akRight]
         Center = True
+        Enabled = False
+        Visible = False
         OnClick = LogoClick
         OnMouseDown = LogoMouseDown
         Picture.Data = {
@@ -1152,7 +1158,7 @@ object MainForm: TMainForm
         Width = 46
         Anchors = [akTop, akRight]
         AutoSize = True
-        Caption = 'Settings'
+        Caption = 'Setts'
         Flat = True
         OnClick = SettingsClick
       end
@@ -1509,6 +1515,7 @@ object MainForm: TMainForm
           ClientWidth = 115
           TabOrder = 2
           Visible = False
+          Enabled = False
           object Label54: TLabel
             AnchorSideLeft.Control = Panel14
             AnchorSideTop.Control = editSH2
@@ -1519,6 +1526,8 @@ object MainForm: TMainForm
             Width = 32
             BorderSpacing.Left = 5
             Caption = 'Speed'
+            Enabled = False
+            Visible = False
             ParentColor = False
           end
           object lblSH0: TLabel
@@ -1562,6 +1571,8 @@ object MainForm: TMainForm
             Caption = 'Apply'
             OnClick = btnSetSpeedhack2Click
             TabOrder = 0
+            Enabled = False
+            Visible = False
           end
           object editSH2: TEdit
             AnchorSideLeft.Control = Label54
@@ -1575,6 +1586,8 @@ object MainForm: TMainForm
             BorderSpacing.Left = 3
             TabOrder = 1
             Text = '1'
+            Enabled = False
+            Visible = False
           end
           object tbSpeed: TTrackBar
             AnchorSideLeft.Control = Label54
@@ -1592,6 +1605,8 @@ object MainForm: TMainForm
             Anchors = [akTop, akLeft, akRight]
             BorderSpacing.Top = 2
             TabOrder = 2
+            Enabled = False
+            Visible = False
           end
         end
       end
@@ -1695,7 +1710,7 @@ object MainForm: TMainForm
       Width = 145
       Anchors = [akRight, akBottom]
       BorderSpacing.Bottom = 5
-      Caption = 'Add Address Manually'
+      Caption = 'AddMan'
       OnClick = btnAddAddressManuallyClick
       TabOrder = 16
     end
@@ -1709,7 +1724,7 @@ object MainForm: TMainForm
       Width = 98
       Anchors = [akLeft, akBottom]
       BorderSpacing.Bottom = 5
-      Caption = 'Memory View'
+      Caption = 'MemView'
       OnClick = btnMemoryViewClick
       TabOrder = 17
     end
