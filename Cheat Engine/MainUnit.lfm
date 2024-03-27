@@ -700,7 +700,7 @@ object MainForm: TMainForm
       AnchorSideRight.Control = LogoPanel
       Left = 101
       Height = 16
-      Hint = 'This shows how far Cheat Engine is with searching'
+      Hint = 'This shows how far ............ is with searching'
       Top = 15
       Width = 497
       Anchors = [akTop, akLeft, akRight]

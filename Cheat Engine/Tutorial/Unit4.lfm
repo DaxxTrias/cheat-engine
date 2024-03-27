@@ -69,7 +69,7 @@ object Form4: TForm4
     Anchors = [akTop, akLeft, akRight]
     BorderSpacing.Top = 4
     BorderSpacing.Right = 8
-    Caption = 'And you can always check out the Cheat Engine Forum for useful information and ask for help'
+    Caption = 'And you can always check out the ............ Forum for useful information and ask for help'
     ParentColor = False
     WordWrap = True
   end
@@ -81,7 +81,7 @@ object Form4: TForm4
     Height = 15
     Top = 72
     Width = 108
-    Caption = 'Cheat Engine Forum'
+    Caption = '............ Forum'
     ParentColor = False
     OnClick = Label4Click
   end

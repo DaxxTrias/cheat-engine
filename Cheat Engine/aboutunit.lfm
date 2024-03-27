@@ -450,8 +450,8 @@ object About: TAbout
           AnchorSideLeft.Control = Panel2
           AnchorSideTop.Control = Panel2
           Left = 6
-          Height = 20
-          Hint = 'If you like Cheat Engine and want to contribute something to the development, join CE''s Patreon'
+          Height = 25
+          Hint = 'If you like ............ and want to contribute something to the development, join CE''s Patreon'
           Top = 6
           Width = 66
           AutoSize = True
