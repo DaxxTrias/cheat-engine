@@ -417,7 +417,7 @@ resourcestring
   rsTheScanbufferSizeHasToBeGreaterThan0 = 'The scanbuffer size has to be greater than 0';
   rsTheValueForTheKeypollIntervalIsInvalid = 'the value for the keypoll interval (%s is invalid';
   rsTheValueForTheWaitBetweenHotkeyPressesIsInvalid = 'the value for the wait between hotkey presses (%s is invalid';
-  rsPleaseBootWithUnsignedDriversAllowedF8DuringBootOr = 'Please boot with unsigned drivers allowed(F8 during boot), or sign the driver yourself';
+  rsPleaseBootWithUnsignedDriversAllowedF8DuringBootOr = 'Please boot with drivers allowed(F8 during boot), or sign the driver yourself';
   rsRequiresDBVM = '(Requires DBVM)';
   rsThisPluginIsAlreadyLoaded = 'This plugin is already loaded';
   rsIdle = 'Idle';
