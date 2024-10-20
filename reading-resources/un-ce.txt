@@ -1,0 +1,159 @@
+Oct 2023
+
+https://www.unknowncheats.me/forum/anti-cheat-bypass/606839-easy-method-undetected-cheat-engine-driver-dse-patcher-bypass-ac-2023-a.html
+
+
+Today, we will explain in an easy way how to make Undetected Cheat Engine and build the driver easily and quickly.
+We won't need to use the Hxd program to change the name of the Cheat Engine; instead, we will use a tool I've created to do all that with ease and speed.
+We will provide a complete explanation today, and we will use Visual Studio 2022
+
+
+*** I would like to note that the tool for changing names only works on the following version:
+
+7.5 and 7.4
+
+cheatengine-x86_64
+cheatengine-x86_64-SSE4-AVX2
+
+It does not work on version 32 of cheatengine
+
+
+
+
+
+
+*
+Here I built the driver and changed the texts in just 4 minutes and I experimented. I also want to point out that I forgot to mention DBVM, it also works.
+
+Cheat Engine Undetected test :
+
+
+
+
+------------------------------------------------------------------------------------------------------------
+
+
+Step 1:
+
+First, we will download Visual Studio 2022 from the Microsoft website.
+
+from here :
+here : https://learn.microsoft.com/en-us/wi...wnload-the-wdk
+
+Download Visual Studio Community 2022 and select the Desktop development with C++
+After that, go to the "Individual components" section and make sure to install:
+
+MSVC v143 - VS 2022 C++ x64/x86 build tools (Latest)
+MSVC v143 - VS 2022 C++ x64/x86 Spectre-mitigated libs (Latest)
+
+* Follow the instructions on the Microsoft website to step 3
+
+Step 2: Install Windows 11, version 22H2 SDK
+
+Step 3: Install Windows 11, version 22H2 WDK
+
+------------------------------------------------------------------------------------------------------------
+
+Step 4:
+
+Download the cheat engine from the official website
+
+here :
+https://www.cheatengine.org/
+
+and Install the cheat engine
+
+Cheat Engine will be installed, and it will appear on your desktop. Right-click on it, and then select "Open file location."
+Copy all the files related to Cheat Engine and create a new folder in any location, for example, on your desktop, and name it with any desired name. Place the copied files inside the folder.
+After copying all the files, now we need to uninstall Cheat Engine from the programs.
+We will go to the folder where we placed the files and delete the following files: (dbk64.cepack) and (dbk32.cepack) because they are detected by Anti-Cheat .
+
+------------------------------------------------------------------------------------------------------------
+
+Step 5 :
+
+Download the driver for the cheat engine from github we need just ( DBKKernel )
+here : https://github.com/cheat-engine/cheat-engine
+
+We only need the DBKKernel folder, so we will place it on the desktop or any location of your choice.
+
+------------------------------------------------------------------------------------------------------------
+
+Step 6:
+
+use Edit Cheat Engine
+
+Tool properties:
+
+1- Change the name of Cheat Engine to a random name or any name you prefer.
+2- You can quickly and easily change the name of the DBK64 file within the driver to any name you prefer, and you won't need to edit it within Visual Studio.
+3- Create a .dat file, which, in turn, will make Cheat Engine recognize the driver after building.
+4- Edit the project
+This option will make some modifications to the driver's project before opening it in Visual Studio, and it will do the following:
+TargetVersion : Windows 7
+TargetName : dbk64
+OutDir : Path to save the driver after building the project
+TreatWarningAsError : yes
+post-bulid-event : signtool.exe" sign /a /ac "$(TargetDir)..
+
+* It will automatically change it to:
+
+TargetVersion : Windows10
+TargetName : our driver name
+OutDir : Path to save the driver after building the project
+TreatWarningAsError : no
+Delete the line : signtool.exe" sign /a /ac "$(TargetDir)..
+
+5- Create a shortcut for building the driver without the need to open Visual Studio. It will build the driver in the command prompt.
+Make sure you have completed all the previous steps and chosen the "Edit the project" option to avoid errors.
+Also, select the version you have, whether Visual Studio 2022 or 2019.
+
+
+
+
+1-
+
+Press the button Open Cheat Engine and select cheatengine-x86_64 or cheatengine-x86_64-SSE4-AVX2 to change the name 'Cheat Engine' to a random name ,
+You can name it whatever you like, but it's important to keep the same number of characters in the name.
+
+2-
+
+Modify the driver to change the name 'DBK64' to another name and save it
+In the DBK64 driver option, click the "Open File" button, then navigate to the DBKKernel folder, select the DBK64.ini file for editing. Enter the driver's name and finally, save it.
+
+3-
+
+Edit the project
+
+Click the "Open Project" button and choose DBKKernel.sln. In the "Save Driver In" option, specify the path where you want to save the driver after building , Then click the "Save" button.
+
+4-
+
+use Edit Cheat Engine to create a dat file for our driver
+
+Ensure that you use the same driver name and input a random service name – it doesn't matter. Check the box for "Random," then save it inside the Cheat Engine folder.
+The driver name must ultimately include ".sys"
+
+5-
+
+Create a shortcut for building the driver without the need to open Visual Studio. It will build the driver in the command prompt
+Make sure you have completed all the previous steps and chosen the "Edit the project" option to avoid errors
+Also, select the version you have, whether Visual Studio 2022 or 2019.
+
+
+------------------------------------------------------------------------------------------------------------
+
+* I built the tool inside Visual Studio 2022 and made some modifications to a few lines to make it work correctly. The tool is not my own creation.
+
+Step 7 :
+
+DSE-Patcher
+
+After you have built your driver and everything is complete, now we will use the DSE-Patcher (Driver Signature Enforcement) tool, which, in turn, will disable DSE to allow us to load any unsigned driver.
+All you need to do is click the "Disable" button, and after that, click the "Enable" button once you're done.
+
+
+
+
+Make sure, after finishing the driver installation, to re-enable DSE.
+
